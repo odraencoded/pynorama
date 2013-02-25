@@ -8,7 +8,7 @@ import pygtk
 pygtk.require("2.0")
 import gtk, os, urllib
 from gettext import gettext as _
-import loading
+import navigation, loading
 
 # Copy pasted utility, thanks Nikos :D
 def get_file_path_from_dnd_dropped_uri(uri):
@@ -35,9 +35,19 @@ class Pynorama:
 		# Create image and a scrolled window for it
 		self.image = gtk.Image()
 		self.imageview = gtk.ScrolledWindow()
-		self.imageview.set_size_request(256, 256)
-		
+		self.imageview.set_size_request(600, 600)
+			
 		self.imageview.add_with_viewport(self.image)
+		self.imageview.props.hadjustment.props.step_increment = 1
+		self.imageview.props.vadjustment.props.step_increment = 1
+		
+		self.imageview.get_vscrollbar().props.adjustment.props.step_increment = 1
+		self.imageview.get_hscrollbar().props.adjustment.props.step_increment = 1
+		
+		self.imageview.get_child().props.hadjustment.props.step_increment = 1
+		self.imageview.get_child().props.vadjustment.props.step_increment = 1
+		
+		self.imageview.pixbuf = self.pixbuf = None
 		
 		# Add a status bar
 		self.statusbar = gtk.Statusbar()
@@ -80,15 +90,16 @@ class Pynorama:
 		self.window.add(vlayout)
 		
 		# Connect events
-		self.window.connect("destroy", self._window_destroyed)
-		self.imageview.connect("drag_data_received", self.dragged_data)
+		self.window.connect("destroy", self._window_destroyed)			
+		self.navigator = navigation.MapNavigator(self.imageview)
 		
 		# Complicated looking DnD setup
+		self.imageview.connect("drag_data_received", self.dragged_data)
+		
 		self.imageview.drag_dest_set(
 			gtk.DEST_DEFAULT_MOTION | gtk.DEST_DEFAULT_HIGHLIGHT | gtk.DEST_DEFAULT_DROP,
-			[("text/uri-list", 0, 80)],  
+			[("text/uri-list", 0, 80)],
 			gtk.gdk.ACTION_COPY)
-		
 		
 		# Make everything visible
 		self.window.show_all()
@@ -107,7 +118,7 @@ class Pynorama:
 		try:
 			os.path.dirname(filename)
 			self.image.set_from_file(filename)
-			self.pixbuf = self.image.get_pixbuf()
+			self.imageview.pixbuf = self.pixbuf = self.image.get_pixbuf()
 			
 			w, h = self.pixbuf.get_width(), self.pixbuf.get_height()	
 			
@@ -129,8 +140,10 @@ class Pynorama:
 		w, h = self.pixbuf.get_width(), self.pixbuf.get_height()
 		vrect = self.imageview.get_allocation()
 		
-		self.imageview.get_hadjustment().set_value(w // 2 - vrect.width // 2)
-		self.imageview.get_vadjustment().set_value(0)
+		hadjust, vadjust = self.imageview.get_hadjustment(), self.imageview.get_vadjustment()
+		
+		hadjust.set_value(w // 2 - vrect.width // 2)
+		vadjust.set_value(0)
 	
 	def run(self):
 		gtk.main()
