@@ -26,7 +26,7 @@ def get_file_path_from_dnd_dropped_uri(uri):
 
 		return path
 
-class Pynorama:
+class Pynorama(object):
 	def __init__(self):
 		self.organizer = organization.Organizer()
 		self.current_image = None
@@ -38,10 +38,10 @@ class Pynorama:
 		
 		# Create image and a scrolled window for it
 		self.image = gtk.Image()
+		
 		self.imageview = gtk.ScrolledWindow()
-			
 		self.imageview.add_with_viewport(self.image)
-		self.imageview.pixbuf = self.pixbuf = None
+		self.imageview.pixbuf =  None
 		
 		# Add a status bar
 		self.statusbar = gtk.Statusbar()
@@ -65,6 +65,25 @@ class Pynorama:
 		
 		nextaction = gtk.Action("next", _("Next"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
 		nextaction.connect("activate", self.gonext)
+				
+		noscrollbars = gtk.RadioAction("no-scrollbars", _("No Scroll Bars"), _("Hide scroll bars"), -1, -1)
+		brscrollbars = gtk.RadioAction("br-scrollbars", _("At Bottom Right"), _("Show scroll bars at the bottom right corner"), -1, gtk.CORNER_TOP_LEFT)
+		trscrollbars = gtk.RadioAction("tr-scrollbars", _("At Top Right"), _("Show scroll bars at the top right corner"), -1, gtk.CORNER_BOTTOM_LEFT)
+		tlscrollbars = gtk.RadioAction("tl-scrollbars", _("At Top Left"), _("Show scroll bars at the top left corner"), -1, gtk.CORNER_BOTTOM_RIGHT)
+		blscrollbars = gtk.RadioAction("bl-scrollbars", _("At Bottom Left"), _("Show scroll bars at the bottom left corner"), -1, gtk.CORNER_TOP_RIGHT)
+		
+		brscrollbars.set_group(noscrollbars)
+		trscrollbars.set_group(noscrollbars)
+		tlscrollbars.set_group(noscrollbars)
+		blscrollbars.set_group(noscrollbars)
+		
+		noscrollbars.set_current_value(gtk.CORNER_TOP_LEFT)
+		
+		noscrollbars.connect("toggled", self.set_scrollbars)
+		brscrollbars.connect("toggled", self.set_scrollbars)
+		blscrollbars.connect("toggled", self.set_scrollbars)
+		tlscrollbars.connect("toggled", self.set_scrollbars)
+		trscrollbars.connect("toggled", self.set_scrollbars)
 		
 		fullscreenaction = gtk.ToggleAction("fullscreen", _("Fullscreen"), _("Fill the entire screen"), gtk.STOCK_FULLSCREEN)
 		fullscreenaction.connect("toggled", self.toggle_fullscreen)
@@ -75,6 +94,12 @@ class Pynorama:
 		self.actions.add_action(nextaction)
 		self.actions.add_action(fullscreenaction)
 		
+		self.actions.add_action(noscrollbars)
+		self.actions.add_action(brscrollbars)
+		self.actions.add_action(blscrollbars)
+		self.actions.add_action(tlscrollbars)
+		self.actions.add_action(trscrollbars)
+		
 		# Add a menu bar
 		self.menubar = gtk.MenuBar()
 		
@@ -82,19 +107,30 @@ class Pynorama:
 		self.menubar.file = gtk.MenuItem(_("File"))
 		self.menubar.file.set_submenu(self.filemenu)
 		
-		openmi = openaction.create_menu_item()
-		quitmi = quitaction.create_menu_item()
-		
-		self.filemenu.append(openmi)
+		self.filemenu.append(openaction.create_menu_item())
 		self.filemenu.append(gtk.SeparatorMenuItem())
-		self.filemenu.append(quitmi)
+		self.filemenu.append(quitaction.create_menu_item())
 		
 		self.viewmenu = gtk.Menu()
 		self.menubar.view = gtk.MenuItem(_("View"))
 		self.menubar.view.set_submenu(self.viewmenu)
 		
+		scrollbars = self.viewmenu.scrollbars = gtk.Menu()
+		
+		scrollbarsmi = gtk.MenuItem(label=_("Scroll Bars"))
+		scrollbarsmi.set_submenu(scrollbars)
+		
+		scrollbars.append(noscrollbars.create_menu_item())
+		scrollbars.append(gtk.SeparatorMenuItem())
+		scrollbars.append(brscrollbars.create_menu_item())
+		scrollbars.append(trscrollbars.create_menu_item())
+		scrollbars.append(tlscrollbars.create_menu_item())
+		scrollbars.append(blscrollbars.create_menu_item())
+		
 		self.viewmenu.append(nextaction.create_menu_item())
 		self.viewmenu.append(prevaction.create_menu_item())
+		self.viewmenu.append(gtk.SeparatorMenuItem())
+		self.viewmenu.append(scrollbarsmi)
 		self.viewmenu.append(gtk.SeparatorMenuItem())
 		self.viewmenu.append(fullscreenaction.create_menu_item())
 		
@@ -168,7 +204,7 @@ class Pynorama:
 		
 			w, h = self.imageview.pixbuf.get_width(), self.imageview.pixbuf.get_height()		
 		
-			self.image.set_size_request(w, h)
+			#self.image.set_size_request(w, h)
 			self.size_label.set_text(_("%dx%d")  % (w, h))
 			self.readjust_view()
 					
@@ -244,6 +280,18 @@ class Pynorama:
 		gtk.main()
 	
 	# Events
+	def set_scrollbars(self, data=None):
+		placement = self.actions.get_action("no-scrollbars").get_current_value()
+		
+		if placement == -1:
+			self.imageview.get_hscrollbar().set_child_visible(False)
+			self.imageview.get_vscrollbar().set_child_visible(False)
+		else:
+			self.imageview.get_hscrollbar().set_child_visible(True)
+			self.imageview.get_vscrollbar().set_child_visible(True)
+			
+			self.imageview.set_placement(placement)
+			
 	def toggle_fullscreen(self, data=None):
 		fullscreenaction = self.actions.get_action("fullscreen")
 		

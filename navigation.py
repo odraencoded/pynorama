@@ -73,18 +73,12 @@ class MapNavigator:
 		imagevp.connect("motion_notify_event", self.motion)	
 			
 	def motion(self, widget, data=None):
-		x, y = data.x, data.y
-			
+		x, y = self.imageview.get_pointer()
+		rect = self.imageview.get_allocation()
+		
 		hadjust, vadjust = self.imageview.props.hadjustment, self.imageview.props.vadjustment
-		vx, vy = x - hadjust.props.value, y - vadjust.props.value
-		vw, vh = hadjust.props.page_size, vadjust.props.page_size
+		vw, vh = hadjust.props.upper - hadjust.props.page_size, vadjust.props.upper - vadjust.props.page_size
 		
-		rx, ry = (hadjust.props.upper - vw) - hadjust.props.lower, (vadjust.props.upper - vh) - vadjust.props.lower
-		
-		if vx > vw:
-			vx = vw
-
-		if vy > vh:
-			vy = vh
-			
-		hadjust.props.value, vadjust.props.value = int(float(vx) / vw * rx), int(float(vy) / vh * ry)
+		tx, ty = int(float(x) / rect.width * vw), int(float(y) / rect.height * vh)
+		print tx, ty
+		hadjust.props.value, vadjust.props.value = tx, ty
