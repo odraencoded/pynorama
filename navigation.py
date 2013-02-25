@@ -86,7 +86,5 @@ class MapNavigator:
 
 		if vy > vh:
 			vy = vh
-		
-		print vx, vh, rx
-		
+			
 		hadjust.props.value, vadjust.props.value = int(float(vx) / vw * rx), int(float(vy) / vh * ry)

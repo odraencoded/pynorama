@@ -8,7 +8,7 @@ import pygtk
 pygtk.require("2.0")
 import gtk, os, urllib
 from gettext import gettext as _
-import navigation, loading
+import navigation, loading, organization
 
 # Copy pasted utility, thanks Nikos :D
 def get_file_path_from_dnd_dropped_uri(uri):
@@ -28,6 +28,9 @@ def get_file_path_from_dnd_dropped_uri(uri):
 
 class Pynorama:
 	def __init__(self):
+		self.organizer = organization.Organizer()
+		self.current_image = None
+	
 		# Create Window
 		self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
 		self.window.set_title(_("Pynorama"))
@@ -53,17 +56,23 @@ class Pynorama:
 		self.statusbar = gtk.Statusbar()
 		
 		# With a label for the image size
-		self.sizelabel = gtk.Label()
-		self.sizelabel.set_alignment(1.0, 0.5)
-		self.statusbar.pack_end(self.sizelabel, False, False)
+		self.size_label = gtk.Label()
+		self.size_label.set_alignment(1.0, 0.5)
+		self.statusbar.pack_end(self.size_label, False, False)
 		
-		# Setup actions			
+		# Setup actions		
 		openaction = gtk.Action("open", _("Open..."), _("Open an image"), gtk.STOCK_OPEN)
 		openaction.connect("activate", self.file_open)
 		
 		quitaction = gtk.Action("quit", _("Quit"), _("Exit the program"), gtk.STOCK_QUIT)
 		quitaction.connect("activate", self.quit)
+			
+		prevaction = gtk.Action("previous", _("Previous"), _("Open the previous image"), gtk.STOCK_GO_BACK)
+		prevaction.connect("activate", self.goprevious)
 		
+		nextaction = gtk.Action("next", _("Next"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
+		nextaction.connect("activate", self.gonext)
+				
 		# Add a menu bar
 		self.menubar = gtk.MenuBar()
 		
@@ -78,12 +87,32 @@ class Pynorama:
 		self.filemenu.append(gtk.SeparatorMenuItem())
 		self.filemenu.append(quitmi)
 		
+		self.viewmenu = gtk.Menu()
+		self.menubar.view = gtk.MenuItem(_("View"))
+		self.menubar.view.set_submenu(self.viewmenu)
+		
+		nextmi = nextaction.create_menu_item()
+		prevmi = prevaction.create_menu_item()
+		
+		self.viewmenu.append(nextmi)
+		self.viewmenu.append(prevmi)
+		
 		self.menubar.append(self.menubar.file)
-				
+		self.menubar.append(self.menubar.view)
+		
+		# Add a toolbar
+		self.toolbar = gtk.Toolbar()
+		
+		self.toolbar.insert(openaction.create_tool_item(), -1)
+		self.toolbar.insert(gtk.SeparatorToolItem(), -1)
+		self.toolbar.insert(prevaction.create_tool_item(), -1)
+		self.toolbar.insert(nextaction.create_tool_item(), -1)
+		
 		# Put everything in a nice layout
 		vlayout = gtk.VBox()
 		
-		vlayout.pack_start(self.menubar, False, False)		
+		vlayout.pack_start(self.menubar, False, False)
+		vlayout.pack_start(self.toolbar, False, False)
 		vlayout.pack_start(self.imageview)
 		vlayout.pack_end(self.statusbar, False, False)
 		
@@ -108,36 +137,99 @@ class Pynorama:
 	def log(self, message):
 		self.statusbar.push(0, message)
 		print message
+		
+	# sets a image
+	def set_image(self, image):
+		if self.current_image == image:
+			return
+		
+		if self.current_image is not None:
+			self.current_image.unload()
 			
+		self.current_image = image
+		
+		if self.current_image is None:
+			self.window.set_title(_("Pynorama") % self.current_image.title)
+			self.size_label.set_text("")
+			self.imageview.pixbuf = None
+			
+		else:
+			try:
+				self.current_image.load()
+			except:
+				self.log(_("Could not load file \"%s\"")  % self.current_image.filename)
+				raise # Raise here for debugging purposes
+			
+			self.image.set_from_pixbuf(self.current_image.pixbuf)
+			self.imageview.pixbuf = self.current_image.pixbuf
+		
+			w, h = self.imageview.pixbuf.get_width(), self.imageview.pixbuf.get_height()		
+		
+			self.image.set_size_request(w, h)
+			self.size_label.set_text(_("%dx%d")  % (w, h))
+			self.readjust_view()
+					
+			self.window.set_title(_("\"%s\" - Pynorama") % self.current_image.title)
+			self.log(_("Loaded file \"%s\"")  % self.current_image.filename)
+			
+		return True
+	
 	# Attempt to load a file, returns false when it fails
-	def load(self, filename):
+	def open(self, filename):
 		if not os.path.exists(filename):
 			self.log(_("\"%\" does not exist.") % filename)
 			return False
 			
-		try:
-			os.path.dirname(filename)
-			self.image.set_from_file(filename)
-			self.imageview.pixbuf = self.pixbuf = self.image.get_pixbuf()
-			
-			w, h = self.pixbuf.get_width(), self.pixbuf.get_height()	
-			
-			self.image.set_size_request(w, h)
-			self.sizelabel.set_text(_("%dx%d")  % (w, h))
-			self.readjust_view()
-			
-			self.window.set_title(_("\"%s\" - Pynorama") % os.path.basename(filename))
-			
-			self.log(_("Loaded file \"%s\"")  % filename)
-		except:
-			self.log(_("Could not load file \"%s\"")  % filename)
-			raise # Raise here for debugging purposes
+		directory = os.path.dirname(filename)
+		dir_images = loading.get_files(directory)
 		
-		return True
+		# if the filename that triggered open() is a file
+		# Remove the same file from the list and add it to the start
+		was_file = os.path.isfile(filename)
+		
+		if was_file:
+			found_source_filename = False
+			for i in range(len(dir_images)):
+				if os.path.samefile(filename, dir_images[i]):
+					del dir_images[i]
+					dir_images.insert(0, filename)
+					found_source_filename = True
+					break
+			
+			# This is required since the source filename may not
+			# be discovered through loading.get_files
+			# e.g wrong extension / invalid file
+			if not found_source_filename:
+				dir_images.insert(0, filename)
+		
+		# Remove any previous images in the organizer
+		del self.organizer.images[:]
+		self.set_image(None)
+		
+		# This is where the images are loaded	
+		for a_filename in dir_images:
+			a_image = loading.ImageNode(a_filename)			
+			self.organizer.append(a_image)
+				
+		# Sort images
+		self.organizer.sort(organization.ImageSort.Filenames)
+		
+		trigger_image = None
+		if was_file:
+			trigger_image = self.organizer.find_image(filename)
+		
+		if len(self.organizer.images) > 0:
+			if trigger_image is None:	
+				trigger_image = self.organizer.images[0]
+				
+			return self.set_image(trigger_image)
+		else:
+			self.log(_("No files were loaded"))
+			return False
 	
 	# Adjusts the image to be on the top-center (so far)
 	def readjust_view(self):
-		w, h = self.pixbuf.get_width(), self.pixbuf.get_height()
+		w, h = self.imageview.pixbuf.get_width(), self.imageview.pixbuf.get_height()
 		vrect = self.imageview.get_allocation()
 		
 		hadjust, vadjust = self.imageview.get_hadjustment(), self.imageview.get_vadjustment()
@@ -149,6 +241,14 @@ class Pynorama:
 		gtk.main()
 	
 	# Events
+	def gonext(self, data=None):
+		if self.current_image and self.current_image.next:
+			self.set_image(self.current_image.next)
+		
+	def goprevious(self, data=None):
+		if self.current_image and self.current_image.previous:
+			self.set_image(self.current_image.previous)
+			
 	def dragged_data(self, widget, context, x, y, selection, target_type, timestamp):
 		uri = selection.data.strip('\r\n\x00')
 		uri_splitted = uri.split() # we may have more than one file dropped
@@ -160,7 +260,7 @@ class Pynorama:
 		
 		# Open only last dropped file
 		if dropped_paths:
-			self.load(dropped_paths[-1])
+			self.open(dropped_paths[-1])
 							
 	def file_open(self, widget, data=None):
 		# Create image choosing dialog
@@ -177,7 +277,7 @@ class Pynorama:
 			if image_chooser.run() == gtk.RESPONSE_OK:
 				filename = image_chooser.get_filename()
 				
-				self.load(filename)
+				self.open(filename)
 				
 		except:
 			# Nothing to handle here
@@ -208,7 +308,7 @@ if __name__ == "__main__":
 	
 	# --open is used to load files
 	if args.open:
-		app.load(args.open)
+		app.open(args.open)
 	
 	# Run app
 	app.run()

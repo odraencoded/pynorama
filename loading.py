@@ -4,10 +4,11 @@
 
 import pygtk
 pygtk.require("2.0")
-import gtk
+import gtk, os, re
 from gettext import gettext as _
 
 Filters = []
+Extensions = set()
 
 # Create "All Files" filter
 contradictory_filter = gtk.FileFilter()
@@ -40,6 +41,8 @@ for aformat in _formats:
 		format_filter.add_pattern(new_pattern)
 		images_filter.add_pattern(new_pattern)
 		
+		Extensions.add("." + an_extension)
+		
 		if first_ext:
 			filter_name += new_pattern
 		else:
@@ -51,3 +54,43 @@ for aformat in _formats:
 	format_filter.set_name(filter_name)
 	
 	Filters.append(format_filter)
+	
+class ImageNode:
+	def __init__(self, filename):
+		self.filename = filename
+		self.title = os.path.basename(filename)
+		self.pixbuf = self.previous = self.next = None
+		
+	def load(self, filename = None):
+		if filename is None:
+			if self.pixbuf is not None:
+				return
+		else:
+			self.filename = filename
+			self.title = os.path.basename(filename)
+			
+		self.pixbuf = gtk.gdk.pixbuf_new_from_file(self.filename)
+	
+	def cut_ties(self):
+		if self.next and self.next.previous is self:
+			self.next.previous = self.previous
+			
+		if self.previous and self.previous.next is self:
+			self.previous.next = self.next
+	
+	def unload(self):
+		self.pixbuf = None
+		
+def get_files(directory):
+	result = []
+
+	dirlist = os.listdir(directory)
+		
+	filepaths = [os.path.join(directory, filename) for filename in os.listdir(directory) if os.path.isfile(os.path.join(directory, filename))]
+	
+	for a_filepath in filepaths:
+		filename, fileext = os.path.splitext(a_filepath)
+		if fileext in Extensions:
+			result.append(a_filepath)
+			
+	return result
