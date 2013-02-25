@@ -95,7 +95,7 @@ class Pynorama:
 		
 		self.viewmenu.append(nextaction.create_menu_item())
 		self.viewmenu.append(prevaction.create_menu_item())
-		self.filemenu.append(gtk.SeparatorMenuItem())
+		self.viewmenu.append(gtk.SeparatorMenuItem())
 		self.viewmenu.append(fullscreenaction.create_menu_item())
 		
 		self.menubar.append(self.menubar.file)
