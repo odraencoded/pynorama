@@ -86,11 +86,12 @@ class Pynorama:
 			self.image.set_from_file(filename)
 			self.pixbuf = self.image.get_pixbuf()
 			
-			w, h = self.pixbuf.get_width(), self.pixbuf.get_height()
+			w, h = self.pixbuf.get_width(), self.pixbuf.get_height()	
 			
 			self.image.set_size_request(w, h)
-			
 			self.sizelabel.set_text(_("%dx%d")  % (w, h))
+			self.readjust_view()
+			
 			self.window.set_title(_("\"%s\" - Pynorama") % os.path.basename(filename))
 			
 			self.log(_("Loaded file \"%s\"")  % filename)
@@ -99,6 +100,14 @@ class Pynorama:
 			raise # Raise here for debugging purposes
 		
 		return True
+	
+	# Adjusts the image to be on the top-center (so far)
+	def readjust_view(self):
+		w, h = self.pixbuf.get_width(), self.pixbuf.get_height()
+		vrect = self.imageview.get_allocation()
+		
+		self.imageview.get_hadjustment().set_value(w // 2 - vrect.width // 2)
+		self.imageview.get_vadjustment().set_value(0)
 	
 	def run(self):
 		gtk.main()
