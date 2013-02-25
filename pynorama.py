@@ -6,10 +6,25 @@
 
 import pygtk
 pygtk.require("2.0")
-import gtk, os
+import gtk, os, urllib
 from gettext import gettext as _
 import loading
 
+# Copy pasted utility, thanks Nikos :D
+def get_file_path_from_dnd_dropped_uri(uri):
+		# get the path to file
+		path = ""
+		if uri.startswith('file:\\\\\\'): # windows
+			path = uri[8:] # 8 is len('file:///')
+		elif uri.startswith('file://'): # nautilus, rox
+			path = uri[7:] # 7 is len('file://')
+		elif uri.startswith('file:'): # xffm
+			path = uri[5:] # 5 is len('file:')
+
+		path = urllib.url2pathname(path) # escape special chars
+		path = path.strip('\r\n\x00') # remove \r\n and NULL
+
+		return path
 
 class Pynorama:
 	def __init__(self):
@@ -66,6 +81,14 @@ class Pynorama:
 		
 		# Connect events
 		self.window.connect("destroy", self._window_destroyed)
+		self.imageview.connect("drag_data_received", self.dragged_data)
+		
+		# Complicated looking DnD setup
+		self.imageview.drag_dest_set(
+			gtk.DEST_DEFAULT_MOTION | gtk.DEST_DEFAULT_HIGHLIGHT | gtk.DEST_DEFAULT_DROP,
+			[("text/uri-list", 0, 80)],  
+			gtk.gdk.ACTION_COPY)
+		
 		
 		# Make everything visible
 		self.window.show_all()
@@ -113,6 +136,19 @@ class Pynorama:
 		gtk.main()
 	
 	# Events
+	def dragged_data(self, widget, context, x, y, selection, target_type, timestamp):
+		uri = selection.data.strip('\r\n\x00')
+		uri_splitted = uri.split() # we may have more than one file dropped
+		
+		dropped_paths = []
+		for uri in uri_splitted:
+			path = get_file_path_from_dnd_dropped_uri(uri)
+			dropped_paths.append(path)
+		
+		# Open only last dropped file
+		if dropped_paths:
+			self.load(dropped_paths[-1])
+							
 	def file_open(self, widget, data=None):
 		# Create image choosing dialog
 		image_chooser = gtk.FileChooserDialog(title = _("Open Image..."), action = gtk.FILE_CHOOSER_ACTION_OPEN,
