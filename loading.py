@@ -77,7 +77,9 @@ class ImageNode:
 			
 		if self.previous and self.previous.next is self:
 			self.previous.next = self.next
-	
+		
+		self.previous = self.next = None
+		
 	def unload(self):
 		self.pixbuf = None
 		

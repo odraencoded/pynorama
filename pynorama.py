@@ -30,26 +30,17 @@ class Pynorama:
 	def __init__(self):
 		self.organizer = organization.Organizer()
 		self.current_image = None
-	
+		
 		# Create Window
 		self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
+		self.window.set_default_size(600, 600)
 		self.window.set_title(_("Pynorama"))
 		
 		# Create image and a scrolled window for it
 		self.image = gtk.Image()
 		self.imageview = gtk.ScrolledWindow()
-		self.imageview.set_size_request(600, 600)
 			
 		self.imageview.add_with_viewport(self.image)
-		self.imageview.props.hadjustment.props.step_increment = 1
-		self.imageview.props.vadjustment.props.step_increment = 1
-		
-		self.imageview.get_vscrollbar().props.adjustment.props.step_increment = 1
-		self.imageview.get_hscrollbar().props.adjustment.props.step_increment = 1
-		
-		self.imageview.get_child().props.hadjustment.props.step_increment = 1
-		self.imageview.get_child().props.vadjustment.props.step_increment = 1
-		
 		self.imageview.pixbuf = self.pixbuf = None
 		
 		# Add a status bar
@@ -60,7 +51,9 @@ class Pynorama:
 		self.size_label.set_alignment(1.0, 0.5)
 		self.statusbar.pack_end(self.size_label, False, False)
 		
-		# Setup actions		
+		# Setup actions
+		self.actions = gtk.ActionGroup("pynorama")
+		
 		openaction = gtk.Action("open", _("Open..."), _("Open an image"), gtk.STOCK_OPEN)
 		openaction.connect("activate", self.file_open)
 		
@@ -72,7 +65,16 @@ class Pynorama:
 		
 		nextaction = gtk.Action("next", _("Next"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
 		nextaction.connect("activate", self.gonext)
-				
+		
+		fullscreenaction = gtk.ToggleAction("fullscreen", _("Fullscreen"), _("Fill the entire screen"), gtk.STOCK_FULLSCREEN)
+		fullscreenaction.connect("toggled", self.toggle_fullscreen)
+		
+		self.actions.add_action(openaction)
+		self.actions.add_action(quitaction)
+		self.actions.add_action(prevaction)
+		self.actions.add_action(nextaction)
+		self.actions.add_action(fullscreenaction)
+		
 		# Add a menu bar
 		self.menubar = gtk.MenuBar()
 		
@@ -91,11 +93,10 @@ class Pynorama:
 		self.menubar.view = gtk.MenuItem(_("View"))
 		self.menubar.view.set_submenu(self.viewmenu)
 		
-		nextmi = nextaction.create_menu_item()
-		prevmi = prevaction.create_menu_item()
-		
-		self.viewmenu.append(nextmi)
-		self.viewmenu.append(prevmi)
+		self.viewmenu.append(nextaction.create_menu_item())
+		self.viewmenu.append(prevaction.create_menu_item())
+		self.filemenu.append(gtk.SeparatorMenuItem())
+		self.viewmenu.append(fullscreenaction.create_menu_item())
 		
 		self.menubar.append(self.menubar.file)
 		self.menubar.append(self.menubar.view)
@@ -107,6 +108,8 @@ class Pynorama:
 		self.toolbar.insert(gtk.SeparatorToolItem(), -1)
 		self.toolbar.insert(prevaction.create_tool_item(), -1)
 		self.toolbar.insert(nextaction.create_tool_item(), -1)
+		self.toolbar.insert(gtk.SeparatorToolItem(), -1)
+		self.toolbar.insert(fullscreenaction.create_tool_item(), -1)
 		
 		# Put everything in a nice layout
 		vlayout = gtk.VBox()
@@ -241,6 +244,14 @@ class Pynorama:
 		gtk.main()
 	
 	# Events
+	def toggle_fullscreen(self, data=None):
+		fullscreenaction = self.actions.get_action("fullscreen")
+		
+		if fullscreenaction.props.active:
+			self.window.fullscreen()
+		else:
+			self.window.unfullscreen()
+	
 	def gonext(self, data=None):
 		if self.current_image and self.current_image.next:
 			self.set_image(self.current_image.next)
