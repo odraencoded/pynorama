@@ -90,29 +90,3 @@ class MapNavigator:
 		print vx, vh, rx
 		
 		hadjust.props.value, vadjust.props.value = int(float(vx) / vw * rx), int(float(vy) / vh * ry)
-		'''
-		if self.imageview.pixbuf and self.sliding:
-			dx, dy = x - self.last_step[0], y - self.last_step[1]
-			hadjust, vadjust = self.imageview.props.hadjustment, self.imageview.props.vadjustment
-			
-			if (dx or dy):
-				nx = hadjust.props.value + dx
-				if nx > hadjust.props.upper - hadjust.props.page_size:
-					nx = hadjust.props.upper - hadjust.props.page_size
-					
-				ny = vadjust.props.value + dy;
-				if ny > vadjust.props.upper - vadjust.props.page_size:
-					ny = vadjust.props.upper - vadjust.props.page_size
-				px = hadjust.props.value
-				hadjust.props.value = nx
-				dx = hadjust.props.value - px
-				
-				py = vadjust.props.value
-				vadjust.props.value = ny
-				dy = vadjust.props.value - py
-				
-				# Updates last step using the previous x, y and the change in adjustment
-				self.last_step = (x + dx, y + dy)
-		else:
-			self.sliding = True
-			self.last_step = (x, y)'''
