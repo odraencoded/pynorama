@@ -158,7 +158,7 @@ class Pynorama(object):
 		self.window.add(vlayout)
 		
 		# Connect events
-		self.window.connect("destroy", self._window_destroyed)			
+		self.window.connect("destroy", self._window_destroyed)
 		self.navigator = navigation.MapNavigator(self.imageview)
 		
 		# Complicated looking DnD setup
@@ -278,7 +278,7 @@ class Pynorama(object):
 	def run(self):
 		gtk.main()
 	
-	# Events
+	# Events		
 	def set_scrollbars(self, data=None):
 		placement = self.actions.get_action("no-scrollbars").get_current_value()
 		

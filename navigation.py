@@ -79,8 +79,19 @@ class MapNavigator:
 		imagevp.set_events(imagevp.get_events() | 
 			gtk.gdk.POINTER_MOTION_MASK |
 			gtk.gdk.POINTER_MOTION_HINT_MASK)
-			
+		
+		if imagevp.get_realized():
+			self.realize_handle_id = None
+			self.set_cursor(None, imagevp)
+		else:
+			self.realize_handle_id = imagevp.connect("realize", self.set_cursor, imagevp)
+		
 		imagevp.connect("motion_notify_event", self.motion)	
+	
+	def set_cursor(self, data=None, imagevp=None):
+		imagevp.window.set_cursor(gtk.gdk.Cursor(gtk.gdk.CROSSHAIR))
+		if self.realize_handle_id is not None:
+			imagevp.disconnect(self.realize_handle_id)
 	
 	def get_scalar_rectangle(self):
 		allocation = self.imageview.get_allocation()
