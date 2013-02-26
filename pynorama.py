@@ -6,7 +6,7 @@
 
 import pygtk
 pygtk.require("2.0")
-import gtk, os, urllib
+import gtk, os, urllib, math
 from gettext import gettext as _
 import navigation, loading, organization
 
@@ -42,6 +42,8 @@ class Pynorama(object):
 		self.imageview = gtk.ScrolledWindow()
 		self.imageview.add_with_viewport(self.image)
 		self.imageview.pixbuf =  None
+		self.imageview.magnification = 0
+		self.imageview.interpolation = gtk.gdk.INTERP_NEAREST
 		
 		# Add a status bar
 		self.statusbar = gtk.Statusbar()
@@ -88,11 +90,23 @@ class Pynorama(object):
 		fullscreenaction = gtk.ToggleAction("fullscreen", _("Fullscreen"), _("Fill the entire screen"), gtk.STOCK_FULLSCREEN)
 		fullscreenaction.connect("toggled", self.toggle_fullscreen)
 		
+		zoominaction = gtk.Action("in-zoom", _("Zoom In"), _("Makes the image look larger"), gtk.STOCK_ZOOM_IN)
+		zoomoutaction = gtk.Action("out-zoom", _("Zoom Out"), _("Makes the image look smaller"), gtk.STOCK_ZOOM_OUT)
+		nozoomaction = gtk.Action("no-zoom", _("No Zoom"), _("Makes the image look normal"), gtk.STOCK_ZOOM_100)
+		
+		nozoomaction.connect("activate", self.reset_zoom)
+		zoominaction.connect("activate", self.change_zoom, 1)
+		zoomoutaction.connect("activate", self.change_zoom, -1)
+		
 		self.actions.add_action(openaction)
 		self.actions.add_action(quitaction)
 		self.actions.add_action(prevaction)
 		self.actions.add_action(nextaction)
 		self.actions.add_action(fullscreenaction)
+		
+		self.actions.add_action(nozoomaction)
+		self.actions.add_action(zoominaction)
+		self.actions.add_action(zoomoutaction)
 		
 		self.actions.add_action(noscrollbars)
 		self.actions.add_action(brscrollbars)
@@ -141,9 +155,16 @@ class Pynorama(object):
 		self.toolbar = gtk.Toolbar()
 		
 		self.toolbar.insert(openaction.create_tool_item(), -1)
+		
 		self.toolbar.insert(gtk.SeparatorToolItem(), -1)
 		self.toolbar.insert(prevaction.create_tool_item(), -1)
 		self.toolbar.insert(nextaction.create_tool_item(), -1)
+		
+		self.toolbar.insert(gtk.SeparatorToolItem(), -1)
+		self.toolbar.insert(zoomoutaction.create_tool_item(), -1)
+		self.toolbar.insert(zoominaction.create_tool_item(), -1)
+		self.toolbar.insert(nozoomaction.create_tool_item(), -1)
+		
 		self.toolbar.insert(gtk.SeparatorToolItem(), -1)
 		self.toolbar.insert(fullscreenaction.create_tool_item(), -1)
 		
@@ -198,20 +219,51 @@ class Pynorama(object):
 				self.log(_("Could not load file \"%s\"")  % self.current_image.filename)
 				raise # Raise here for debugging purposes
 			
-			self.image.set_from_pixbuf(self.current_image.pixbuf)
-			self.imageview.pixbuf = self.current_image.pixbuf
-		
-			w, h = self.imageview.pixbuf.get_width(), self.imageview.pixbuf.get_height()		
-		
-			#self.image.set_size_request(w, h)
-			self.size_label.set_text(_("%dx%d")  % (w, h))
+			self.reset_pixbuf()
 			self.readjust_view()
 					
 			self.window.set_title(_("\"%s\" - Pynorama") % self.current_image.title)
 			self.log(_("Loaded file \"%s\"")  % self.current_image.filename)
 			
 		return True
-	
+		
+	def set_zoom(self, value):
+		self.imageview.magnification = value		
+		self.reset_pixbuf()
+		
+	def reset_pixbuf(self):
+		self.size_label.set_text("")
+		if not self.current_image:
+			return
+		
+		if self.current_image.pixbuf is None:
+			try:
+				self.current_image.load()
+			except:
+				self.log("Could not load image pixbuf")
+				return
+			
+		pixbuf = self.current_image.pixbuf
+		
+		w, h = pixbuf.get_width(), pixbuf.get_height()
+		
+		if self.imageview.magnification != 0:
+			zoom = 2 ** self.imageview.magnification
+			
+			if self.imageview.magnification > 0:
+				self.size_label.set_text(_("%dx%dx%d")  % (w, h, zoom))
+			else:
+				self.size_label.set_text(_("%dx%d:%d")  % (w, h, 1.0 / zoom))
+			
+			w, h = int(math.ceil(pixbuf.get_width() * zoom)), int(math.ceil(pixbuf.get_height() * zoom))
+			
+			pixbuf = self.current_image.pixbuf.scale_simple(w, h, self.imageview.interpolation)
+		else:
+			self.size_label.set_text(_("%dx%d")  % (w, h))
+					
+		self.image.set_from_pixbuf(pixbuf)
+		self.imageview.pixbuf = pixbuf
+		
 	# Attempt to load a file, returns false when it fails
 	def open(self, filename):
 		if not os.path.exists(filename):
@@ -274,11 +326,17 @@ class Pynorama(object):
 		
 		hadjust.set_value(w // 2 - vrect.width // 2)
 		vadjust.set_value(0)
-	
+		
 	def run(self):
 		gtk.main()
 	
-	# Events		
+	# Events
+	def change_zoom(self, data=None, change=0):
+		self.set_zoom(self.imageview.magnification + change)
+		
+	def reset_zoom(self, data=None):
+		self.set_zoom(0)
+		
 	def set_scrollbars(self, data=None):
 		placement = self.actions.get_action("no-scrollbars").get_current_value()
 		
