@@ -21,19 +21,20 @@ class Organizer:
 		self.images.append(image)
 		
 	def sort(self, comparer, reverse=False):
+		if len(self.images) == 0:
+			return
+			
 		# Sorts list
 		self.images = sorted(self.images, cmp=comparer, reverse=reverse)
 		
-		# Refreshse next/previous links
-		first_image = previous_image = None
-		for a_image in self.images:
-			if first_image is None:
-				first_image = a_image
-				
+		# Refreshes next/previous links
+		first_image = self.images[0]
+		previous_image = self.images[-1]
+		for a_image in self.images:				
 			if previous_image:
 				previous_image.next = a_image
 			
-			a_image.next = first_image	
+			a_image.next = first_image
 			a_image.previous = previous_image
 			previous_image = a_image
 	
