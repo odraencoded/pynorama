@@ -185,10 +185,9 @@ class Pynorama(object):
 		if self.current_image is not None:
 			self.current_image.unload()
 			
-		self.current_image = image
-		
-		if self.current_image is None:
-			self.window.set_title(_("Pynorama") % self.current_image.title)
+		self.current_image = image	
+		if self.current_image is None:	
+			self.window.set_title(_("Pynorama"))
 			self.size_label.set_text("")
 			self.imageview.pixbuf = None
 			
