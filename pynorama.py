@@ -31,13 +31,13 @@ def get_file_path_from_dnd_dropped_uri(uri):
 class Pynorama(object):
 	def __init__(self):
 		self.organizer = organization.Organizer()
-		self.current_image = None
+		self.current_image = None	
 		
 		# Create Window
 		self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
 		self.window.set_default_size(600, 600)
 		self.window.set_title(_("Pynorama"))
-		
+						
 		# Create image and a scrolled window for it
 		self.image = gobject.new(xImage)
 		self.image.connect("updated_pixbuf", self.refresh_size)
@@ -53,22 +53,74 @@ class Pynorama(object):
 		self.size_label = gtk.Label()
 		self.size_label.set_alignment(1.0, 0.5)
 		self.statusbar.pack_end(self.size_label, False, False)
+		self.refresh_size()
 		
 		# Setup actions
-		self.actions = gtk.ActionGroup("pynorama")
+		self.manager = gtk.UIManager()
+		self.accelerators = self.manager.get_accel_group()
+		self.window.add_accel_group(self.accelerators)
 		
-		openaction = gtk.Action("open", _("Open..."), _("Open an image"), gtk.STOCK_OPEN)
+		self.actions = gtk.ActionGroup("pynorama")
+		self.manager.insert_action_group(self.actions)	
+		
+		filemenu = gtk.Action("file", _("_File"), None, None)		
+				
+		openaction = gtk.Action("open", _("_Open..."), _("Open an image"), gtk.STOCK_OPEN)
 		openaction.connect("activate", self.file_open)
 		
-		quitaction = gtk.Action("quit", _("Quit"), _("Exit the program"), gtk.STOCK_QUIT)
-		quitaction.connect("activate", self.quit)
-			
-		prevaction = gtk.Action("previous", _("Previous"), _("Open the previous image"), gtk.STOCK_GO_BACK)
+		prevaction = gtk.Action("previous", _("Pr_evious Image"), _("Open the previous image"), gtk.STOCK_GO_BACK)
 		prevaction.connect("activate", self.goprevious)
+		prevaction.set_sensitive(False)
 		
-		nextaction = gtk.Action("next", _("Next"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
+		nextaction = gtk.Action("next", _("Nex_t Image"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
 		nextaction.connect("activate", self.gonext)
+		nextaction.set_sensitive(False)
+		
+		quitaction = gtk.Action("quit", _("_Quit"), _("Exit the program"), gtk.STOCK_QUIT)
+		quitaction.connect("activate", self.quit)
+		
+		# These actions are actual actions, not options.
+		viewmenu = gtk.Action("view", _("_View"), None, None)
+		
+		zoominaction = gtk.Action("in-zoom", _("Zoom _In"), _("Makes the image look larger"), gtk.STOCK_ZOOM_IN)
+		zoomoutaction = gtk.Action("out-zoom", _("Zoom _Out"), _("Makes the image look smaller"), gtk.STOCK_ZOOM_OUT)
+		nozoomaction = gtk.Action("no-zoom", _("No _Zoom"), _("Makes the image look normal"), gtk.STOCK_ZOOM_100)
+		
+		nozoomaction.connect("activate", self.reset_zoom)
+		zoominaction.connect("activate", self.change_zoom, 1)
+		zoomoutaction.connect("activate", self.change_zoom, -1)
+		
+		transformmenu = gtk.Action("transform", _("_Transform"), None, None)
+		rotatecwaction = gtk.Action("cw-rotate", _("Rotate Clockwis_e"), _("Turns the image top side to the right side"), -1)
+		rotateccwaction = gtk.Action("ccw-rotate", _("Rotate Counter Clock_wise"), _("Turns the image top side to the left side"), -1)
+		
+		rotatecwaction.connect("activate", self.rotate, 90)
+		rotateccwaction.connect("activate", self.rotate, -90)
+		
+		fliphorizontalaction = gtk.Action("h-flip", _("Flip _Horizontally"), _("Inverts the left and right sides of the image"), -1)
+		flipverticalaction = gtk.Action("v-flip", _("Flip _Vertically"), _("Inverts the top and bottom sides of the image"), -1)
+		
+		flipverticalaction.connect("activate", self.flip, False)
+		fliphorizontalaction.connect("activate", self.flip, True)
 				
+		# Choices for pixel interpolation
+		interpolationmenu = gtk.Action("interpolation", _("Inter_polation"), None, None)
+		
+		interpnearestaction = gtk.RadioAction("nearest-interp", _("_Nearest Neighbour"), _(""), -1, gtk.gdk.INTERP_NEAREST)
+		interptilesaction = gtk.RadioAction("tiles-interp", _("Parallelo_gram Tiles"), _(""), -1, gtk.gdk.INTERP_TILES)
+		interpbilinearaction = gtk.RadioAction("bilinear-interp", _("_Bilinear Function"), _(""), -1, gtk.gdk.INTERP_BILINEAR)
+		interphyperaction = gtk.RadioAction("hyper-interp", _("_Hyperbolic Function"), _(""), -1, gtk.gdk.INTERP_HYPER)
+		
+		interptilesaction.set_group(interpnearestaction)
+		interpbilinearaction.set_group(interpnearestaction)
+		interphyperaction.set_group(interpnearestaction)
+		
+		interpnearestaction.set_current_value(self.image.interpolation)
+		interpnearestaction.connect("changed", self.change_interp)
+		
+		# This is a very original part of the entire program
+		scrollbarsmenu = gtk.Action("scrollbars", _("_Scrollbars"), None, None)
+		
 		noscrollbars = gtk.RadioAction("no-scrollbars", _("No Scroll Bars"), _("Hide scroll bars"), -1, -1)
 		brscrollbars = gtk.RadioAction("br-scrollbars", _("At Bottom Right"), _("Show scroll bars at the bottom right corner"), -1, gtk.CORNER_TOP_LEFT)
 		trscrollbars = gtk.RadioAction("tr-scrollbars", _("At Top Right"), _("Show scroll bars at the top right corner"), -1, gtk.CORNER_BOTTOM_LEFT)
@@ -86,155 +138,52 @@ class Pynorama(object):
 		fullscreenaction = gtk.ToggleAction("fullscreen", _("Fullscreen"), _("Fill the entire screen"), gtk.STOCK_FULLSCREEN)
 		fullscreenaction.connect("toggled", self.toggle_fullscreen)
 		
-		# These actions are actual actions, not options.
-		zoominaction = gtk.Action("in-zoom", _("Zoom In"), _("Makes the image look larger"), gtk.STOCK_ZOOM_IN)
-		zoomoutaction = gtk.Action("out-zoom", _("Zoom Out"), _("Makes the image look smaller"), gtk.STOCK_ZOOM_OUT)
-		nozoomaction = gtk.Action("no-zoom", _("No Zoom"), _("Makes the image look normal"), gtk.STOCK_ZOOM_100)
-		
-		nozoomaction.connect("activate", self.reset_zoom)
-		zoominaction.connect("activate", self.change_zoom, 1)
-		zoomoutaction.connect("activate", self.change_zoom, -1)
-		
-		rotatecwaction = gtk.Action("cw-rotate", _("Rotate Clockwise"), _("Turns the image top side to the right side"), -1)
-		rotateccwaction = gtk.Action("ccw-rotate", _("Rotate Counter Clockwise"), _("Turns the image top side to the left side"), -1)
-		
-		rotatecwaction.connect("activate", self.rotate, 90)
-		rotateccwaction.connect("activate", self.rotate, -90)
-		
-		fliphorizontalaction = gtk.Action("h-flip", _("Flip Horizontally"), _("Inverts the left and right sides of the image"), -1)
-		flipverticalaction = gtk.Action("v-flip", _("Flip Vertically"), _("Inverts the top and bottom sides of the image"), -1)
-		
-		flipverticalaction.connect("activate", self.flip, False)
-		fliphorizontalaction.connect("activate", self.flip, True)
-		
-		# Choices for pixel interpolation
-		interpnearestaction = gtk.RadioAction("nearest-interp", _("Nearest Neighbour"), _(""), -1, gtk.gdk.INTERP_NEAREST)
-		interptilesaction = gtk.RadioAction("tiles-interp", _("Parallelogram Tiles"), _(""), -1, gtk.gdk.INTERP_TILES)
-		interpbilinearaction = gtk.RadioAction("bilinear-interp", _("Bilinear Function"), _(""), -1, gtk.gdk.INTERP_BILINEAR)
-		interphyperaction = gtk.RadioAction("hyper-interp", _("Hyperbolic Function"), _(""), -1, gtk.gdk.INTERP_HYPER)
-		
-		interptilesaction.set_group(interpnearestaction)
-		interpbilinearaction.set_group(interpnearestaction)
-		interphyperaction.set_group(interpnearestaction)
-		
-		interpnearestaction.set_current_value(self.image.interpolation)
-		interpnearestaction.connect("changed", self.change_interp)
-		
 		# Add to the action group
 		# ALL the actions!
-		self.actions.add_action(openaction)
-		self.actions.add_action(quitaction)
-		self.actions.add_action(prevaction)
-		self.actions.add_action(nextaction)
-		self.actions.add_action(fullscreenaction)
+		self.actions.add_action(filemenu)
 		
-		self.actions.add_action(nozoomaction)
-		self.actions.add_action(zoominaction)
-		self.actions.add_action(zoomoutaction)
+		self.actions.add_action_with_accel(openaction, None)
+
+		self.actions.add_action_with_accel(prevaction, "Page_Up")
+		self.actions.add_action_with_accel(nextaction, "Page_Down")
+				
+		self.actions.add_action_with_accel(quitaction, None)
 		
-		self.actions.add_action(noscrollbars)
-		self.actions.add_action(brscrollbars)
-		self.actions.add_action(blscrollbars)
-		self.actions.add_action(tlscrollbars)
-		self.actions.add_action(trscrollbars)
+		self.actions.add_action(viewmenu)
+		self.actions.add_action_with_accel(nozoomaction, "space")
+		self.actions.add_action_with_accel(zoominaction, "KP_Add")
+		self.actions.add_action_with_accel(zoomoutaction, "KP_Subtract")
 		
-		self.actions.add_action(rotatecwaction)
-		self.actions.add_action(rotateccwaction)
+		self.actions.add_action(transformmenu)
+		self.actions.add_action_with_accel(rotatecwaction, "R")
+		self.actions.add_action_with_accel(rotateccwaction, "<Ctrl>R")
+		
+		self.actions.add_action_with_accel(fliphorizontalaction, "F")
+		self.actions.add_action_with_accel(flipverticalaction, "<Ctrl>F")
+		
+		self.actions.add_action(interpolationmenu)
 		
 		self.actions.add_action(interpnearestaction)
 		self.actions.add_action(interptilesaction)
 		self.actions.add_action(interpbilinearaction)
 		self.actions.add_action(interphyperaction)
 		
-		# Add a menu bar
-		self.menubar = gtk.MenuBar()
+		self.actions.add_action(scrollbarsmenu)
+		self.actions.add_action(noscrollbars)
+		self.actions.add_action(brscrollbars)
+		self.actions.add_action(blscrollbars)
+		self.actions.add_action(tlscrollbars)
+		self.actions.add_action(trscrollbars)
 		
-		self.filemenu = gtk.Menu()
-		self.menubar.file = gtk.MenuItem(_("File"))
-		self.menubar.file.set_submenu(self.filemenu)
+		self.actions.add_action_with_accel(fullscreenaction, "F4")
 		
-		self.filemenu.append(openaction.create_menu_item())
-		self.filemenu.append(gtk.SeparatorMenuItem())
-		self.filemenu.append(quitaction.create_menu_item())
-		
-		self.viewmenu = gtk.Menu()
-		self.menubar.view = gtk.MenuItem(_("View"))
-		self.menubar.view.set_submenu(self.viewmenu)
-		
-		# Transform submenu
-		transform = self.viewmenu.scrollbars = gtk.Menu()
-		
-		transformmi = gtk.MenuItem(label=_("Transform"))
-		transformmi.set_submenu(transform)
-		
-		transform.append(rotatecwaction.create_menu_item())
-		transform.append(rotateccwaction.create_menu_item())
-		transform.append(gtk.SeparatorMenuItem())
-		transform.append(fliphorizontalaction.create_menu_item())
-		transform.append(flipverticalaction.create_menu_item())
-		
-		# Interpolation submenu
-		interpolations = self.viewmenu.scrollbars = gtk.Menu()
-		
-		interpolationsmi = gtk.MenuItem(label=_("Pixel Interpolation"))
-		interpolationsmi.set_submenu(interpolations)
-		
-		interpolations.append(interpnearestaction.create_menu_item())
-		interpolations.append(interptilesaction.create_menu_item())
-		interpolations.append(interpbilinearaction.create_menu_item())
-		interpolations.append(interphyperaction.create_menu_item())
-		
-		# Scroll bars submenu
-		scrollbars = self.viewmenu.scrollbars = gtk.Menu()
-		
-		scrollbarsmi = gtk.MenuItem(label=_("Scroll Bars"))
-		scrollbarsmi.set_submenu(scrollbars)
-		
-		scrollbars.append(noscrollbars.create_menu_item())
-		scrollbars.append(gtk.SeparatorMenuItem())
-		scrollbars.append(brscrollbars.create_menu_item())
-		scrollbars.append(trscrollbars.create_menu_item())
-		scrollbars.append(tlscrollbars.create_menu_item())
-		scrollbars.append(blscrollbars.create_menu_item())
-		
-		self.viewmenu.append(nextaction.create_menu_item())
-		self.viewmenu.append(prevaction.create_menu_item())
-		
-		self.viewmenu.append(gtk.SeparatorMenuItem())
-		self.viewmenu.append(nozoomaction.create_menu_item())		
-		self.viewmenu.append(zoominaction.create_menu_item())
-		self.viewmenu.append(zoomoutaction.create_menu_item())
-		self.viewmenu.append(transformmi)
-		self.viewmenu.append(interpolationsmi)
-		
-		self.viewmenu.append(gtk.SeparatorMenuItem())
-		self.viewmenu.append(scrollbarsmi)
-		self.viewmenu.append(gtk.SeparatorMenuItem())
-		self.viewmenu.append(fullscreenaction.create_menu_item())
-		
-		self.menubar.append(self.menubar.file)
-		self.menubar.append(self.menubar.view)
-		
-		# Add a toolbar
-		self.toolbar = gtk.Toolbar()
-		
-		self.toolbar.insert(openaction.create_tool_item(), -1)
-		
-		self.toolbar.insert(gtk.SeparatorToolItem(), -1)
-		self.toolbar.insert(prevaction.create_tool_item(), -1)
-		self.toolbar.insert(nextaction.create_tool_item(), -1)
-		
-		self.toolbar.insert(gtk.SeparatorToolItem(), -1)
-		self.toolbar.insert(zoomoutaction.create_tool_item(), -1)
-		self.toolbar.insert(zoominaction.create_tool_item(), -1)
-		self.toolbar.insert(nozoomaction.create_tool_item(), -1)
-		
-		self.toolbar.insert(gtk.SeparatorToolItem(), -1)
-		self.toolbar.insert(fullscreenaction.create_tool_item(), -1)
+		self.manager.add_ui_from_file("viewer.xml")
 		
 		# Put everything in a nice layout
 		vlayout = gtk.VBox()
 		
+		self.menubar = self.manager.get_widget("/menubar")
+		self.toolbar = self.manager.get_widget("/toolbar")
 		vlayout.pack_start(self.menubar, False, False)
 		vlayout.pack_start(self.toolbar, False, False)
 		vlayout.pack_start(self.imageview)
@@ -269,12 +218,18 @@ class Pynorama(object):
 		
 		if self.current_image is not None:
 			self.current_image.unload()
+		else:
+			self.actions.get_action("previous").set_sensitive(True)
+			self.actions.get_action("next").set_sensitive(True)
 			
 		self.current_image = image	
-		if self.current_image is None:	
+		if self.current_image is None:			
 			self.window.set_title(_("Pynorama"))
 			self.size_label.set_text("")
 			self.imageview.pixbuf = None
+			
+			self.actions.get_action("previous").set_sensitive(False)
+			self.actions.get_action("next").set_sensitive(False)
 			
 		else:
 			try:
@@ -294,40 +249,6 @@ class Pynorama(object):
 			self.log(_("Loaded file \"%s\"")  % self.current_image.filename)
 			
 		return True
-		
-	def reset_pixbuf(self):
-		self.size_label.set_text("")
-		if not self.current_image:
-			return
-		
-		if self.current_image.pixbuf is None:
-			try:
-				self.current_image.load()
-			except:
-				self.log("Could not load image pixbuf")
-				raise
-			
-		pixbuf = self.current_image.pixbuf
-		
-		w, h = pixbuf.get_width(), pixbuf.get_height()
-		
-		if self.imageview.magnification != 0:
-			zoom = 2 ** self.imageview.magnification
-			
-			if self.imageview.magnification > 0:
-				self.size_label.set_text(_("%dx%dx%d")  % (w, h, zoom))
-			else:
-				self.size_label.set_text(_("%dx%d:%d")  % (w, h, 1.0 / zoom))
-			
-			w, h = int(math.ceil(pixbuf.get_width() * zoom)), int(math.ceil(pixbuf.get_height() * zoom))
-			
-			pixbuf = self.current_image.pixbuf.scale_simple(w, h, self.imageview.interpolation)
-		else:
-			self.size_label.set_text(_("%dx%d")  % (w, h))
-					
-		self.image.source = pixbuf
-		self.imageview.pixbuf = pixbuf
-		self.image.refresh_pixbuf()
 		
 	# Attempt to load a file, returns false when it fails
 	def open(self, filename):
@@ -384,12 +305,16 @@ class Pynorama(object):
 	
 	# Adjusts the image to be on the top-center (so far)
 	def readjust_view(self):		
-		hadjust, vadjust = self.imageview.get_hadjustment(), self.imageview.get_vadjustment()
-		
-		w, h = hadjust.props.upper - hadjust.props.page_size, vadjust.props.upper - vadjust.props.page_size
+		if self.image.pixbuf:
+			w, h = self.image.pixbuf.get_width(), self.image.pixbuf.get_height()
+			alloc = self.imageview.get_allocation()
+			vw, vh = alloc[2], alloc[3]
 			
-		hadjust.set_value(w // 2)
-		vadjust.set_value(0)
+			x = (w - vw) // 2
+			y = 0
+			
+			self.imageview.get_hadjustment().set_value(x)
+			self.imageview.get_vadjustment().set_value(y)
 		
 	def run(self):
 		gtk.main()
@@ -398,44 +323,76 @@ class Pynorama(object):
 	def refresh_size(self, data=None):
 		if self.image.source:
 			if self.image.pixbuf:
-				# The the rotation used by gtk is counter clockwise
-				# This converts the degrees to clockwise
-				if self.image.rotation:
-					r = u" %d°" % int(360 - self.image.rotation)
-				else:
-					r = ""
-					
-				# Magnification is logaritimic, so it must be converted to a scale.
-				# Furthermore, scales that make the image smaller start with : (division symbol)
-				if self.image.magnification:
-					scale = int(2 ** math.fabs(self.image.magnification))
-					if self.image.magnification > 0:
-						z = "x%d" % scale
-					else:
-						z = ":%d" % scale
-				else:
-					z = ""
-				
-				# The width and height are from the source, not the pixbuf itself
-				w, h = self.image.source.get_width(), self.image.source.get_height()
-				
-				# The format is WxH[x:]Z R°
-				# e.g: 240x500x4 90° is a 240 width x 500 height image
-				# Magnified 4 times and rotated 90 degrees clockwise
-				self.size_label.set_text("%dx%d%s%s" % (w, h, z, r))
+				# The width and height are from the source
+				p = "%dx%d" % (self.image.source.get_width(), self.image.source.get_height())
 			else:
 				# If self.image has a source but not a pixbuf, most likely
 				# there is not enough momery to display it
-				self.size_label.set_text(_("Error"))				
+				p = _("Error")
 		else:
-			self.size_label.set_text(_("Empty"))
-				
-	def flip (self, data=None, horizontal=False):
-		if horizontal:
-			self.image.flip_horizontal = not self.image.flip_horizontal
-		else:
-			self.image.flip_vertical = not self.image.flip_vertical
+			p = _("Nothing")
 			
+		# The the rotation used by gtk is counter clockwise
+		# This converts the degrees to clockwise
+		if self.image.rotation:
+			r = u" %d°" % int(360 - self.image.rotation)
+		else:
+			r = ""
+			
+		# Magnification is logaritimic, so it must be converted to a scale.
+		# Furthermore, scales that make the image smaller start with : (division symbol)
+		if self.image.magnification:
+			scale = int(2 ** math.fabs(self.image.magnification))
+			if self.image.magnification > 0:
+				z = "x%d" % scale
+			else:
+				z = ":%d" % scale
+		else:
+			z = ""
+		
+		# For flipping/inverting/mirroring
+		# Pro-tip: Rotation affects it
+		if self.image.flip_horizontal:
+			if int(self.image.rotation) % 180:
+				f = u" ↕"
+			else:
+				f = u" ↔"
+		elif self.image.flip_vertical:
+			if int(self.image.rotation) % 180:
+				f = u" ↔"
+			else:
+				f = u" ↕"
+		else: 
+			f = ""
+		
+		# The format is WxH[x:]Z R° [↕↔] except when something goes wrong
+		# e.g: 240x500x4 90° ↕ is a 240 width x 500 height image
+		# Magnified 4 times rotated 90 degrees clockwise and
+		# Mirrored vertically (horizontally at 0° though)
+		self.size_label.set_text("%s%s%s%s" % (p, z, r, f))
+				
+	def flip(self, data=None, horizontal=False):
+		# Horizontal mirroring depends on the rotation of the image
+		if int(self.image.rotation) % 180:
+			# 90 or 270 degrees
+			if horizontal:
+				self.image.flip_vertical = not self.image.flip_vertical
+			else:
+				self.image.flip_horizontal = not self.image.flip_horizontal
+			
+		else:
+			# 0 or 180 degrees
+			if horizontal:
+				self.image.flip_horizontal = not self.image.flip_horizontal
+			else:
+				self.image.flip_vertical = not self.image.flip_vertical
+		
+		# If the image if flipped both horizontally and vertically
+		# Then it is rotated 180 degrees
+		if self.image.flip_vertical and self.image.flip_horizontal:
+			self.image.flip_vertical = self.image.flip_horizontal = False
+			self.image.rotation = (int(self.image.rotation) + 180) % 360
+		
 		self.image.refresh_pixbuf()
 			
 	def rotate(self, data=None, change=0):
@@ -457,7 +414,6 @@ class Pynorama(object):
 	
 	def change_scrollbars(self, radioaction, current):
 		placement = current.props.value
-#		placement = self.actions.get_action("no-scrollbars").get_current_value()
 		
 		if placement == -1:
 			self.imageview.get_hscrollbar().set_child_visible(False)
@@ -546,4 +502,5 @@ if __name__ == "__main__":
 		app.open(args.open)
 	
 	# Run app
+	gtk.gdk.set_program_class("Pynorama")
 	app.run()

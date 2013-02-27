@@ -1,0 +1,53 @@
+<ui>
+	<menubar>
+		<menu action="file">
+			<menuitem action="open" />
+			<separator />
+			<menuitem action="next" />
+			<menuitem action="previous" />
+			<separator />
+			<menuitem action="quit" />
+		</menu>
+		
+		<menu action="view">
+			<menuitem action="in-zoom" />
+			<menuitem action="out-zoom" />
+			<menuitem action="no-zoom" />
+			<separator />
+			<menu action="transform">
+				<menuitem action="ccw-rotate" />
+				<menuitem action="cw-rotate" />
+				<separator />
+				<menuitem action="h-flip" />
+				<menuitem action="v-flip" />
+			</menu>
+			<menu action="interpolation">
+				<menuitem action="nearest-interp" />
+				<menuitem action="tiles-interp" />
+				<menuitem action="bilinear-interp" />
+				<menuitem action="hyper-interp" />
+			</menu>
+			<separator />
+			<menu action="scrollbars">
+				<menuitem action="no-scrollbars" />
+				<separator />
+				<menuitem action="br-scrollbars" />
+				<menuitem action="tr-scrollbars" />
+				<menuitem action="tl-scrollbars" />
+				<menuitem action="bl-scrollbars" />
+			</menu>
+			<menuitem action="fullscreen" />
+		</menu>
+	</menubar>
+	<toolbar>
+		<toolitem action="open" />
+		<separator />
+		<toolitem action="previous" />
+		<toolitem action="next" />
+		<separator />
+		<toolitem action="in-zoom" />
+		<toolitem action="out-zoom" />
+		<separator />
+		<toolitem action="fullscreen" />
+	</toolbar>
+</ui>

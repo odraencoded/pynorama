@@ -23,7 +23,7 @@ class xImage(gtk.Bin):
 		self.flip_horizontal = False
 		self.flip_vertical = False
 		
-	def refresh_pixbuf(self):	
+	def refresh_pixbuf(self):
 		self.pixbuf = self.source
 		
 		if self.pixbuf:
@@ -32,15 +32,15 @@ class xImage(gtk.Bin):
 				sw, sh = int(self.source.get_width() * scale), int(self.source.get_height() * scale)
 				
 				self.pixbuf = self.pixbuf.scale_simple(sw, sh, self.interpolation)
+				
+			if self.flip_vertical:
+				self.pixbuf = self.pixbuf.flip(False)
+				
+			if self.flip_horizontal:
+				self.pixbuf = self.pixbuf.flip(True)
 			
 			if self.rotation:
 				self.pixbuf = self.pixbuf.rotate_simple(self.rotation)
-			
-			if self.flip_vertical:
-				self.pixbuf = self.pixbuf.flip(False)
-			
-			if self.flip_horizontal:
-				self.pixbuf = self.pixbuf.flip(True)
 			
 		self.image.set_from_pixbuf(self.pixbuf)
 		
