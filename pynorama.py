@@ -40,7 +40,7 @@ class Pynorama(object):
 						
 		# Create image and a scrolled window for it
 		self.image = gobject.new(xImage)
-		self.image.connect("updated_pixbuf", self.refresh_size)
+		self.image.connect("pixbuf_notify", self.refresh_size)
 		
 		self.imageview = gtk.ScrolledWindow()
 		self.imageview.add_with_viewport(self.image)
@@ -342,11 +342,14 @@ class Pynorama(object):
 		# Magnification is logaritimic, so it must be converted to a scale.
 		# Furthermore, scales that make the image smaller start with : (division symbol)
 		if self.image.magnification:
-			scale = int(2 ** math.fabs(self.image.magnification))
+			scale = self.image.get_zoom()
+#			scale = int(2 ** math.fabs(self.image.magnification))
 			if self.image.magnification > 0:
-				z = "x%d" % scale
+				z = "x%.2f" % scale
 			else:
-				z = ":%d" % scale
+				z = ":%.2f" % (1.0 / scale)
+			
+			z = z.rstrip("0").rstrip(".")
 		else:
 			z = ""
 		

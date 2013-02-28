@@ -2,7 +2,7 @@
 	Some panning interface related code
 '''
 
-import gtk
+import gtk, gobject
 
 class SlideNavigator:
 	'''
@@ -75,6 +75,8 @@ class MapNavigator:
 		self.margin = 32
 		
 		# Setup events
+		self.imageview.connect("scroll-event", self.scrolling)
+		
 		imagevp = imageview.get_child() # this should be the viewport between image and scrolledwindow
 		imagevp.set_events(imagevp.get_events() | 
 			gtk.gdk.POINTER_MOTION_MASK |
@@ -86,9 +88,15 @@ class MapNavigator:
 		else:
 			self.realize_handle_id = imagevp.connect("realize", self.set_cursor, imagevp)
 		
-		imagevp.connect("motion_notify_event", self.motion)	
-	
+		imagevp.connect("motion-notify-event", self.refresh_adjustments)
+		
+		image = imagevp.get_child() # this should be the image
+		image.connect("size-allocate", self.refresh_adjustments)
+		
+		self.refresh_adjustments()
+			
 	def set_cursor(self, data=None, imagevp=None):
+		# Sets the cursor to a crosshair
 		imagevp.window.set_cursor(gtk.gdk.Cursor(gtk.gdk.CROSSHAIR))
 		if self.realize_handle_id is not None:
 			imagevp.disconnect(self.realize_handle_id)
@@ -149,17 +157,35 @@ class MapNavigator:
 				rect.height = allocation.height - rect.y - self.margin
 				
 		return rect
-	
-	def motion(self, widget, data=None):
-		x, y = self.imageview.get_pointer()
+
+	def scrolling(self, widget, data=None):
+		image = self.imageview.get_child().get_child()
 		
+		if data.direction == gtk.gdk.SCROLL_UP:
+			image.magnification += 1
+			image.refresh_pixbuf()
+		
+		if data.direction == gtk.gdk.SCROLL_DOWN:
+			image.magnification -= 1
+			image.refresh_pixbuf()
+		
+		self.refresh_adjustments()
+		
+		# Makes the scrolled window not scroll
+		return True
+			
+	def refresh_adjustments(self, widget=None, data=None):
+		imagevp = self.imageview.get_child()
+		image = imagevp.get_child()
+		
+		x, y = self.imageview.get_pointer()
 		rect = self.get_scalar_rectangle()
 			
 		allocation = self.imageview.get_allocation()
 		
 		hadjust, vadjust = self.imageview.props.hadjustment, self.imageview.props.vadjustment
 		vw, vh = hadjust.props.upper - hadjust.props.page_size, vadjust.props.upper - vadjust.props.page_size
-		
+				
 		# Shift and clamp x and y
 		x -= rect.x
 		if x < 0:
