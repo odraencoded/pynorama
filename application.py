@@ -25,7 +25,7 @@ class Pynorama(object):
 						
 		# Create image and a scrolled window for it
 		self.image = gobject.new(xImage)
-		self.image.connect("pixbuf_notify", self.refresh_size)
+		self.image.connect("pixbuf-notify", self.pixbuf_changed)
 		
 		self.imageview = gtk.ScrolledWindow()
 		self.imageview.add_with_viewport(self.image)
@@ -35,10 +35,10 @@ class Pynorama(object):
 		self.statusbar = gtk.Statusbar()
 		
 		# With a label for the image size
-		self.size_label = gtk.Label()
-		self.size_label.set_alignment(1.0, 0.5)
-		self.statusbar.pack_end(self.size_label, False, False)
-		self.refresh_size()
+		self.transform_label = gtk.Label()
+		self.transform_label.set_alignment(1.0, 0.5)
+		self.statusbar.pack_end(self.transform_label, False, False)
+		self.refresh_transform()
 		
 		# Setup actions
 		self.manager = gtk.UIManager()
@@ -103,7 +103,7 @@ class Pynorama(object):
 		interpbilinearaction.set_group(interpnearestaction)
 		interphyperaction.set_group(interpnearestaction)
 		
-		interpnearestaction.set_current_value(self.image.interpolation)
+		interpolationmenu.set_sensitive(False)
 		interpnearestaction.connect("changed", self.change_interp)
 		
 		# This is a very original part of the entire program
@@ -222,7 +222,7 @@ class Pynorama(object):
 		self.current_image = image	
 		if self.current_image is None:			
 			self.window.set_title(_("Pynorama"))
-			self.size_label.set_text("")
+			self.transform_label.set_text("")
 			self.imageview.pixbuf = None
 			
 			self.actions.get_action("previous").set_sensitive(False)
@@ -359,7 +359,26 @@ class Pynorama(object):
 		gtk.main()
 	
 	# Events	
-	def refresh_size(self, data=None):
+	def pixbuf_changed(self, data=None):
+		self.refresh_transform()
+		self.refresh_interp()
+		
+	def refresh_interp(self):	
+		interp = self.image.get_interpolation()
+		self.actions.get_action("interpolation").set_sensitive(interp is not None)
+		
+		interp_group = self.actions.get_action("nearest-interp")
+		interp_group.block_activate()
+		
+		if interp is None:
+			for interp_action in interp_group.get_group():
+				interp_action.set_active(False)
+		else:
+			interp_group.set_current_value(interp)
+			
+		interp_group.unblock_activate()
+	
+	def refresh_transform(self):
 		if self.image.source:
 			if self.image.pixbuf:
 				# The width and height are from the source
@@ -411,7 +430,7 @@ class Pynorama(object):
 		# e.g: 240x500x4 90° ↕ is a 240 width x 500 height image
 		# Magnified 4 times rotated 90 degrees clockwise and
 		# Mirrored vertically (horizontally at 0° though)
-		self.size_label.set_text("%s%s%s%s" % (p, z, r, f))
+		self.transform_label.set_text("%s%s%s%s" % (p, z, r, f))
 				
 	def flip(self, data=None, horizontal=False):
 		# Horizontal mirroring depends on the rotation of the image
@@ -440,8 +459,8 @@ class Pynorama(object):
 	def rotate(self, data=None, change=0):
 		self.image.rotation = (int(self.image.rotation) - change + 360) % 360
 		self.image.refresh_pixbuf()
-		
-	def change_zoom(self, data=None, change=0):
+	
+	def change_zoom(self, data=None, change=0):		
 		self.image.magnification += change
 		self.image.refresh_pixbuf()
 		
@@ -450,9 +469,11 @@ class Pynorama(object):
 		self.image.refresh_pixbuf()
 
 	def change_interp(self, radioaction, current):
-		interpolation = current.props.value
-		self.image.interpolation = interpolation
-		self.image.refresh_pixbuf()
+		if self.image.magnification:
+			interpolation = current.props.value	
+			self.image.set_interpolation(interpolation)
+			
+			self.image.refresh_pixbuf()
 	
 	def change_scrollbars(self, radioaction, current):
 		placement = current.props.value
