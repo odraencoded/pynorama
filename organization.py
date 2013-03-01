@@ -45,11 +45,11 @@ class Organizer:
 		
 		return None
 	
-class ImageSort:
+class Sorting:
 	'''
 		Contains organizing methods
 	'''
 	@staticmethod
-	def Filenames(image_a, image_b):
-		return cmp(image_a.filename, image_a.filename)
+	def ByFullname(image_a, image_b):
+		return cmp(image_a.fullname, image_b.fullname)
 	

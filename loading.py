@@ -4,10 +4,11 @@
 
 import pygtk
 pygtk.require("2.0")
-import gtk, os, re
+import gtk, os, re, urllib, urllib2
 from gettext import gettext as _
 
 Filters = []
+Mimes = []
 Extensions = set()
 
 # Create "All Files" filter
@@ -33,6 +34,7 @@ for aformat in _formats:
 	for a_mimetype in aformat["mime_types"]:
 		format_filter.add_mime_type(a_mimetype)
 		images_filter.add_mime_type(a_mimetype)
+		Mimes.append(a_mimetype)
 		
 	# Add patterns based on extensions
 	first_ext = True
@@ -55,22 +57,26 @@ for aformat in _formats:
 	
 	Filters.append(format_filter)
 	
-class ImageNode:
-	def __init__(self, filename):
-		self.filename = filename
-		self.title = os.path.basename(filename)
-		self.pixbuf = self.previous = self.next = None
-		
-	def load(self, filename = None):
-		if filename is None:
-			if self.pixbuf is not None:
-				return
-		else:
-			self.filename = filename
-			self.title = os.path.basename(filename)
-			
-		self.pixbuf = gtk.gdk.pixbuf_new_from_file(self.filename)
+class ImageNode(object):
+	def __init__(self):
+		self.pixbuf = None
+		self.name = ""
+		self.fullname = ""
 	
+	def reload(self):
+		if self.is_loaded():
+			self.do_unload()
+			
+		self.do_load()
+	
+	def load(self):
+		if not self.is_loaded():
+			self.do_load()
+	
+	def unload(self):
+		if self.is_loaded():
+			self.do_unload()
+			
 	def cut_ties(self):
 		if self.next and self.next.previous is self:
 			self.next.previous = self.previous
@@ -80,19 +86,95 @@ class ImageNode:
 		
 		self.previous = self.next = None
 		
-	def unload(self):
+class ImageFileNode(ImageNode):
+	'''
+		An ImageNode created from a file
+	'''
+	def __init__(self, filepath):
+		ImageNode.__init__(self)
+		
+		self.fullname = self.filepath = filepath
+		self.name = os.path.basename(self.filepath)
 		self.pixbuf = None
 		
-def get_files(directory):
-	result = []
-
-	dirlist = os.listdir(directory)
+	def is_loaded(self):
+		return self.pixbuf is not None
 		
-	filepaths = [os.path.join(directory, filename) for filename in os.listdir(directory) if os.path.isfile(os.path.join(directory, filename))]
-	
-	for a_filepath in filepaths:
-		filename, fileext = os.path.splitext(a_filepath)
-		if fileext in Extensions:
-			result.append(a_filepath)
+	def do_load(self):
+		self.pixbuf = gtk.gdk.pixbuf_new_from_file(self.filepath)
 			
-	return result
+	def do_unload(self):
+		self.pixbuf = None
+		return True
+		
+class ImageURINode(ImageNode):
+	'''
+		An ImageNode created from an URI
+	'''
+	def __init__(self, uri):
+		ImageNode.__init__(self)
+		
+		self.fullname = self.name = self.uri = uri
+	
+	def is_loaded(self):
+		return self.pixbuf is not None
+	
+	def do_load(self):
+		try:
+			loader = gtk.gdk.PixbufLoader()
+		
+			response = urllib2.urlopen(self.uri)
+			loader.write(response.read())
+			loader.close()
+		
+			self.pixbuf = loader.get_pixbuf()
+			
+		except urllib2.URLError:
+			raise Exception(_("Could not access \"%s\"" % self.uri))
+			
+		except:
+			raise Exception(_("Could not load \"%s\"" % self.uri))
+		
+	def do_unload(self):
+		self.pixbuf = None
+	
+class ImageDataNode(ImageNode):
+	'''
+		An ImageNode created from a pixbuf
+		This ImageNode can not be loaded or unloaded
+		Because it can not find the data source by itself
+	'''
+	def __init__(self, pixbuf, name="Image Data"):
+		ImageNode.__init__(self)
+		
+		self.fullname = self.name = name
+		self.pixbuf = pixbuf
+		
+	def is_loaded(self):
+		return True # Data nodes are always loaded
+		
+	def do_load(self):
+		pass # Can't load data nodes
+		
+	def do_unload(self):
+		pass # Can't unload data nodes
+
+def PathFromURI(uri):
+	for prefix in ("file:\\\\\\", "file://", "file:"):
+		if uri.startswith(prefix):
+			uri_path = uri[len(prefix):]
+			filepath = urllib2.url2pathname(uri_path)
+			return filepath
+			
+	return None
+
+def get_image_paths(directory):
+	# Iterate through all filepaths in the directory
+	dir_paths = (os.path.join(directory, filename) for filename in os.listdir(directory))
+	
+	for a_path in dir_paths:
+		# if it is a file, check if the extension is a valid image extension
+		if os.path.isfile(a_path):
+			file_ext = os.path.splitext(a_path)[1]
+			if file_ext in Extensions:
+				yield a_path

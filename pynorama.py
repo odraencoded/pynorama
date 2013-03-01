@@ -7,26 +7,12 @@
 
 import pygtk
 pygtk.require("2.0")
-import gtk, os, urllib, math, gobject
+import os, sys, urllib, math, gobject, gtk
 from gettext import gettext as _
 import navigation, loading, organization
 from ximage import xImage
 
-# Copy pasted utility, thanks Nikos :D
-def get_file_path_from_dnd_dropped_uri(uri):
-		# get the path to file
-		path = ""
-		if uri.startswith('file:\\\\\\'): # windows
-			path = uri[8:] # 8 is len('file:///')
-		elif uri.startswith('file://'): # nautilus, rox
-			path = uri[7:] # 7 is len('file://')
-		elif uri.startswith('file:'): # xffm
-			path = uri[5:] # 5 is len('file:')
-
-		path = urllib.url2pathname(path) # escape special chars
-		path = path.strip('\r\n\x00') # remove \r\n and NULL
-
-		return path
+DND_URI_LIST, DND_IMAGE = range(2)
 
 class Pynorama(object):
 	def __init__(self):
@@ -63,42 +49,45 @@ class Pynorama(object):
 		self.actions = gtk.ActionGroup("pynorama")
 		self.manager.insert_action_group(self.actions)	
 		
-		filemenu = gtk.Action("file", _("_File"), None, None)		
+		filemenu = gtk.Action("file", _("File"), None, None)		
 				
-		openaction = gtk.Action("open", _("_Open..."), _("Open an image"), gtk.STOCK_OPEN)
+		openaction = gtk.Action("open", _("Open..."), _("Open an image"), gtk.STOCK_OPEN)
 		openaction.connect("activate", self.file_open)
 		
-		prevaction = gtk.Action("previous", _("Pr_evious Image"), _("Open the previous image"), gtk.STOCK_GO_BACK)
+		prevaction = gtk.Action("previous", _("Previous Image"), _("Open the previous image"), gtk.STOCK_GO_BACK)
 		prevaction.connect("activate", self.goprevious)
 		prevaction.set_sensitive(False)
 		
-		nextaction = gtk.Action("next", _("Nex_t Image"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
+		nextaction = gtk.Action("next", _("Next Image"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
 		nextaction.connect("activate", self.gonext)
 		nextaction.set_sensitive(False)
+		
+		pasteaction = gtk.Action("paste", _("Paste"), _("Show an image from the clipboard"), gtk.STOCK_PASTE)
+		pasteaction.connect("activate", self.pasted_data)
 		
 		quitaction = gtk.Action("quit", _("_Quit"), _("Exit the program"), gtk.STOCK_QUIT)
 		quitaction.connect("activate", self.quit)
 		
 		# These actions are actual actions, not options.
-		viewmenu = gtk.Action("view", _("_View"), None, None)
+		viewmenu = gtk.Action("view", _("View"), None, None)
 		
-		zoominaction = gtk.Action("in-zoom", _("Zoom _In"), _("Makes the image look larger"), gtk.STOCK_ZOOM_IN)
-		zoomoutaction = gtk.Action("out-zoom", _("Zoom _Out"), _("Makes the image look smaller"), gtk.STOCK_ZOOM_OUT)
-		nozoomaction = gtk.Action("no-zoom", _("No _Zoom"), _("Makes the image look normal"), gtk.STOCK_ZOOM_100)
+		zoominaction = gtk.Action("in-zoom", _("Zoom In"), _("Makes the image look larger"), gtk.STOCK_ZOOM_IN)
+		zoomoutaction = gtk.Action("out-zoom", _("Zoom Out"), _("Makes the image look smaller"), gtk.STOCK_ZOOM_OUT)
+		nozoomaction = gtk.Action("no-zoom", _("No Zoom"), _("Makes the image look normal"), gtk.STOCK_ZOOM_100)
 		
 		nozoomaction.connect("activate", self.reset_zoom)
 		zoominaction.connect("activate", self.change_zoom, 1)
 		zoomoutaction.connect("activate", self.change_zoom, -1)
 		
-		transformmenu = gtk.Action("transform", _("_Transform"), None, None)
-		rotatecwaction = gtk.Action("cw-rotate", _("Rotate Clockwis_e"), _("Turns the image top side to the right side"), -1)
-		rotateccwaction = gtk.Action("ccw-rotate", _("Rotate Counter Clock_wise"), _("Turns the image top side to the left side"), -1)
+		transformmenu = gtk.Action("transform", _("Transform"), None, None)
+		rotatecwaction = gtk.Action("cw-rotate", _("Rotate Clockwise"), _("Turns the image top side to the right side"), -1)
+		rotateccwaction = gtk.Action("ccw-rotate", _("Rotate Counter Clockwise"), _("Turns the image top side to the left side"), -1)
 		
 		rotatecwaction.connect("activate", self.rotate, 90)
 		rotateccwaction.connect("activate", self.rotate, -90)
 		
-		fliphorizontalaction = gtk.Action("h-flip", _("Flip _Horizontally"), _("Inverts the left and right sides of the image"), -1)
-		flipverticalaction = gtk.Action("v-flip", _("Flip _Vertically"), _("Inverts the top and bottom sides of the image"), -1)
+		fliphorizontalaction = gtk.Action("h-flip", _("Flip Horizontally"), _("Inverts the left and right sides of the image"), -1)
+		flipverticalaction = gtk.Action("v-flip", _("Flip Vertically"), _("Inverts the top and bottom sides of the image"), -1)
 		
 		flipverticalaction.connect("activate", self.flip, False)
 		fliphorizontalaction.connect("activate", self.flip, True)
@@ -106,10 +95,10 @@ class Pynorama(object):
 		# Choices for pixel interpolation
 		interpolationmenu = gtk.Action("interpolation", _("Inter_polation"), None, None)
 		
-		interpnearestaction = gtk.RadioAction("nearest-interp", _("_Nearest Neighbour"), _(""), -1, gtk.gdk.INTERP_NEAREST)
-		interptilesaction = gtk.RadioAction("tiles-interp", _("Parallelo_gram Tiles"), _(""), -1, gtk.gdk.INTERP_TILES)
-		interpbilinearaction = gtk.RadioAction("bilinear-interp", _("_Bilinear Function"), _(""), -1, gtk.gdk.INTERP_BILINEAR)
-		interphyperaction = gtk.RadioAction("hyper-interp", _("_Hyperbolic Function"), _(""), -1, gtk.gdk.INTERP_HYPER)
+		interpnearestaction = gtk.RadioAction("nearest-interp", _("Nearest Neighbour"), _(""), -1, gtk.gdk.INTERP_NEAREST)
+		interptilesaction = gtk.RadioAction("tiles-interp", _("Parallelogram Tiles"), _(""), -1, gtk.gdk.INTERP_TILES)
+		interpbilinearaction = gtk.RadioAction("bilinear-interp", _("Bilinear Function"), _(""), -1, gtk.gdk.INTERP_BILINEAR)
+		interphyperaction = gtk.RadioAction("hyper-interp", _("Hyperbolic Function"), _(""), -1, gtk.gdk.INTERP_HYPER)
 		
 		interptilesaction.set_group(interpnearestaction)
 		interpbilinearaction.set_group(interpnearestaction)
@@ -146,6 +135,8 @@ class Pynorama(object):
 
 		self.actions.add_action_with_accel(prevaction, "Page_Up")
 		self.actions.add_action_with_accel(nextaction, "Page_Down")
+		
+		self.actions.add_action_with_accel(pasteaction, None)
 				
 		self.actions.add_action_with_accel(quitaction, None)
 		
@@ -198,10 +189,17 @@ class Pynorama(object):
 		# Complicated looking DnD setup
 		self.imageview.connect("drag_data_received", self.dragged_data)
 		
+		image_targets = []		
+		for mime_type in loading.Mimes:
+			image_targets.append((mime_type, 0, DND_IMAGE))
+			
 		self.imageview.drag_dest_set(
 			gtk.DEST_DEFAULT_MOTION | gtk.DEST_DEFAULT_HIGHLIGHT | gtk.DEST_DEFAULT_DROP,
-			[("text/uri-list", 0, 80)],
+			[("text/uri-list", 0, DND_URI_LIST)] + image_targets,
 			gtk.gdk.ACTION_COPY)
+		
+		# Clipboard
+		self.clipboard = gtk.clipboard_get()
 		
 		# Make everything visible
 		self.window.show_all()
@@ -233,75 +231,116 @@ class Pynorama(object):
 			
 		else:
 			try:
-				self.current_image.load()
-			except:
-				self.log(_("Could not load file \"%s\"")  % self.current_image.filename)
-				raise # Raise here for debugging purposes
-			
-			#self.reset_pixbuf()
-			self.image.source = self.current_image.pixbuf
-			self.imageview.pixbuf = self.current_image.pixbuf
-			self.image.refresh_pixbuf()
-			
-			self.readjust_view()
+				if not self.current_image.is_loaded():
+					self.log(_("Loading file \"%s\"...")  % self.current_image.fullname)
+					self.current_image.load()
 					
-			self.window.set_title(_("\"%s\" - Pynorama") % self.current_image.title)
-			self.log(_("Loaded file \"%s\"")  % self.current_image.filename)
+				self.image.source = self.current_image.pixbuf
+				self.imageview.pixbuf = self.current_image.pixbuf
+				self.image.refresh_pixbuf()
+			
+				self.readjust_view()
+				self.window.set_title(_("\"%s\" - Pynorama") % self.current_image.name)
+			except:
+				self.log(str(sys.exc_info()[1]))
+				return
+			else:
+				self.log(_("Loaded file \"%s\"")  % self.current_image.fullname)
 			
 		return True
 		
-	# Attempt to load a file, returns false when it fails
-	def open(self, filename):
-		if not os.path.exists(filename):
-			self.log(_("\"%s\" does not exist.") % filename)
-			return False
+	def load_pixels(self, pixels):
+		pasted_image = loading.ImageDataNode(pixels, "Clipboard Image")
+		self.organizer.append(pasted_image)
+		self.set_image(pasted_image)
+	
+	def load_uris(self, uris):		
+		# Organizer uris of the internet and file locations
+		all_nodes, uri_nodes, file_nodes = [], [], []
+		directories, real_paths = set(), set()
+		
+		# When loading filepaths, a real path should be checked against real_paths
+		# And the ImageFilePath should be loaded with the "normal" path
+		
+		last_is_file = False
+		for an_uri in uris:
+			# Attempt to get a filepath from the URI
+			a_path = loading.PathFromURI(an_uri)
 			
-		directory = os.path.dirname(filename)
-		dir_images = loading.get_files(directory)
+			if a_path is None:
+				# If the URI can't be converted into a path load it as an URI
+				an_uri_node = loading.ImageURINode(an_uri)
+				uri_nodes.append(an_uri_node)
+				all_nodes.append(an_uri_node)
+				
+				last_is_file = False
+			elif os.path.exists(a_path):
+				# The URI is an existing filepath! 
+				a_real_path = os.path.realpath(a_path)
+				
+				if not a_real_path in real_paths:
+					if os.path.isfile(a_real_path):
+						# If it is a file load a file node
+						a_file_node = loading.ImageFileNode(a_path)
+						file_nodes.append(a_file_node)
+						all_nodes.append(a_file_node)
+				
+					# Add the directory to the directories set
+					directories.add(os.path.dirname(a_real_path))
+					
+					real_paths.add(a_real_path)
+					last_is_file = True
 		
-		# if the filename that triggered open() is a file
-		# Remove the same file from the list and add it to the start
-		was_file = os.path.isfile(filename)
+		# FIXME: Customize this into "disabled", "shallow" and "deep"
+		directory_loading = "shallow"
 		
-		if was_file:
-			found_source_filename = False
-			for i in range(len(dir_images)):
-				if os.path.samefile(filename, dir_images[i]):
-					del dir_images[i]
-					dir_images.insert(0, filename)
-					found_source_filename = True
-					break
+		if directory_loading == "shallow":
+			for a_directory in directories:
+				for a_image_path in loading.get_image_paths(a_directory):
+					a_real_image_path = os.path.realpath(a_image_path)
+					
+					# Recursive links are evil!
+					if not a_real_image_path in real_paths:
+						a_file_node = loading.ImageFileNode(a_image_path)
+						file_nodes.append(a_file_node)
+						all_nodes.append(a_file_node)
+						
+						real_paths.add(a_real_path)
+		
+		# Load files into the organizer
+		if all_nodes:
+			del self.organizer.images[:]
+						
+			for a_node in all_nodes:
+				self.organizer.append(a_node)
 			
-			# This is required since the source filename may not
-			# be discovered through loading.get_files
-			# e.g wrong extension / invalid file
-			if not found_source_filename:
-				dir_images.insert(0, filename)
+			self.set_image(self.organizer.images[0])
+			
+			self.organizer.sort(organization.Sorting.ByFullname)
+			if len(all_nodes) > 1:
+				self.log(_("Found %d images") % len(all_nodes))
+			
+		return
+		# In this case, directory loading is possible!
+		only_files = filepaths and not yet_uris
 		
-		# Remove any previous images in the organizer
-		del self.organizer.images[:]
-		self.set_image(None)
-		
-		# This is where the images are loaded	
-		for a_filename in dir_images:
-			a_image = loading.ImageNode(a_filename)			
-			self.organizer.append(a_image)
+		if only_files:
+			directories = set()
+			
+			for a_filepath in filepaths:
+				a_directory = os.path.dirname(a_filepath)
+				directories.add(a_directory)
 				
-		# Sort images
-		self.organizer.sort(organization.ImageSort.Filenames)
-		
-		trigger_image = None
-		if was_file:
-			trigger_image = self.organizer.find_image(filename)
-		
-		if len(self.organizer.images) > 0:
-			if trigger_image is None:	
-				trigger_image = self.organizer.images[0]
+		for a_filepath in filepaths:
+			ImageFileNode(a_filepath)
 				
-			return self.set_image(trigger_image)
-		else:
-			self.log(_("No files were loaded"))
-			return False
+		for uri in uris:
+			filepath = loading.PathFromURI(uri)
+			
+			image = loading.ImageNode(uri, True)
+			self.organizer.append(image)
+		
+		self.set_image(self.organizer.images[0])
 	
 	# Adjusts the image to be on the top-center (so far)
 	def readjust_view(self):		
@@ -319,7 +358,7 @@ class Pynorama(object):
 	def run(self):
 		gtk.main()
 	
-	# Events
+	# Events	
 	def refresh_size(self, data=None):
 		if self.image.source:
 			if self.image.pixbuf:
@@ -343,7 +382,7 @@ class Pynorama(object):
 		# Furthermore, scales that make the image smaller start with : (division symbol)
 		if self.image.magnification:
 			scale = self.image.get_zoom()
-#			scale = int(2 ** math.fabs(self.image.magnification))
+			
 			if self.image.magnification > 0:
 				z = "x%.2f" % scale
 			else:
@@ -443,25 +482,37 @@ class Pynorama(object):
 		if self.current_image and self.current_image.previous:
 			self.set_image(self.current_image.previous)
 			
-	def dragged_data(self, widget, context, x, y, selection, target_type, timestamp):
-		uri = selection.data.strip('\r\n\x00')
-		uri_splitted = uri.split() # we may have more than one file dropped
-		
-		dropped_paths = []
-		for uri in uri_splitted:
-			path = get_file_path_from_dnd_dropped_uri(uri)
-			dropped_paths.append(path)
-		
-		# Open only last dropped file
-		if dropped_paths:
-			self.open(dropped_paths[-1])
+	def pasted_data(self, data=None):
+		uris = self.clipboard.wait_for_uris()
+			
+		if uris:
+			self.load_uris(uris)
+			return
+			
+		pixdata = self.clipboard.wait_for_image()
+		if pixdata:
+			self.load_pixels(pixdata)
+			return
+			
+		text = self.clipboard.wait_for_text()
+		if text:
+			if text.startswith(("http://", "https://", "ftp://")):
+				self.load_uris([text])
+			
+	def dragged_data(self, widget, context, x, y, selection, info, timestamp):
+		if info == DND_URI_LIST:
+			self.load_uris(selection.get_uris())
 							
+		elif info == DND_IMAGE:
+			pixbuf = selection.data.get_pixbuf()
+		
 	def file_open(self, widget, data=None):
 		# Create image choosing dialog
 		image_chooser = gtk.FileChooserDialog(title = _("Open Image..."), action = gtk.FILE_CHOOSER_ACTION_OPEN,
 			buttons = (gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL, gtk.STOCK_OPEN, gtk.RESPONSE_OK))
 			
 		image_chooser.set_default_response(gtk.RESPONSE_OK)
+		image_chooser.set_select_multiple(True)
 		
 		# Add filters of supported formats from "loading" module
 		for fileFilter in loading.Filters:
@@ -469,10 +520,9 @@ class Pynorama(object):
 		
 		try:
 			if image_chooser.run() == gtk.RESPONSE_OK:
-				filename = image_chooser.get_filename()
-				
-				self.open(filename)
-				
+				uris = image_chooser.get_uris()
+				self.load_uris(uris)
+								
 		except:
 			# Nothing to handle here
 			raise
@@ -493,7 +543,7 @@ if __name__ == "__main__":
 	import argparse
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument("-o", "--open", type=str)
+	parser.add_argument("-o", "--open", nargs="+", type=str)
 	
 	# Get arguments
 	args = parser.parse_args()	
@@ -502,8 +552,15 @@ if __name__ == "__main__":
 	
 	# --open is used to load files
 	if args.open:
-		app.open(args.open)
-	
+		open_uris = []
+		for path in args.open:
+			if not path.startswith(("http://", "https://", "ftp://")):
+				path = "file://" + path
+			
+			open_uris.append(path)
+				
+		app.load_uris(open_uris)
+			
 	# Run app
 	gtk.gdk.set_program_class("Pynorama")
 	app.run()

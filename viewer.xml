@@ -2,9 +2,10 @@
 	<menubar>
 		<menu action="file">
 			<menuitem action="open" />
+			<menuitem action="paste" />
 			<separator />
 			<menuitem action="next" />
-			<menuitem action="previous" />
+			<menuitem action="previous" />			
 			<separator />
 			<menuitem action="quit" />
 		</menu>
@@ -41,6 +42,7 @@
 	</menubar>
 	<toolbar>
 		<toolitem action="open" />
+		<toolitem action="paste" />
 		<separator />
 		<toolitem action="previous" />
 		<toolitem action="next" />
