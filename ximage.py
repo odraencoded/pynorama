@@ -9,7 +9,7 @@ class xImage(gtk.Bin):
 	# This is a limit on the number of pixels of an
 	# Image while zoomed in or out
 	# Got to make it customizable one day
-	zoom_pixel_limit = (1, 15000 * 15000)
+	zoom_pixel_limit = (64, 15000 * 15000)
 	
 	def __init__(self):
 		gtk.Bin.__init__(self)
@@ -64,15 +64,19 @@ class xImage(gtk.Bin):
 			if self.magnification < 0:
 				valid_size = False
 				while not valid_size:
-					pixel_count = sh * sw
+					scale = self.get_zoom()					
+					sw, sh = int(self.source.get_width() * scale), int(self.source.get_height() * scale)
 					
+					pixel_count = sw * sh
 					valid_size = (sw * sh) >= xImage.zoom_pixel_limit[0]
+					
 					if self.magnification >= 0:
 						break
 					elif not valid_size:
 						self.magnification += 1
 						
 				if self.magnification < 0:
+					print sw, sh
 					self.pixbuf = self.pixbuf.scale_simple(sw, sh, self.interpolation[0])
 			
 			if self.flip_vertical:
@@ -89,17 +93,18 @@ class xImage(gtk.Bin):
 				valid_size = False
 				while not valid_size:
 					scale = self.get_zoom()
-					
 					sw, sh = int(self.source.get_width() * scale), int(self.source.get_height() * scale)
-					pixel_count = sh * sw
 					
+					pixel_count = sw * sh
 					valid_size = (sw * sh) <= xImage.zoom_pixel_limit[1]
+					
 					if self.magnification <= 0:
 						break
 					elif not valid_size:
 						self.magnification -= 1
 						
 				if self.magnification > 0:
+					print sw, sh
 					self.pixbuf = self.pixbuf.scale_simple(sw, sh, self.interpolation[1])
 							
 		self.image.set_from_pixbuf(self.pixbuf)
