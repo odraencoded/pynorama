@@ -16,25 +16,27 @@ if __name__ == "__main__":
 	import argparse
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument("-o", "--open", nargs="+", type=str)
+	parser.add_argument("file", nargs="*", type=str)
 	
 	# Get arguments
-	args = parser.parse_args()	
+	args = parser.parse_args()
 	
 	# Import application here, because argparser can not fail anymore
 	from application import Pynorama
 	app = Pynorama()
 	
 	# --open is used to load files
-	if args.open:
-		open_uris = []
-		for path in args.open:
-			if not path.startswith(("http://", "https://", "ftp://")):
-				path = "file://" + path
-			
-			open_uris.append(path)
-				
+	open_uris = []
+		 
+	for a_path in args.file:
+		print a_path
+		if not a_path.startswith(("http://", "https://", "ftp://", "file:")):
+			a_path = "file://" + a_path
+		
+		open_uris.append(a_path)
+		
+	if open_uris:
 		app.load_uris(open_uris)
-			
+	
 	# Run app
 	app.run()

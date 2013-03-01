@@ -55,8 +55,7 @@ class xImage(gtk.Bin):
 				
 		else:
 			self.interpolation = (value, other_value)
-	
-	
+			
 	def refresh_pixbuf(self):
 		self.pixbuf = self.source
 		

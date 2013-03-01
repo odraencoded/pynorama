@@ -11,6 +11,7 @@ from gettext import gettext as _
 import navigation, loading, organization
 from ximage import xImage
 
+resource_dir = os.path.dirname(__file__)
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class Pynorama(object):
@@ -22,14 +23,43 @@ class Pynorama(object):
 		self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
 		self.window.set_default_size(600, 600)
 		self.window.set_title(_("Pynorama"))
-						
-		# Create image and a scrolled window for it
+		self.window.show()
+		
+		# Set clipboard
+		self.clipboard = gtk.clipboard_get()
+		
+		# Create layout
+		vlayout = gtk.VBox()
+		self.window.add(vlayout)
+		vlayout.show()
+		
+		# Setup actions
+		self.setup_actions()
+		
+		self.manager.add_ui_from_file(os.path.join(resource_dir, "viewer.xml"))
+		self.menubar = self.manager.get_widget("/menubar")
+		self.toolbar = self.manager.get_widget("/toolbar")
+		
+		vlayout.pack_start(self.menubar, False, False)
+		vlayout.pack_start(self.toolbar, False, False)
+		
+		self.menubar.show_all()
+		self.toolbar.show_all()
+		
+		# Create image and a scrolled window for it		
 		self.image = gobject.new(xImage)
 		self.image.connect("pixbuf-notify", self.pixbuf_changed)
 		
 		self.imageview = gtk.ScrolledWindow()
 		self.imageview.add_with_viewport(self.image)
 		self.imageview.pixbuf =  None
+		
+		vlayout.pack_start(self.imageview)
+		
+		# Add navigator
+		self.navigator = navigation.MapNavigator(self.imageview)
+		
+		self.imageview.show_all()
 		
 		# Add a status bar
 		self.statusbar = gtk.Statusbar()
@@ -38,9 +68,28 @@ class Pynorama(object):
 		self.transform_label = gtk.Label()
 		self.transform_label.set_alignment(1.0, 0.5)
 		self.statusbar.pack_end(self.transform_label, False, False)
+
 		self.refresh_transform()
 		
-		# Setup actions
+		vlayout.pack_end(self.statusbar, False, False)
+		self.statusbar.show_all()	
+				
+		# Connect events
+		self.window.connect("destroy", self._window_destroyed)
+		
+		# Complicated looking DnD setup
+		self.imageview.connect("drag_data_received", self.dragged_data)
+		
+		image_targets = []		
+		for mime_type in loading.Mimes:
+			image_targets.append((mime_type, 0, DND_IMAGE))
+			
+		self.imageview.drag_dest_set(
+			gtk.DEST_DEFAULT_MOTION | gtk.DEST_DEFAULT_HIGHLIGHT | gtk.DEST_DEFAULT_DROP,
+			[("text/uri-list", 0, DND_URI_LIST)] + image_targets,
+			gtk.gdk.ACTION_COPY)
+	
+	def setup_actions(self):
 		self.manager = gtk.UIManager()
 		self.accelerators = self.manager.get_accel_group()
 		self.window.add_accel_group(self.accelerators)
@@ -131,12 +180,11 @@ class Pynorama(object):
 		self.actions.add_action(filemenu)
 		
 		self.actions.add_action_with_accel(openaction, None)
+		self.actions.add_action_with_accel(pasteaction, None)
 
 		self.actions.add_action_with_accel(prevaction, "Page_Up")
 		self.actions.add_action_with_accel(nextaction, "Page_Down")
-		
-		self.actions.add_action_with_accel(pasteaction, None)
-				
+					
 		self.actions.add_action_with_accel(quitaction, None)
 		
 		self.actions.add_action(viewmenu)
@@ -166,42 +214,6 @@ class Pynorama(object):
 		self.actions.add_action(trscrollbars)
 		
 		self.actions.add_action_with_accel(fullscreenaction, "F4")
-		
-		self.manager.add_ui_from_file("viewer.xml")
-		
-		# Put everything in a nice layout
-		vlayout = gtk.VBox()
-		
-		self.menubar = self.manager.get_widget("/menubar")
-		self.toolbar = self.manager.get_widget("/toolbar")
-		vlayout.pack_start(self.menubar, False, False)
-		vlayout.pack_start(self.toolbar, False, False)
-		vlayout.pack_start(self.imageview)
-		vlayout.pack_end(self.statusbar, False, False)
-		
-		self.window.add(vlayout)
-		
-		# Connect events
-		self.window.connect("destroy", self._window_destroyed)
-		self.navigator = navigation.MapNavigator(self.imageview)
-		
-		# Complicated looking DnD setup
-		self.imageview.connect("drag_data_received", self.dragged_data)
-		
-		image_targets = []		
-		for mime_type in loading.Mimes:
-			image_targets.append((mime_type, 0, DND_IMAGE))
-			
-		self.imageview.drag_dest_set(
-			gtk.DEST_DEFAULT_MOTION | gtk.DEST_DEFAULT_HIGHLIGHT | gtk.DEST_DEFAULT_DROP,
-			[("text/uri-list", 0, DND_URI_LIST)] + image_targets,
-			gtk.gdk.ACTION_COPY)
-		
-		# Clipboard
-		self.clipboard = gtk.clipboard_get()
-		
-		# Make everything visible
-		self.window.show_all()
 	
 	# Logs a message into both console and status bar
 	def log(self, message):
@@ -220,8 +232,9 @@ class Pynorama(object):
 			self.actions.get_action("next").set_sensitive(True)
 			
 		self.current_image = image	
-		if self.current_image is None:			
+		if self.current_image is None:
 			self.window.set_title(_("Pynorama"))
+			
 			self.transform_label.set_text("")
 			self.imageview.pixbuf = None
 			

@@ -120,20 +120,22 @@ class ImageURINode(ImageNode):
 		return self.pixbuf is not None
 	
 	def do_load(self):
-		try:
-			loader = gtk.gdk.PixbufLoader()
+		loader = gtk.gdk.PixbufLoader()
 		
+		try:		
 			response = urllib2.urlopen(self.uri)
 			loader.write(response.read())
-			loader.close()
-		
-			self.pixbuf = loader.get_pixbuf()
 			
 		except urllib2.URLError:
 			raise Exception(_("Could not access \"%s\"" % self.uri))
 			
 		except:
 			raise Exception(_("Could not load \"%s\"" % self.uri))
+		
+		finally:
+			loader.close()
+			
+		self.pixbuf = loader.get_pixbuf()
 		
 	def do_unload(self):
 		self.pixbuf = None
