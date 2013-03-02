@@ -62,6 +62,7 @@ class ImageNode(object):
 		self.pixbuf = None
 		self.name = ""
 		self.fullname = ""
+		self.next = self.previous = None
 	
 	def reload(self):
 		if self.is_loaded():
@@ -76,7 +77,30 @@ class ImageNode(object):
 	def unload(self):
 		if self.is_loaded():
 			self.do_unload()
+	
+	def insert_links(self, previous, next):
+		if self.next:
+			self.next.previous = self.previous
+		if self.previous:
+			self.previous.next = self.next
+		
+		self.next = next
+		self.previous = previous
+		
+		if self.next:
+			self.next.previous = self
+		if self.previous:
+			self.previous.next = self
+					
+	def remove_links(self):
+		if self.next:
+			self.next.previous = self.previous
 			
+		if self.previous:
+			self.previous.next = self.next
+			
+		self.previous = self.next = None
+	
 	def cut_ties(self):
 		if self.next and self.next.previous is self:
 			self.next.previous = self.previous

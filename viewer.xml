@@ -5,11 +5,13 @@
 			<menuitem action="paste" />
 			<separator />
 			<menuitem action="next" />
-			<menuitem action="previous" />			
+			<menuitem action="previous" />
+			<separator />
+			<menuitem action="remove" />
+			<menuitem action="clear" />
 			<separator />
 			<menuitem action="quit" />
 		</menu>
-		
 		<menu action="view">
 			<menuitem action="in-zoom" />
 			<menuitem action="out-zoom" />
@@ -46,7 +48,7 @@
 		<separator />
 		<toolitem action="previous" />
 		<toolitem action="next" />
-		<separator />
+		<separator/>
 		<toolitem action="in-zoom" />
 		<toolitem action="out-zoom" />
 		<separator />

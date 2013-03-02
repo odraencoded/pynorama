@@ -1,4 +1,4 @@
-import gtk, gobject
+import gc, gtk, gobject
 
 class xImage(gtk.Bin):
 	'''
@@ -76,7 +76,6 @@ class xImage(gtk.Bin):
 						self.magnification += 1
 						
 				if self.magnification < 0:
-					print sw, sh
 					self.pixbuf = self.pixbuf.scale_simple(sw, sh, self.interpolation[0])
 			
 			if self.flip_vertical:
@@ -104,12 +103,12 @@ class xImage(gtk.Bin):
 						self.magnification -= 1
 						
 				if self.magnification > 0:
-					print sw, sh
 					self.pixbuf = self.pixbuf.scale_simple(sw, sh, self.interpolation[1])
-							
+			
+			gc.collect()
+			
 		self.image.set_from_pixbuf(self.pixbuf)
-		
-		self.emit("pixbuf_notify")
+		self.emit("pixbuf-notify")
 		
 	def do_size_allocate(self, allocation):
 		self.child.size_allocate(allocation)
@@ -119,5 +118,5 @@ class xImage(gtk.Bin):
 		requisition.width, requisition.height = self.image.size_request()
 		
 gobject.type_register(xImage)
-gobject.signal_new("pixbuf_notify", xImage, gobject.SIGNAL_RUN_FIRST,
+gobject.signal_new("pixbuf-notify", xImage, gobject.SIGNAL_RUN_FIRST,
                    gobject.TYPE_NONE, ())

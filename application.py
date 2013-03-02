@@ -16,7 +16,7 @@ DND_URI_LIST, DND_IMAGE = range(2)
 
 class Pynorama(object):
 	def __init__(self):
-		self.organizer = organization.Organizer()
+		self.organizer = organization.ImageNodeList()
 		self.current_image = None	
 		
 		# Create Window
@@ -63,17 +63,25 @@ class Pynorama(object):
 		
 		# Add a status bar
 		self.statusbar = gtk.Statusbar()
+		self.statusbar.set_spacing(24)
 		
-		# With a label for the image size
+		# With a label for image index
+		self.index_label = gtk.Label()
+		self.index_label.set_alignment(1, 0.5)
+		self.statusbar.pack_end(self.index_label, False, False)
+		
+		# And a label for the image transformation
 		self.transform_label = gtk.Label()
-		self.transform_label.set_alignment(1.0, 0.5)
+		self.transform_label.set_alignment(0, 0.5)
 		self.statusbar.pack_end(self.transform_label, False, False)
-
-		self.refresh_transform()
 		
+		# Show status
 		vlayout.pack_end(self.statusbar, False, False)
-		self.statusbar.show_all()	
-				
+		
+		self.statusbar.show_all()
+		self.refresh_transform()
+		self.refresh_index()
+		
 		# Connect events
 		self.window.connect("destroy", self._window_destroyed)
 		
@@ -102,6 +110,9 @@ class Pynorama(object):
 		openaction = gtk.Action("open", _("Open..."), _("Open an image"), gtk.STOCK_OPEN)
 		openaction.connect("activate", self.file_open)
 		
+		pasteaction = gtk.Action("paste", _("Paste"), _("Show an image from the clipboard"), gtk.STOCK_PASTE)
+		pasteaction.connect("activate", self.pasted_data)
+		
 		prevaction = gtk.Action("previous", _("Previous Image"), _("Open the previous image"), gtk.STOCK_GO_BACK)
 		prevaction.connect("activate", self.goprevious)
 		prevaction.set_sensitive(False)
@@ -110,8 +121,13 @@ class Pynorama(object):
 		nextaction.connect("activate", self.gonext)
 		nextaction.set_sensitive(False)
 		
-		pasteaction = gtk.Action("paste", _("Paste"), _("Show an image from the clipboard"), gtk.STOCK_PASTE)
-		pasteaction.connect("activate", self.pasted_data)
+		removeaction = gtk.Action("remove", _("Remove"), _("Remove the image from the viewer"), gtk.STOCK_CLOSE)
+		removeaction.connect("activate", self.remove)
+		removeaction.set_sensitive(False)
+		
+		clearaction = gtk.Action("clear", _("Remove All"), _("Remove all images from the viewer"), gtk.STOCK_CLEAR)
+		clearaction.connect("activate", self.clear)
+		clearaction.set_sensitive(False)
 		
 		quitaction = gtk.Action("quit", _("_Quit"), _("Exit the program"), gtk.STOCK_QUIT)
 		quitaction.connect("activate", self.quit)
@@ -121,7 +137,7 @@ class Pynorama(object):
 		
 		zoominaction = gtk.Action("in-zoom", _("Zoom In"), _("Makes the image look larger"), gtk.STOCK_ZOOM_IN)
 		zoomoutaction = gtk.Action("out-zoom", _("Zoom Out"), _("Makes the image look smaller"), gtk.STOCK_ZOOM_OUT)
-		nozoomaction = gtk.Action("no-zoom", _("No Zoom"), _("Makes the image look normal"), gtk.STOCK_ZOOM_100)
+		nozoomaction = gtk.Action("no-zoom", _("No Zoom"), _("Shows the image at it's normal size"), gtk.STOCK_ZOOM_100)
 		
 		nozoomaction.connect("activate", self.reset_zoom)
 		zoominaction.connect("activate", self.change_zoom, 1)
@@ -184,7 +200,10 @@ class Pynorama(object):
 
 		self.actions.add_action_with_accel(prevaction, "Page_Up")
 		self.actions.add_action_with_accel(nextaction, "Page_Down")
-					
+		
+		self.actions.add_action_with_accel(removeaction, "Delete")
+		self.actions.add_action_with_accel(clearaction, "<ctrl>Delete")
+		
 		self.actions.add_action_with_accel(quitaction, None)
 		
 		self.actions.add_action(viewmenu)
@@ -214,7 +233,7 @@ class Pynorama(object):
 		self.actions.add_action(trscrollbars)
 		
 		self.actions.add_action_with_accel(fullscreenaction, "F4")
-	
+			
 	# Logs a message into both console and status bar
 	def log(self, message):
 		self.statusbar.push(0, message)
@@ -227,46 +246,68 @@ class Pynorama(object):
 		
 		if self.current_image is not None:
 			self.current_image.unload()
-		else:
-			self.actions.get_action("previous").set_sensitive(True)
-			self.actions.get_action("next").set_sensitive(True)
-			
-		self.current_image = image	
+					
+		previous_image = self.current_image
+		self.current_image = image
+		
+		can_next, can_previous = True, True
+	
 		if self.current_image is None:
+			self.imageview.pixbuf = self.image.source = None
+			
 			self.window.set_title(_("Pynorama"))
-			
-			self.transform_label.set_text("")
-			self.imageview.pixbuf = None
-			
-			self.actions.get_action("previous").set_sensitive(False)
-			self.actions.get_action("next").set_sensitive(False)
-			
+					
+			can_next, can_previous = False, False
+			can_remove = False
+				
 		else:
 			try:
 				if not self.current_image.is_loaded():
-					self.log(_("Loading file \"%s\"...")  % self.current_image.fullname)
+					self.log(_("Loading \"%s\"...")  % self.current_image.fullname)
 					self.current_image.load()
 					
-				self.image.source = self.current_image.pixbuf
-				self.imageview.pixbuf = self.current_image.pixbuf
-				self.image.refresh_pixbuf()
-			
-				self.readjust_view()
-				self.window.set_title(_("\"%s\" - Pynorama") % self.current_image.name)
 			except:
 				self.log(str(sys.exc_info()[1]))
-				return
+				pixbuf = self.window.render_icon(gtk.STOCK_MISSING_IMAGE, gtk.ICON_SIZE_DIALOG)
+								
 			else:
-				self.log(_("Loaded file \"%s\"")  % self.current_image.fullname)
+				self.log(_("Loaded \"%s\"")  % self.current_image.fullname)
+				pixbuf = self.current_image.pixbuf
+				
+			self.imageview.pixbuf = self.image.source = pixbuf
+			can_remove = True
+			
+			if len(self.organizer.images) > 1 or self.current_image not in self.organizer.images:	
+				can_next, can_previous = self.current_image.next is not None, self.current_image.previous is not None
+			else:
+				can_next, can_previous = False, False
+	
+			self.window.set_title(_("\"%s\" - Pynorama") % self.current_image.name)		
+		
+		self.image.refresh_pixbuf()
+		self.readjust_view()
+		
+		self.actions.get_action("next").set_sensitive(can_next)
+		self.actions.get_action("previous").set_sensitive(can_previous)
+		self.actions.get_action("remove").set_sensitive(can_remove)
+		self.actions.get_action("clear").set_sensitive(len(self.organizer.images) > 0)
+		
+		self.refresh_index()
 			
 		return True
 		
-	def load_pixels(self, pixels):
-		pasted_image = loading.ImageDataNode(pixels, "Clipboard Image")
-		self.organizer.append(pasted_image)
-		self.set_image(pasted_image)
+	def load_pixels(self, pixels, title="Image Data"):
+		loaded_image = loading.ImageDataNode(pixels, title)
+		
+		if self.current_image and self.current_image not in self.organizer.images:
+			self.current_image.insert_links(self.current_image.previous, loaded_image)
+			
+		else:
+			loaded_image.previous = self.current_image
+		
+		self.set_image(loaded_image)
 	
-	def load_uris(self, uris):		
+	def load_uris(self, uris):
 		# Organizer uris of the internet and file locations
 		all_nodes, uri_nodes, file_nodes = [], [], []
 		directories, real_paths = set(), set()
@@ -321,38 +362,16 @@ class Pynorama(object):
 		
 		# Load files into the organizer
 		if all_nodes:
-			del self.organizer.images[:]
-						
-			for a_node in all_nodes:
-				self.organizer.append(a_node)
+			self.organizer.clear()
 			
-			self.set_image(self.organizer.images[0])
+			for a_node in all_nodes:
+				self.organizer.add(a_node)
 			
 			self.organizer.sort(organization.Sorting.ByFullname)
+			self.set_image(all_nodes[0])
+			
 			if len(all_nodes) > 1:
 				self.log(_("Found %d images") % len(all_nodes))
-			
-		return
-		# In this case, directory loading is possible!
-		only_files = filepaths and not yet_uris
-		
-		if only_files:
-			directories = set()
-			
-			for a_filepath in filepaths:
-				a_directory = os.path.dirname(a_filepath)
-				directories.add(a_directory)
-				
-		for a_filepath in filepaths:
-			ImageFileNode(a_filepath)
-				
-		for uri in uris:
-			filepath = loading.PathFromURI(uri)
-			
-			image = loading.ImageNode(uri, True)
-			self.organizer.append(image)
-		
-		self.set_image(self.organizer.images[0])
 	
 	# Adjusts the image to be on the top-center (so far)
 	def readjust_view(self):		
@@ -390,23 +409,40 @@ class Pynorama(object):
 			interp_group.set_current_value(interp)
 			
 		interp_group.unblock_activate()
-	
-	def refresh_transform(self):
-		if self.image.source:
-			if self.image.pixbuf:
-				# The width and height are from the source
-				p = "%dx%d" % (self.image.source.get_width(), self.image.source.get_height())
+		
+	def refresh_index(self):
+		if self.organizer.images:
+			count = len(self.organizer.images)
+			count_w = len(str(count))
+			
+			if self.current_image in self.organizer.images:
+				index = self.organizer.images.index(self.current_image) + 1
+				index_text = str(index).zfill(count_w)
+				
+				self.index_label.set_text(_("#%s/%d") % (index_text, count))
 			else:
-				# If self.image has a source but not a pixbuf, most likely
-				# there is not enough momery to display it
+				index_text = _("?") * count_w
+				self.index_label.set_text(_("%s/%d") % (index_text, count))
+								
+		else:
+			self.index_label.set_text(u"∅")
+		
+	def refresh_transform(self):
+		if self.current_image:
+			if self.current_image.pixbuf and self.image.pixbuf:
+				# The width and height are from the source
+				p = "{width}x{height}".format(width=self.image.source.get_width(), height=self.image.source.get_height())
+			else:
+				# This just may happen
 				p = _("Error")
+				
 		else:
 			p = _("Nothing")
 			
 		# The the rotation used by gtk is counter clockwise
 		# This converts the degrees to clockwise
 		if self.image.rotation:
-			r = u" %d°" % int(360 - self.image.rotation)
+			r = " " + u"{angle}°".format(angle=int(360 - self.image.rotation))
 		else:
 			r = ""
 			
@@ -416,11 +452,11 @@ class Pynorama(object):
 			scale = self.image.get_zoom()
 			
 			if self.image.magnification > 0:
-				z = "x%.2f" % scale
+				zoom_text = ("%.2f" % scale).rstrip("0").rstrip(".")
+				z = " " + "x{zoom_in}".format(zoom_in=zoom_text)
 			else:
-				z = ":%.2f" % (1.0 / scale)
-			
-			z = z.rstrip("0").rstrip(".")
+				zoom_text = ("%.2f" % (1.0 / scale)).rstrip("0").rstrip(".")
+				z = " " + ":{zoom_out}".format(zoom_out=zoom_text)
 		else:
 			z = ""
 		
@@ -501,12 +537,15 @@ class Pynorama(object):
 			self.imageview.set_placement(placement)
 			
 	def toggle_fullscreen(self, data=None):
+		# This simply tries to fullscreen / unfullscreen
 		fullscreenaction = self.actions.get_action("fullscreen")
 		
 		if fullscreenaction.props.active:
 			self.window.fullscreen()
+			fullscreenaction.set_stock_id(gtk.STOCK_LEAVE_FULLSCREEN)
 		else:
 			self.window.unfullscreen()
+			fullscreenaction.set_stock_id(gtk.STOCK_FULLSCREEN)
 	
 	def gonext(self, data=None):
 		if self.current_image and self.current_image.next:
@@ -515,7 +554,45 @@ class Pynorama(object):
 	def goprevious(self, data=None):
 		if self.current_image and self.current_image.previous:
 			self.set_image(self.current_image.previous)
-			
+	
+	def clear(self, data=None):
+		self.organizer.clear()
+		self.set_image(None)
+		
+		self.refresh_index()
+		self.log(_("Removed all images"))
+		
+	def remove(self, data=None):
+		if self.current_image is None:
+			return
+
+		removed_image = self.current_image
+		
+		if self.current_image in self.organizer.images:
+			# If there are no images left in the list, sets the image to None
+			if len(self.organizer.images) > 1:
+				last_image = self.organizer.get_last()
+				
+				if removed_image is last_image:
+					new_image = removed_image.previous
+				else:
+					new_image = removed_image.next
+					
+			else:
+				new_image = None
+				
+			self.organizer.remove(removed_image)
+		else:
+			if removed_image.next:
+				new_image = removed_image.next
+			else:
+				new_image = removed_image.previous
+				
+			removed_image.remove_links()
+		
+		self.set_image(new_image)
+		self.log(_("Removed \"%s\"") % removed_image.fullname)
+	
 	def pasted_data(self, data=None):
 		uris = self.clipboard.wait_for_uris()
 			
@@ -523,9 +600,9 @@ class Pynorama(object):
 			self.load_uris(uris)
 			return
 			
-		pixdata = self.clipboard.wait_for_image()
-		if pixdata:
-			self.load_pixels(pixdata)
+		pixel_data = self.clipboard.wait_for_image()
+		if pixel_data:
+			self.load_pixels(pixel_data, "Pasted Image")
 			return
 			
 		text = self.clipboard.wait_for_text()
@@ -536,9 +613,12 @@ class Pynorama(object):
 	def dragged_data(self, widget, context, x, y, selection, info, timestamp):
 		if info == DND_URI_LIST:
 			self.load_uris(selection.get_uris())
+			return
 							
 		elif info == DND_IMAGE:
-			pixbuf = selection.data.get_pixbuf()
+			pixel_data = selection.data.get_pixbuf()
+			if pixel_data:
+				self.load_pixels(pixel_data, "Dropped Image")
 		
 	def file_open(self, widget, data=None):
 		# Create image choosing dialog
