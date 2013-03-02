@@ -113,14 +113,6 @@ class Pynorama(object):
 		pasteaction = gtk.Action("paste", _("Paste"), _("Show an image from the clipboard"), gtk.STOCK_PASTE)
 		pasteaction.connect("activate", self.pasted_data)
 		
-		prevaction = gtk.Action("previous", _("Previous Image"), _("Open the previous image"), gtk.STOCK_GO_BACK)
-		prevaction.connect("activate", self.goprevious)
-		prevaction.set_sensitive(False)
-		
-		nextaction = gtk.Action("next", _("Next Image"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
-		nextaction.connect("activate", self.gonext)
-		nextaction.set_sensitive(False)
-		
 		removeaction = gtk.Action("remove", _("Remove"), _("Remove the image from the viewer"), gtk.STOCK_CLOSE)
 		removeaction.connect("activate", self.remove)
 		removeaction.set_sensitive(False)
@@ -131,6 +123,27 @@ class Pynorama(object):
 		
 		quitaction = gtk.Action("quit", _("_Quit"), _("Exit the program"), gtk.STOCK_QUIT)
 		quitaction.connect("activate", self.quit)
+		
+		# Gooooooo!!!
+		gomenu = gtk.Action("go", _("Go"), None, None)		
+		
+		prevaction = gtk.Action("previous", _("Previous Image"), _("Open the previous image"), gtk.STOCK_GO_BACK)
+		prevaction.connect("activate", self.goprevious)
+		prevaction.set_sensitive(False)
+		
+		nextaction = gtk.Action("next", _("Next Image"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
+		nextaction.connect("activate", self.gonext)
+		nextaction.set_sensitive(False)
+		
+		# Not
+		firstaction = gtk.Action("first", _("First Image"), _("Open the first image"), gtk.STOCK_GOTO_FIRST)
+		firstaction.connect("activate", self.gofirst)
+		firstaction.set_sensitive(False)
+		
+		# Neither
+		lastaction = gtk.Action("last", _("Last Image"), _("Open the last image"), gtk.STOCK_GOTO_LAST)
+		lastaction.connect("activate", self.golast)
+		lastaction.set_sensitive(False)
 		
 		# These actions are actual actions, not options.
 		viewmenu = gtk.Action("view", _("View"), None, None)
@@ -197,15 +210,20 @@ class Pynorama(object):
 		
 		self.actions.add_action_with_accel(openaction, None)
 		self.actions.add_action_with_accel(pasteaction, None)
-
-		self.actions.add_action_with_accel(prevaction, "Page_Up")
-		self.actions.add_action_with_accel(nextaction, "Page_Down")
-		
+				
 		self.actions.add_action_with_accel(removeaction, "Delete")
 		self.actions.add_action_with_accel(clearaction, "<ctrl>Delete")
 		
 		self.actions.add_action_with_accel(quitaction, None)
 		
+		self.actions.add_action(gomenu)
+		
+		self.actions.add_action_with_accel(prevaction, "Page_Up")
+		self.actions.add_action_with_accel(nextaction, "Page_Down")
+		
+		self.actions.add_action_with_accel(firstaction, "Home")
+		self.actions.add_action_with_accel(lastaction, "End")
+				
 		self.actions.add_action(viewmenu)
 		self.actions.add_action_with_accel(nozoomaction, "space")
 		self.actions.add_action_with_accel(zoominaction, "KP_Add")
@@ -251,14 +269,16 @@ class Pynorama(object):
 		self.current_image = image
 		
 		can_next, can_previous = True, True
+		can_first, can_last = True, True
 	
 		if self.current_image is None:
 			self.imageview.pixbuf = self.image.source = None
 			
 			self.window.set_title(_("Pynorama"))
 					
-			can_next, can_previous = False, False
+			can_next = can_previous = False
 			can_remove = False
+			can_first = can_last = bool(self.organizer.images)
 				
 		else:
 			try:
@@ -278,19 +298,25 @@ class Pynorama(object):
 			can_remove = True
 			
 			if len(self.organizer.images) > 1 or self.current_image not in self.organizer.images:	
+				can_first = can_last = True
 				can_next, can_previous = self.current_image.next is not None, self.current_image.previous is not None
 			else:
-				can_next, can_previous = False, False
+				can_next = can_previous = False
+				can_first = can_last = False
 	
 			self.window.set_title(_("\"%s\" - Pynorama") % self.current_image.name)		
 		
 		self.image.refresh_pixbuf()
 		self.readjust_view()
 		
-		self.actions.get_action("next").set_sensitive(can_next)
-		self.actions.get_action("previous").set_sensitive(can_previous)
 		self.actions.get_action("remove").set_sensitive(can_remove)
 		self.actions.get_action("clear").set_sensitive(len(self.organizer.images) > 0)
+		
+		self.actions.get_action("next").set_sensitive(can_next)
+		self.actions.get_action("previous").set_sensitive(can_previous)
+		
+		self.actions.get_action("first").set_sensitive(can_first)
+		self.actions.get_action("last").set_sensitive(can_last)
 		
 		self.refresh_index()
 			
@@ -546,6 +572,17 @@ class Pynorama(object):
 		else:
 			self.window.unfullscreen()
 			fullscreenaction.set_stock_id(gtk.STOCK_FULLSCREEN)
+	
+	def gofirst(self, data=None):
+		first_image = self.organizer.get_first()
+		if first_image:
+			self.set_image(first_image)
+	
+	def golast(self, data=None):
+		last_image = self.organizer.get_last()
+		if last_image:
+			self.set_image(last_image)
+	
 	
 	def gonext(self, data=None):
 		if self.current_image and self.current_image.next:

@@ -4,13 +4,17 @@
 			<menuitem action="open" />
 			<menuitem action="paste" />
 			<separator />
-			<menuitem action="next" />
-			<menuitem action="previous" />
-			<separator />
 			<menuitem action="remove" />
 			<menuitem action="clear" />
 			<separator />
 			<menuitem action="quit" />
+		</menu>
+		<menu action="go">
+			<menuitem action="next" />
+			<menuitem action="previous" />
+			<separator />
+			<menuitem action="first" />
+			<menuitem action="last" />
 		</menu>
 		<menu action="view">
 			<menuitem action="in-zoom" />
