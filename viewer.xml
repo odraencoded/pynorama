@@ -4,6 +4,13 @@
 			<menuitem action="open" />
 			<menuitem action="paste" />
 			<separator />
+			<menu action="ordering">
+				<menuitem action="sort" />
+				<separator />
+				<menuitem action="auto-sort" />
+				<menuitem action="reverse-sort" />
+			</menu>
+			<separator />
 			<menuitem action="remove" />
 			<menuitem action="clear" />
 			<separator />

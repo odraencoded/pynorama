@@ -7,6 +7,7 @@ class ImageNodeList:
 	
 	def __init__(self):
 		self.images = []
+		self.reverse = False
 							
 	def clear(self):
 		del self.images[:]
@@ -58,12 +59,12 @@ class ImageNodeList:
 		
 		self.images.append(image)
 		
-	def sort(self, comparer, reverse=False):
-		if len(self.images) == 0:
+	def sort(self, comparer):
+		if len(self.images) <= 1:
 			return
 			
 		# Sorts list
-		self.images = sorted(self.images, cmp=comparer, reverse=reverse)
+		self.images = sorted(self.images, cmp=comparer, reverse=self.reverse)
 		
 		# Refreshes next/previous links
 		first_image = self.images[0]

@@ -18,6 +18,7 @@ class Pynorama(object):
 	def __init__(self):
 		self.organizer = organization.ImageNodeList()
 		self.current_image = None	
+		self.autosort = True
 		
 		# Create Window
 		self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
@@ -113,6 +114,18 @@ class Pynorama(object):
 		pasteaction = gtk.Action("paste", _("Paste"), _("Show an image from the clipboard"), gtk.STOCK_PASTE)
 		pasteaction.connect("activate", self.pasted_data)
 		
+		orderingmenu = gtk.Action("ordering", _("Ordering"), None, None)
+		
+		sortaction = gtk.Action("sort", _("Sort Images"), _("Sort the images currently loaded"), None)
+		sortaction.connect("activate", self.sort_list)
+		
+		sortautoaction = gtk.ToggleAction("auto-sort", _("Sort Automatically"), _("Sort images as they are added"), None)
+		sortautoaction.set_active(True)
+		sortautoaction.connect("toggled", self.toggle_autosort)
+		
+		sortreverseaction = gtk.ToggleAction("reverse-sort", _("Reverse"), _("Order images in reverse"), None)
+		sortreverseaction.connect("toggled", self.toggle_reversesort)
+		
 		removeaction = gtk.Action("remove", _("Remove"), _("Remove the image from the viewer"), gtk.STOCK_CLOSE)
 		removeaction.connect("activate", self.remove)
 		removeaction.set_sensitive(False)
@@ -144,6 +157,10 @@ class Pynorama(object):
 		lastaction = gtk.Action("last", _("Last Image"), _("Open the last image"), gtk.STOCK_GOTO_LAST)
 		lastaction.connect("activate", self.golast)
 		lastaction.set_sensitive(False)
+		
+		sortingaction = gtk.Action("last", _("Last Image"), _("Open the last image"), gtk.STOCK_GOTO_LAST)
+		sortingaction.connect("activate", self.golast)
+		sortingaction.set_sensitive(False)
 		
 		# These actions are actual actions, not options.
 		viewmenu = gtk.Action("view", _("View"), None, None)
@@ -214,6 +231,11 @@ class Pynorama(object):
 		self.actions.add_action_with_accel(removeaction, "Delete")
 		self.actions.add_action_with_accel(clearaction, "<ctrl>Delete")
 		
+		self.actions.add_action(orderingmenu)
+		self.actions.add_action(sortaction)
+		self.actions.add_action(sortautoaction)
+		self.actions.add_action(sortreverseaction)
+				
 		self.actions.add_action_with_accel(quitaction, None)
 		
 		self.actions.add_action(gomenu)
@@ -393,7 +415,10 @@ class Pynorama(object):
 			for a_node in all_nodes:
 				self.organizer.add(a_node)
 			
-			self.organizer.sort(organization.Sorting.ByFullname)
+			
+			if self.autosort:
+				self.organizer.sort(organization.Sorting.ByFullname)
+			
 			self.set_image(all_nodes[0])
 			
 			if len(all_nodes) > 1:
@@ -416,7 +441,21 @@ class Pynorama(object):
 		gtk.gdk.set_program_class("Pynorama")
 		gtk.main()
 	
-	# Events	
+	# Events
+	def toggle_reversesort(self, data=None):
+		reverse = self.actions.get_action("reverse-sort").get_active()
+		if self.organizer.reverse != reverse:
+			self.organizer.reverse = reverse
+			self.organizer.images.reverse()
+			self.refresh_index()
+		
+	def toggle_autosort(self, data=None):
+		self.autosort = self.actions.get_action("auto-sort").get_active()
+		
+	def sort_list(self, data=None):
+		self.organizer.sort(organization.Sorting.ByFullname)
+		self.refresh_index()
+		
 	def pixbuf_changed(self, data=None):
 		self.refresh_transform()
 		self.refresh_interp()
