@@ -2,9 +2,9 @@
 	This script creates the file filters required to load files
 '''
 
-import pygtk
-pygtk.require("2.0")
-import gtk, os, re, urllib, urllib2
+import os, re, urllib, urllib2
+
+from gi.repository import Gtk, GdkPixbuf
 from gettext import gettext as _
 
 Filters = []
@@ -12,12 +12,12 @@ Mimes = []
 Extensions = set()
 
 # Create "All Files" filter
-contradictory_filter = gtk.FileFilter()
+contradictory_filter = Gtk.FileFilter()
 contradictory_filter.set_name(_("All Files"))
 contradictory_filter.add_pattern("*")
 
 # Create images filter
-images_filter = gtk.FileFilter()
+images_filter = Gtk.FileFilter()
 images_filter.set_name(_("Images"))
 
 # Add the "images" filter before "all files" filter
@@ -25,20 +25,20 @@ Filters.append(images_filter)
 Filters.append(contradictory_filter)
 
 # Create file filters from formats supported by gdk pixbuf
-_formats = gtk.gdk.pixbuf_get_formats()
-for aformat in _formats:
-	format_filter = gtk.FileFilter()
-	filter_name = aformat["name"] + " ("
+_formats = GdkPixbuf.Pixbuf.get_formats()
+for a_format in _formats:
+	format_filter = Gtk.FileFilter()
+	filter_name = a_format.get_name() + " ("
 	
 	# Add mime types
-	for a_mimetype in aformat["mime_types"]:
+	for a_mimetype in a_format.get_mime_types():
 		format_filter.add_mime_type(a_mimetype)
 		images_filter.add_mime_type(a_mimetype)
 		Mimes.append(a_mimetype)
 		
 	# Add patterns based on extensions
 	first_ext = True
-	for an_extension in aformat["extensions"]:
+	for an_extension in a_format.get_extensions():
 		new_pattern = "*." + an_extension
 		format_filter.add_pattern(new_pattern)
 		images_filter.add_pattern(new_pattern)
@@ -125,11 +125,10 @@ class ImageFileNode(ImageNode):
 		return self.pixbuf is not None
 		
 	def do_load(self):
-		self.pixbuf = gtk.gdk.pixbuf_new_from_file(self.filepath)
+		self.pixbuf = GdkPixbuf.Pixbuf.new_from_file(self.filepath)
 			
 	def do_unload(self):
 		self.pixbuf = None
-		return True
 		
 class ImageURINode(ImageNode):
 	'''
@@ -144,7 +143,7 @@ class ImageURINode(ImageNode):
 		return self.pixbuf is not None
 	
 	def do_load(self):
-		loader = gtk.gdk.PixbufLoader()
+		loader = GdkPixbuf.PixbufLoader()
 		
 		try:		
 			response = urllib2.urlopen(self.uri)

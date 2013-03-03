@@ -4,11 +4,11 @@
 	Pynorama is an image viewer application.
 '''
 
-import pygtk
-pygtk.require("2.0")
-import os, sys, urllib, math, gobject, gtk
+import gc, os, sys, urllib, math
+from gi.repository import Gtk, Gdk, GdkPixbuf, GObject
+import organization, navigation, loading
 from gettext import gettext as _
-import navigation, loading, organization
+#import navigation, loading, organization
 from ximage import xImage
 
 resource_dir = os.path.dirname(__file__)
@@ -21,16 +21,16 @@ class Pynorama(object):
 		self.autosort = True
 		
 		# Create Window
-		self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
+		self.window = Gtk.Window(Gtk.WindowType.TOPLEVEL)
 		self.window.set_default_size(600, 600)
 		self.window.set_title(_("Pynorama"))
 		self.window.show()
 		
 		# Set clipboard
-		self.clipboard = gtk.clipboard_get()
+		self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
 		
 		# Create layout
-		vlayout = gtk.VBox()
+		vlayout = Gtk.VBox()
 		self.window.add(vlayout)
 		vlayout.show()
 		
@@ -41,43 +41,43 @@ class Pynorama(object):
 		self.menubar = self.manager.get_widget("/menubar")
 		self.toolbar = self.manager.get_widget("/toolbar")
 		
-		vlayout.pack_start(self.menubar, False, False)
-		vlayout.pack_start(self.toolbar, False, False)
+		vlayout.pack_start(self.menubar, False, False, 0)
+		vlayout.pack_start(self.toolbar, False, False, 0)
 		
 		self.menubar.show_all()
 		self.toolbar.show_all()
 		
 		# Create image and a scrolled window for it		
-		self.image = gobject.new(xImage)
+		self.image = GObject.new(xImage)
 		self.image.connect("pixbuf-notify", self.pixbuf_changed)
 		
-		self.imageview = gtk.ScrolledWindow()
+		self.imageview = Gtk.ScrolledWindow()
 		self.imageview.add_with_viewport(self.image)
 		self.imageview.pixbuf =  None
 		
-		vlayout.pack_start(self.imageview)
+		vlayout.pack_start(self.imageview, True, True, 0)
 		
 		# Add navigator
 		self.navigator = navigation.MapNavigator(self.imageview)
 		
 		self.imageview.show_all()
-		
+				
 		# Add a status bar
-		self.statusbar = gtk.Statusbar()
+		self.statusbar = Gtk.Statusbar()
 		self.statusbar.set_spacing(24)
 		
 		# With a label for image index
-		self.index_label = gtk.Label()
+		self.index_label = Gtk.Label()
 		self.index_label.set_alignment(1, 0.5)
-		self.statusbar.pack_end(self.index_label, False, False)
+		self.statusbar.pack_end(self.index_label, False, False, 0)
 		
 		# And a label for the image transformation
-		self.transform_label = gtk.Label()
+		self.transform_label = Gtk.Label()
 		self.transform_label.set_alignment(0, 0.5)
-		self.statusbar.pack_end(self.transform_label, False, False)
+		self.statusbar.pack_end(self.transform_label, False, False, 0)
 		
 		# Show status
-		vlayout.pack_end(self.statusbar, False, False)
+		vlayout.pack_end(self.statusbar, False, False, 0)
 		
 		self.statusbar.show_all()
 		self.refresh_transform()
@@ -86,139 +86,138 @@ class Pynorama(object):
 		# Connect events
 		self.window.connect("destroy", self._window_destroyed)
 		
-		# Complicated looking DnD setup
-		self.imageview.connect("drag_data_received", self.dragged_data)
+		# DnD setup	
+		self.imageview.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
 		
-		image_targets = []		
-		for mime_type in loading.Mimes:
-			image_targets.append((mime_type, 0, DND_IMAGE))
-			
-		self.imageview.drag_dest_set(
-			gtk.DEST_DEFAULT_MOTION | gtk.DEST_DEFAULT_HIGHLIGHT | gtk.DEST_DEFAULT_DROP,
-			[("text/uri-list", 0, DND_URI_LIST)] + image_targets,
-			gtk.gdk.ACTION_COPY)
-	
+		target_list = Gtk.TargetList.new([])
+		target_list.add_image_targets(DND_IMAGE, False)
+		target_list.add_uri_targets(DND_URI_LIST)
+		
+		self.imageview.drag_dest_set_target_list(target_list)
+		
+		self.imageview.connect("drag-data-received", self.dragged_data)
+		
 	def setup_actions(self):
-		self.manager = gtk.UIManager()
+		self.manager = Gtk.UIManager()
 		self.accelerators = self.manager.get_accel_group()
 		self.window.add_accel_group(self.accelerators)
 		
-		self.actions = gtk.ActionGroup("pynorama")
+		self.actions = Gtk.ActionGroup("pynorama")
 		self.manager.insert_action_group(self.actions)	
 		
-		filemenu = gtk.Action("file", _("File"), None, None)		
+		filemenu = Gtk.Action("file", _("File"), None, None)		
 				
-		openaction = gtk.Action("open", _("Open..."), _("Open an image"), gtk.STOCK_OPEN)
+		openaction = Gtk.Action("open", _("Open..."), _("Open an image"), Gtk.STOCK_OPEN)
 		openaction.connect("activate", self.file_open)
 		
-		pasteaction = gtk.Action("paste", _("Paste"), _("Show an image from the clipboard"), gtk.STOCK_PASTE)
+		pasteaction = Gtk.Action("paste", _("Paste"), _("Show an image from the clipboard"), Gtk.STOCK_PASTE)
 		pasteaction.connect("activate", self.pasted_data)
 		
-		orderingmenu = gtk.Action("ordering", _("Ordering"), None, None)
+		orderingmenu = Gtk.Action("ordering", _("Ordering"), None, None)
 		
-		sortaction = gtk.Action("sort", _("Sort Images"), _("Sort the images currently loaded"), None)
+		sortaction = Gtk.Action("sort", _("Sort Images"), _("Sort the images currently loaded"), None)
 		sortaction.connect("activate", self.sort_list)
 		
-		sortautoaction = gtk.ToggleAction("auto-sort", _("Sort Automatically"), _("Sort images as they are added"), None)
+		sortautoaction = Gtk.ToggleAction("auto-sort", _("Sort Automatically"), _("Sort images as they are added"), None)
 		sortautoaction.set_active(True)
 		sortautoaction.connect("toggled", self.toggle_autosort)
 		
-		sortreverseaction = gtk.ToggleAction("reverse-sort", _("Reverse"), _("Order images in reverse"), None)
+		sortreverseaction = Gtk.ToggleAction("reverse-sort", _("Reverse"), _("Order images in reverse"), None)
 		sortreverseaction.connect("toggled", self.toggle_reversesort)
 		
-		removeaction = gtk.Action("remove", _("Remove"), _("Remove the image from the viewer"), gtk.STOCK_CLOSE)
+		removeaction = Gtk.Action("remove", _("Remove"), _("Remove the image from the viewer"), Gtk.STOCK_CLOSE)
 		removeaction.connect("activate", self.remove)
 		removeaction.set_sensitive(False)
 		
-		clearaction = gtk.Action("clear", _("Remove All"), _("Remove all images from the viewer"), gtk.STOCK_CLEAR)
+		clearaction = Gtk.Action("clear", _("Remove All"), _("Remove all images from the viewer"), Gtk.STOCK_CLEAR)
 		clearaction.connect("activate", self.clear)
 		clearaction.set_sensitive(False)
 		
-		quitaction = gtk.Action("quit", _("_Quit"), _("Exit the program"), gtk.STOCK_QUIT)
+		quitaction = Gtk.Action("quit", _("_Quit"), _("Exit the program"), Gtk.STOCK_QUIT)
 		quitaction.connect("activate", self.quit)
 		
 		# Gooooooo!!!
-		gomenu = gtk.Action("go", _("Go"), None, None)		
+		gomenu = Gtk.Action("go", _("Go"), None, None)		
 		
-		prevaction = gtk.Action("previous", _("Previous Image"), _("Open the previous image"), gtk.STOCK_GO_BACK)
+		prevaction = Gtk.Action("previous", _("Previous Image"), _("Open the previous image"), Gtk.STOCK_GO_BACK)
 		prevaction.connect("activate", self.goprevious)
 		prevaction.set_sensitive(False)
 		
-		nextaction = gtk.Action("next", _("Next Image"), _("Open the next image"), gtk.STOCK_GO_FORWARD)
+		nextaction = Gtk.Action("next", _("Next Image"), _("Open the next image"), Gtk.STOCK_GO_FORWARD)
 		nextaction.connect("activate", self.gonext)
 		nextaction.set_sensitive(False)
 		
 		# Not
-		firstaction = gtk.Action("first", _("First Image"), _("Open the first image"), gtk.STOCK_GOTO_FIRST)
+		firstaction = Gtk.Action("first", _("First Image"), _("Open the first image"), Gtk.STOCK_GOTO_FIRST)
 		firstaction.connect("activate", self.gofirst)
 		firstaction.set_sensitive(False)
 		
 		# Neither
-		lastaction = gtk.Action("last", _("Last Image"), _("Open the last image"), gtk.STOCK_GOTO_LAST)
+		lastaction = Gtk.Action("last", _("Last Image"), _("Open the last image"), Gtk.STOCK_GOTO_LAST)
 		lastaction.connect("activate", self.golast)
 		lastaction.set_sensitive(False)
 		
-		sortingaction = gtk.Action("last", _("Last Image"), _("Open the last image"), gtk.STOCK_GOTO_LAST)
+		sortingaction = Gtk.Action("last", _("Last Image"), _("Open the last image"), Gtk.STOCK_GOTO_LAST)
 		sortingaction.connect("activate", self.golast)
 		sortingaction.set_sensitive(False)
 		
 		# These actions are actual actions, not options.
-		viewmenu = gtk.Action("view", _("View"), None, None)
+		viewmenu = Gtk.Action("view", _("View"), None, None)
 		
-		zoominaction = gtk.Action("in-zoom", _("Zoom In"), _("Makes the image look larger"), gtk.STOCK_ZOOM_IN)
-		zoomoutaction = gtk.Action("out-zoom", _("Zoom Out"), _("Makes the image look smaller"), gtk.STOCK_ZOOM_OUT)
-		nozoomaction = gtk.Action("no-zoom", _("No Zoom"), _("Shows the image at it's normal size"), gtk.STOCK_ZOOM_100)
+		zoominaction = Gtk.Action("in-zoom", _("Zoom In"), _("Makes the image look larger"), Gtk.STOCK_ZOOM_IN)
+		zoomoutaction = Gtk.Action("out-zoom", _("Zoom Out"), _("Makes the image look smaller"), Gtk.STOCK_ZOOM_OUT)
+		nozoomaction = Gtk.Action("no-zoom", _("No Zoom"), _("Shows the image at it's normal size"), Gtk.STOCK_ZOOM_100)
 		
 		nozoomaction.connect("activate", self.reset_zoom)
 		zoominaction.connect("activate", self.change_zoom, 1)
 		zoomoutaction.connect("activate", self.change_zoom, -1)
 		
-		transformmenu = gtk.Action("transform", _("Transform"), None, None)
-		rotatecwaction = gtk.Action("cw-rotate", _("Rotate Clockwise"), _("Turns the image top side to the right side"), -1)
-		rotateccwaction = gtk.Action("ccw-rotate", _("Rotate Counter Clockwise"), _("Turns the image top side to the left side"), -1)
+		transformmenu = Gtk.Action("transform", _("Transform"), None, None)
+		rotatecwaction = Gtk.Action("cw-rotate", _("Rotate Clockwise"), _("Turns the image top side to the right side"), -1)
+		rotateccwaction = Gtk.Action("ccw-rotate", _("Rotate Counter Clockwise"), _("Turns the image top side to the left side"), -1)
 		
 		rotatecwaction.connect("activate", self.rotate, 90)
 		rotateccwaction.connect("activate", self.rotate, -90)
 		
-		fliphorizontalaction = gtk.Action("h-flip", _("Flip Horizontally"), _("Inverts the left and right sides of the image"), -1)
-		flipverticalaction = gtk.Action("v-flip", _("Flip Vertically"), _("Inverts the top and bottom sides of the image"), -1)
+		fliphorizontalaction = Gtk.Action("h-flip", _("Flip Horizontally"), _("Inverts the left and right sides of the image"), -1)
+		flipverticalaction = Gtk.Action("v-flip", _("Flip Vertically"), _("Inverts the top and bottom sides of the image"), -1)
 		
 		flipverticalaction.connect("activate", self.flip, False)
 		fliphorizontalaction.connect("activate", self.flip, True)
 				
 		# Choices for pixel interpolation
-		interpolationmenu = gtk.Action("interpolation", _("Inter_polation"), None, None)
+		interpolationmenu = Gtk.Action("interpolation", _("Inter_polation"), None, None)
 		
-		interpnearestaction = gtk.RadioAction("nearest-interp", _("Nearest Neighbour"), _(""), -1, gtk.gdk.INTERP_NEAREST)
-		interptilesaction = gtk.RadioAction("tiles-interp", _("Parallelogram Tiles"), _(""), -1, gtk.gdk.INTERP_TILES)
-		interpbilinearaction = gtk.RadioAction("bilinear-interp", _("Bilinear Function"), _(""), -1, gtk.gdk.INTERP_BILINEAR)
-		interphyperaction = gtk.RadioAction("hyper-interp", _("Hyperbolic Function"), _(""), -1, gtk.gdk.INTERP_HYPER)
+		interpnearestaction = Gtk.RadioAction("nearest-interp", _("Nearest Neighbour"), _(""), -1, GdkPixbuf.InterpType.NEAREST)
+		interptilesaction = Gtk.RadioAction("tiles-interp", _("Parallelogram Tiles"), _(""), -1, GdkPixbuf.InterpType.TILES)
+		interpbilinearaction = Gtk.RadioAction("bilinear-interp", _("Bilinear Function"), _(""), -1, GdkPixbuf.InterpType.BILINEAR)
+		interphyperaction = Gtk.RadioAction("hyper-interp", _("Hyperbolic Function"), _(""), -1, GdkPixbuf.InterpType.HYPER)
 		
-		interptilesaction.set_group(interpnearestaction)
-		interpbilinearaction.set_group(interpnearestaction)
-		interphyperaction.set_group(interpnearestaction)
+		interptilesaction.join_group(interpnearestaction)
+		interpbilinearaction.join_group(interptilesaction)
+		interphyperaction.join_group(interpbilinearaction)
 		
 		interpolationmenu.set_sensitive(False)
 		interpnearestaction.connect("changed", self.change_interp)
 		
 		# This is a very original part of the entire program
-		scrollbarsmenu = gtk.Action("scrollbars", _("_Scrollbars"), None, None)
+		scrollbarsmenu = Gtk.Action("scrollbars", _("_Scrollbars"), None, None)
 		
-		noscrollbars = gtk.RadioAction("no-scrollbars", _("No Scroll Bars"), _("Hide scroll bars"), -1, -1)
-		brscrollbars = gtk.RadioAction("br-scrollbars", _("At Bottom Right"), _("Show scroll bars at the bottom right corner"), -1, gtk.CORNER_TOP_LEFT)
-		trscrollbars = gtk.RadioAction("tr-scrollbars", _("At Top Right"), _("Show scroll bars at the top right corner"), -1, gtk.CORNER_BOTTOM_LEFT)
-		tlscrollbars = gtk.RadioAction("tl-scrollbars", _("At Top Left"), _("Show scroll bars at the top left corner"), -1, gtk.CORNER_BOTTOM_RIGHT)
-		blscrollbars = gtk.RadioAction("bl-scrollbars", _("At Bottom Left"), _("Show scroll bars at the bottom left corner"), -1, gtk.CORNER_TOP_RIGHT)
+		noscrollbars = Gtk.RadioAction("no-scrollbars", _("No Scroll Bars"), _("Hide scroll bars"), -1, -1)
+		brscrollbars = Gtk.RadioAction("br-scrollbars", _("At Bottom Right"), _("Show scroll bars at the bottom right corner"), -1, Gtk.CornerType.TOP_LEFT)
+		trscrollbars = Gtk.RadioAction("tr-scrollbars", _("At Top Right"), _("Show scroll bars at the top right corner"), -1, Gtk.CornerType.BOTTOM_LEFT)
+		tlscrollbars = Gtk.RadioAction("tl-scrollbars", _("At Top Left"), _("Show scroll bars at the top left corner"), -1, Gtk.CornerType.BOTTOM_RIGHT)
+		blscrollbars = Gtk.RadioAction("bl-scrollbars", _("At Bottom Left"), _("Show scroll bars at the bottom left corner"), -1, Gtk.CornerType.TOP_RIGHT)
 		
-		brscrollbars.set_group(noscrollbars)
-		trscrollbars.set_group(noscrollbars)
-		tlscrollbars.set_group(noscrollbars)
-		blscrollbars.set_group(noscrollbars)
+		brscrollbars.join_group(noscrollbars)
+		trscrollbars.join_group(brscrollbars)
+		tlscrollbars.join_group(trscrollbars)
+		blscrollbars.join_group(tlscrollbars)
 		
-		noscrollbars.set_current_value(gtk.CORNER_TOP_LEFT)
+		noscrollbars.set_current_value(Gtk.CornerType.TOP_RIGHT)
 		noscrollbars.connect("changed", self.change_scrollbars)
 		
-		fullscreenaction = gtk.ToggleAction("fullscreen", _("Fullscreen"), _("Fill the entire screen"), gtk.STOCK_FULLSCREEN)
+		fullscreenaction = Gtk.ToggleAction("fullscreen", _("Fullscreen"), _("Fill the entire screen"), Gtk.STOCK_FULLSCREEN)
 		fullscreenaction.connect("toggled", self.toggle_fullscreen)
 		
 		# Add to the action group
@@ -310,7 +309,7 @@ class Pynorama(object):
 					
 			except:
 				self.log(str(sys.exc_info()[1]))
-				pixbuf = self.window.render_icon(gtk.STOCK_MISSING_IMAGE, gtk.ICON_SIZE_DIALOG)
+				pixbuf = self.window.render_icon(Gtk.STOCK_MISSING_IMAGE, Gtk.IconSize.DIALOG)
 								
 			else:
 				self.log(_("Loaded \"%s\"")  % self.current_image.fullname)
@@ -410,11 +409,12 @@ class Pynorama(object):
 		
 		# Load files into the organizer
 		if all_nodes:
+			self.current_image = None
 			self.organizer.clear()
+			gc.collect()
 			
 			for a_node in all_nodes:
 				self.organizer.add(a_node)
-			
 			
 			if self.autosort:
 				self.organizer.sort(organization.Sorting.ByFullname)
@@ -429,7 +429,7 @@ class Pynorama(object):
 		if self.image.pixbuf:
 			w, h = self.image.pixbuf.get_width(), self.image.pixbuf.get_height()
 			alloc = self.imageview.get_allocation()
-			vw, vh = alloc[2], alloc[3]
+			vw, vh = alloc.width, alloc.height
 			
 			x = (w - vw) // 2
 			y = 0
@@ -438,8 +438,8 @@ class Pynorama(object):
 			self.imageview.get_vadjustment().set_value(y)
 		
 	def run(self):
-		gtk.gdk.set_program_class("Pynorama")
-		gtk.main()
+		Gdk.set_program_class("Pynorama")
+		Gtk.main()
 	
 	# Events
 	def toggle_reversesort(self, data=None):
@@ -607,10 +607,10 @@ class Pynorama(object):
 		
 		if fullscreenaction.props.active:
 			self.window.fullscreen()
-			fullscreenaction.set_stock_id(gtk.STOCK_LEAVE_FULLSCREEN)
+			fullscreenaction.set_stock_id(Gtk.STOCK_LEAVE_FULLSCREEN)
 		else:
 			self.window.unfullscreen()
-			fullscreenaction.set_stock_id(gtk.STOCK_FULLSCREEN)
+			fullscreenaction.set_stock_id(Gtk.STOCK_FULLSCREEN)
 	
 	def gofirst(self, data=None):
 		first_image = self.organizer.get_first()
@@ -634,6 +634,7 @@ class Pynorama(object):
 	def clear(self, data=None):
 		self.organizer.clear()
 		self.set_image(None)
+		gc.collect()
 		
 		self.refresh_index()
 		self.log(_("Removed all images"))
@@ -687,6 +688,7 @@ class Pynorama(object):
 				self.load_uris([text])
 			
 	def dragged_data(self, widget, context, x, y, selection, info, timestamp):
+		print "draggn"
 		if info == DND_URI_LIST:
 			self.load_uris(selection.get_uris())
 			return
@@ -698,10 +700,10 @@ class Pynorama(object):
 		
 	def file_open(self, widget, data=None):
 		# Create image choosing dialog
-		image_chooser = gtk.FileChooserDialog(title = _("Open Image..."), action = gtk.FILE_CHOOSER_ACTION_OPEN,
-			buttons = (gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL, gtk.STOCK_OPEN, gtk.RESPONSE_OK))
+		image_chooser = Gtk.FileChooserDialog(title = _("Open Image..."), action = Gtk.FileChooserAction.OPEN,
+			buttons = (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK))
 			
-		image_chooser.set_default_response(gtk.RESPONSE_OK)
+		image_chooser.set_default_response(Gtk.ResponseType.OK)
 		image_chooser.set_select_multiple(True)
 		
 		# Add filters of supported formats from "loading" module
@@ -709,7 +711,7 @@ class Pynorama(object):
 			image_chooser.add_filter(fileFilter)
 		
 		try:
-			if image_chooser.run() == gtk.RESPONSE_OK:
+			if image_chooser.run() == Gtk.ResponseType.OK:
 				uris = image_chooser.get_uris()
 				self.load_uris(uris)
 								
@@ -722,7 +724,7 @@ class Pynorama(object):
 			image_chooser.destroy()
 	
 	def quit(self, widget=None, data=None):
-		gtk.main_quit()
+		Gtk.main_quit()
 	
 	def _window_destroyed(self, widget, data=None):
 		self.quit()

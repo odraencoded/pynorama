@@ -1,35 +1,38 @@
-import gc, gtk, gobject
+import gc
+from gi.repository import Gtk, GdkPixbuf, GObject
 
-class xImage(gtk.Bin):
+class xImage(Gtk.Bin):
 	'''
-		This provides more features for gtk.Image
+		This provides some features for gtk.Image
 	'''
-	__gtype_name__ = 'xImage'
-	
+	__gtype_name__ = "xImage"
+	__gsignals__ = {
+        "pixbuf-notify": (GObject.SIGNAL_RUN_FIRST, None, ())
+    }
 	# This is a limit on the number of pixels of an
 	# Image while zoomed in or out
 	# Got to make it customizable one day
 	zoom_pixel_limit = (64, 15000 * 15000)
 	
 	def __init__(self):
-		gtk.Bin.__init__(self)
+		Gtk.Bin.__init__(self)
 		
-		self.image = gobject.new(gtk.Image)
+		self.image = Gtk.Image()
 		self.add(self.image)
 		self.image.show()
-				
+		
 		self.source = None
 		self.pixbuf = None
 		self.magnification = 0
 		self.zoom_base = 2
-		self.rotation = gtk.gdk.PIXBUF_ROTATE_NONE
+		self.rotation = 0
 		
 		# There are two interpolation settings: Zoom out and zoom in
-		self.interpolation = (gtk.gdk.INTERP_BILINEAR, gtk.gdk.INTERP_NEAREST)
+		self.interpolation = (GdkPixbuf.InterpType.BILINEAR, GdkPixbuf.InterpType.NEAREST)
 		
 		self.flip_horizontal = False
 		self.flip_vertical = False
-	
+		
 	def get_zoom(self):
 		return self.zoom_base ** self.magnification
 	
@@ -111,12 +114,13 @@ class xImage(gtk.Bin):
 		self.emit("pixbuf-notify")
 		
 	def do_size_allocate(self, allocation):
-		self.child.size_allocate(allocation)
-		self.allocation = allocation
+		self.get_child().size_allocate(allocation)
+		self.set_allocation(allocation)
 		
-	def do_size_request(self, requisition):
-		requisition.width, requisition.height = self.image.size_request()
+	def do_get_preferred_width(self):
+		return self.image.get_preferred_width()
 		
-gobject.type_register(xImage)
-gobject.signal_new("pixbuf-notify", xImage, gobject.SIGNAL_RUN_FIRST,
-                   gobject.TYPE_NONE, ())
+	def do_get_preferred_height(self):
+		return self.image.get_preferred_height()
+		
+GObject.type_register(xImage)

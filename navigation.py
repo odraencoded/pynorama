@@ -2,7 +2,7 @@
 	Some panning interface related code
 '''
 
-import gtk, gobject
+from gi.repository import Gtk, Gdk
 
 class SlideNavigator:
 	'''
@@ -17,9 +17,9 @@ class SlideNavigator:
 		# Setup events
 		imagevp = imageview.get_child() # this should be the viewport between image and scrolledwindow
 		imagevp.set_events(imagevp.get_events() | 
-			gtk.gdk.LEAVE_NOTIFY_MASK |
-			gtk.gdk.POINTER_MOTION_MASK |
-			gtk.gdk.POINTER_MOTION_HINT_MASK)
+			Gdk.EventMask.LEAVE_NOTIFY_MASK |
+			Gdk.EventMask.POINTER_MOTION_MASK |
+			Gdk.EventMask.POINTER_MOTION_HINT_MASK)
 			
 		imagevp.connect("motion_notify_event", self.motion)	
 		imagevp.connect("leave_notify_event", self.leave)
@@ -79,8 +79,9 @@ class MapNavigator:
 		
 		imagevp = imageview.get_child() # this should be the viewport between image and scrolledwindow
 		imagevp.set_events(imagevp.get_events() | 
-			gtk.gdk.POINTER_MOTION_MASK |
-			gtk.gdk.POINTER_MOTION_HINT_MASK)
+			Gdk.EventMask.POINTER_MOTION_MASK |
+			Gdk.EventMask.POINTER_MOTION_HINT_MASK |
+			Gdk.EventMask.SCROLL_MASK)
 		
 		if imagevp.get_realized():
 			self.realize_handle_id = None
@@ -97,11 +98,12 @@ class MapNavigator:
 			
 	def set_cursor(self, data=None, imagevp=None):
 		# Sets the cursor to a crosshair
-		imagevp.window.set_cursor(gtk.gdk.Cursor(gtk.gdk.CROSSHAIR))
+		imagevp.get_window().set_cursor(Gdk.Cursor(Gdk.CursorType.CROSSHAIR))
 		if self.realize_handle_id is not None:
 			imagevp.disconnect(self.realize_handle_id)
 	
 	def get_scalar_rectangle(self):
+		rect = None
 		allocation = self.imageview.get_allocation()
 		if self.mode == "square":
 			if allocation.width > allocation.height:
@@ -112,7 +114,7 @@ class MapNavigator:
 			half_width_diff = (allocation.width - smallest_side) // 2
 			half_height_diff = (allocation.height - smallest_side) // 2
 			
-			rect = gtk.gdk.Rectangle(
+			rect_tuple = (
 				half_width_diff, half_height_diff,
 				allocation.width - half_width_diff * 2, allocation.height - half_height_diff * 2
 			)
@@ -132,7 +134,7 @@ class MapNavigator:
 			half_width_diff = (allocation.width - tw) // 2
 			half_height_diff = (allocation.height - th) // 2
 			
-			rect = gtk.gdk.Rectangle(
+			rect_tuple = (
 				half_width_diff, half_height_diff,
 				allocation.width - half_width_diff * 2, allocation.height - half_height_diff * 2
 			)
@@ -140,6 +142,10 @@ class MapNavigator:
 		else:
 			rect = allocation
 		
+		if rect is None:
+			rect = Gdk.Rectangle()
+			rect.x, rect.y, rect.width, rect.height = rect_tuple
+					
 		if rect.width > self.margin * 2:		
 			if rect.x < self.margin:
 				rect.width -= self.margin - rect.x
@@ -161,11 +167,11 @@ class MapNavigator:
 	def scrolling(self, widget, data=None):
 		image = self.imageview.get_child().get_child()
 		
-		if data.direction == gtk.gdk.SCROLL_UP:
+		if data.direction == Gdk.ScrollDirection.UP:
 			image.magnification += 1
 			image.refresh_pixbuf()
 		
-		if data.direction == gtk.gdk.SCROLL_DOWN:
+		if data.direction == Gdk.ScrollDirection.DOWN:
 			image.magnification -= 1
 			image.refresh_pixbuf()
 		
