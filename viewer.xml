@@ -9,6 +9,15 @@
 				<separator />
 				<menuitem action="auto-sort" />
 				<menuitem action="reverse-sort" />
+				<separator />
+				<menuitem action="name-sort" />
+				<separator />
+				<menuitem action="file-date-sort" />
+				<menuitem action="file-size-sort" />
+				<separator />
+				<menuitem action="img-size-sort" />
+				<menuitem action="img-width-sort" />
+				<menuitem action="img-height-sort" />
 			</menu>
 			<separator />
 			<menuitem action="remove" />

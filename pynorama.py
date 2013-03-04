@@ -29,7 +29,6 @@ if __name__ == "__main__":
 	open_uris = []
 		 
 	for a_path in args.file:
-		print a_path
 		if not a_path.startswith(("http://", "https://", "ftp://", "file:")):
 			a_path = "file://" + a_path
 		

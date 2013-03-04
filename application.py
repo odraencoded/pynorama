@@ -118,12 +118,39 @@ class Pynorama(object):
 		sortaction = Gtk.Action("sort", _("Sort Images"), _("Sort the images currently loaded"), None)
 		sortaction.connect("activate", self.sort_list)
 		
-		sortautoaction = Gtk.ToggleAction("auto-sort", _("Sort Automatically"), _("Sort images as they are added"), None)
-		sortautoaction.set_active(True)
-		sortautoaction.connect("toggled", self.toggle_autosort)
+		sort_auto_action = Gtk.ToggleAction("auto-sort", _("Sort Automatically"), _("Sort images as they are added"), None)
+		sort_auto_action.set_active(True)
+		sort_auto_action.connect("toggled", self.toggle_autosort)
 		
-		sortreverseaction = Gtk.ToggleAction("reverse-sort", _("Reverse"), _("Order images in reverse"), None)
-		sortreverseaction.connect("toggled", self.toggle_reversesort)
+		sort_reverse_action = Gtk.ToggleAction("reverse-sort", _("Reverse Order"), _("Order images in reverse"), None)
+		sort_reverse_action.connect("toggled", self.toggle_reversesort)
+		
+		self.ordering_modes = [
+			organization.Ordering.ByName,
+			organization.Ordering.ByFileDate,
+			organization.Ordering.ByFileSize,
+			organization.Ordering.ByImageSize,
+			organization.Ordering.ByImageWidth,
+			organization.Ordering.ByImageHeight
+		]
+		self.active_ordering = organization.Ordering.ByName
+		
+		sort_name_action = Gtk.RadioAction("name-sort", _("By Name"), _("Order images alphabetically"), None, 0)
+		sort_filedate_action = Gtk.RadioAction("file-date-sort", _("By Modification Date"), _("Recently modified images appear first"), None, 1)
+		sort_filesize_action = Gtk.RadioAction("file-size-sort", _("By File Size"), _("Smaller files appear first"), None, 2)
+		
+		sort_imgsize_action = Gtk.RadioAction("img-size-sort", _("By Image Size"), _("Smaller images appear first"), None, 3)
+		sort_imgwidth_action = Gtk.RadioAction("img-width-sort", _("By Image Width"), _("Narrower images appear first"), None, 4)
+		sort_imgheight_action = Gtk.RadioAction("img-height-sort", _("By Image Height"), _("Shorter images appear first"), None, 5)
+		
+		sort_filedate_action.join_group(sort_name_action)
+		sort_filesize_action.join_group(sort_filedate_action)
+		sort_imgsize_action.join_group(sort_filesize_action)
+		sort_imgwidth_action.join_group(sort_imgsize_action)
+		sort_imgheight_action.join_group(sort_imgwidth_action)
+		
+		sort_name_action.set_current_value(self.ordering_modes.index(self.active_ordering))
+		sort_name_action.connect("changed", self.change_ordering)
 		
 		removeaction = Gtk.Action("remove", _("Remove"), _("Remove the image from the viewer"), Gtk.STOCK_CLOSE)
 		removeaction.connect("activate", self.remove)
@@ -232,8 +259,17 @@ class Pynorama(object):
 		
 		self.actions.add_action(orderingmenu)
 		self.actions.add_action(sortaction)
-		self.actions.add_action(sortautoaction)
-		self.actions.add_action(sortreverseaction)
+		self.actions.add_action(sort_auto_action)
+		self.actions.add_action(sort_reverse_action)
+		
+		self.actions.add_action(sort_name_action)
+		self.actions.add_action(sort_filedate_action)
+		self.actions.add_action(sort_filesize_action)
+		
+		self.actions.add_action(sort_imgsize_action)
+		self.actions.add_action(sort_imgwidth_action)
+		self.actions.add_action(sort_imgheight_action)
+		
 				
 		self.actions.add_action_with_accel(quitaction, None)
 		
@@ -276,7 +312,7 @@ class Pynorama(object):
 	# Logs a message into both console and status bar
 	def log(self, message):
 		self.statusbar.push(0, message)
-		print message
+		print(message)
 		
 	# sets a image
 	def set_image(self, image):
@@ -288,18 +324,11 @@ class Pynorama(object):
 					
 		previous_image = self.current_image
 		self.current_image = image
-		
-		can_next, can_previous = True, True
-		can_first, can_last = True, True
 	
 		if self.current_image is None:
 			self.imageview.pixbuf = self.image.source = None
 			
 			self.window.set_title(_("Pynorama"))
-					
-			can_next = can_previous = False
-			can_remove = False
-			can_first = can_last = bool(self.organizer.images)
 				
 		else:
 			try:
@@ -316,28 +345,11 @@ class Pynorama(object):
 				pixbuf = self.current_image.pixbuf
 				
 			self.imageview.pixbuf = self.image.source = pixbuf
-			can_remove = True
-			
-			if len(self.organizer.images) > 1 or self.current_image not in self.organizer.images:	
-				can_first = can_last = True
-				can_next, can_previous = self.current_image.next is not None, self.current_image.previous is not None
-			else:
-				can_next = can_previous = False
-				can_first = can_last = False
 	
 			self.window.set_title(_("\"%s\" - Pynorama") % self.current_image.name)		
 		
 		self.image.refresh_pixbuf()
 		self.readjust_view()
-		
-		self.actions.get_action("remove").set_sensitive(can_remove)
-		self.actions.get_action("clear").set_sensitive(len(self.organizer.images) > 0)
-		
-		self.actions.get_action("next").set_sensitive(can_next)
-		self.actions.get_action("previous").set_sensitive(can_previous)
-		
-		self.actions.get_action("first").set_sensitive(can_first)
-		self.actions.get_action("last").set_sensitive(can_last)
 		
 		self.refresh_index()
 			
@@ -354,7 +366,7 @@ class Pynorama(object):
 		
 		self.set_image(loaded_image)
 	
-	def load_uris(self, uris):
+	def load_uris(self, uris, append):
 		# Organizer uris of the internet and file locations
 		all_nodes, uri_nodes, file_nodes = [], [], []
 		directories, real_paths = set(), set()
@@ -409,17 +421,20 @@ class Pynorama(object):
 		
 		# Load files into the organizer
 		if all_nodes:
-			self.current_image = None
-			self.organizer.clear()
-			gc.collect()
+			if not append:
+				self.current_image = None
+				self.organizer.clear()
+				gc.collect()
 			
-			for a_node in all_nodes:
-				self.organizer.add(a_node)
+			self.organizer.add(*all_nodes)	
 			
 			if self.autosort:
-				self.organizer.sort(organization.Sorting.ByFullname)
+				self.organizer.sort(self.active_ordering)
 			
-			self.set_image(all_nodes[0])
+			if self.current_image is None:
+				self.set_image(all_nodes[0])
+			else:
+				self.refresh_index()
 			
 			if len(all_nodes) > 1:
 				self.log(_("Found %d images") % len(all_nodes))
@@ -442,6 +457,13 @@ class Pynorama(object):
 		Gtk.main()
 	
 	# Events
+	def change_ordering(self, radioaction, current):
+		sort_value = current.get_current_value()
+		self.active_ordering = self.ordering_modes[sort_value]
+		
+		self.organizer.sort(self.active_ordering)
+		self.refresh_index()
+		
 	def toggle_reversesort(self, data=None):
 		reverse = self.actions.get_action("reverse-sort").get_active()
 		if self.organizer.reverse != reverse:
@@ -453,7 +475,7 @@ class Pynorama(object):
 		self.autosort = self.actions.get_action("auto-sort").get_active()
 		
 	def sort_list(self, data=None):
-		self.organizer.sort(organization.Sorting.ByFullname)
+		self.organizer.sort(self.active_ordering)
 		self.refresh_index()
 		
 	def pixbuf_changed(self, data=None):
@@ -475,8 +497,11 @@ class Pynorama(object):
 			
 		interp_group.unblock_activate()
 		
-	def refresh_index(self):
+	def refresh_index(self):		
 		if self.organizer.images:
+			can_remove = True
+			can_goto_extremity = True
+			
 			count = len(self.organizer.images)
 			count_w = len(str(count))
 			
@@ -490,7 +515,29 @@ class Pynorama(object):
 				self.index_label.set_text(_("%s/%d") % (index_text, count))
 								
 		else:
-			self.index_label.set_text(u"∅")
+			can_remove = self.current_image is not None
+			can_goto_extremity = False
+			
+			self.index_label.set_text("∅")
+		
+		if self.current_image:
+			can_remove = True
+			if not (len(self.organizer.images) <= 1 and self.current_image in self.organizer.images):
+				can_previous = bool(self.current_image.previous)
+				can_next = bool(self.current_image.next)
+			else:
+				can_next = can_previous = False
+		else:
+			can_remove = can_previous = can_next = False
+			
+		self.actions.get_action("remove").set_sensitive(can_remove)
+		self.actions.get_action("clear").set_sensitive(len(self.organizer.images) > 0)
+		
+		self.actions.get_action("next").set_sensitive(can_next)
+		self.actions.get_action("previous").set_sensitive(can_previous)
+		
+		self.actions.get_action("first").set_sensitive(can_goto_extremity)
+		self.actions.get_action("last").set_sensitive(can_goto_extremity)
 		
 	def refresh_transform(self):
 		if self.current_image:
@@ -507,7 +554,7 @@ class Pynorama(object):
 		# The the rotation used by gtk is counter clockwise
 		# This converts the degrees to clockwise
 		if self.image.rotation:
-			r = " " + u"{angle}°".format(angle=int(360 - self.image.rotation))
+			r = " " + "{angle}°".format(angle=int(360 - self.image.rotation))
 		else:
 			r = ""
 			
@@ -516,12 +563,15 @@ class Pynorama(object):
 		if self.image.magnification:
 			scale = self.image.get_zoom()
 			
-			if self.image.magnification > 0:
-				zoom_text = ("%.2f" % scale).rstrip("0").rstrip(".")
-				z = " " + "x{zoom_in}".format(zoom_in=zoom_text)
+			if self.image.magnification > 0 and scale == int(scale):
+				z = " " + _("x{zoom_in}").format(zoom_in = scale)
+				
+			elif self.image.magnification < 0 and 1.0 / scale == int(1.0 / scale):
+				z = " " + _(":{zoom_out}").format(zoom_out = int(1.0 / scale))
+					
 			else:
-				zoom_text = ("%.2f" % (1.0 / scale)).rstrip("0").rstrip(".")
-				z = " " + ":{zoom_out}".format(zoom_out=zoom_text)
+				z = " " +  _("{zoom:.0%}").format(zoom = scale)
+				
 		else:
 			z = ""
 		
@@ -529,14 +579,14 @@ class Pynorama(object):
 		# Pro-tip: Rotation affects it
 		if self.image.flip_horizontal:
 			if int(self.image.rotation) % 180:
-				f = u" ↕"
+				f = " ↕"
 			else:
-				f = u" ↔"
+				f = " ↔"
 		elif self.image.flip_vertical:
 			if int(self.image.rotation) % 180:
-				f = u" ↔"
+				f = " ↔"
 			else:
-				f = u" ↕"
+				f = " ↕"
 		else: 
 			f = ""
 		
@@ -674,7 +724,7 @@ class Pynorama(object):
 		uris = self.clipboard.wait_for_uris()
 			
 		if uris:
-			self.load_uris(uris)
+			self.load_uris(uris, True)
 			return
 			
 		pixel_data = self.clipboard.wait_for_image()
@@ -685,13 +735,11 @@ class Pynorama(object):
 		text = self.clipboard.wait_for_text()
 		if text:
 			if text.startswith(("http://", "https://", "ftp://")):
-				self.load_uris([text])
+				self.load_uris([text], True)
 			
 	def dragged_data(self, widget, context, x, y, selection, info, timestamp):
-		print "draggn"
 		if info == DND_URI_LIST:
-			self.load_uris(selection.get_uris())
-			return
+			self.load_uris(selection.get_uris(), True)
 							
 		elif info == DND_IMAGE:
 			pixel_data = selection.data.get_pixbuf()
@@ -701,19 +749,20 @@ class Pynorama(object):
 	def file_open(self, widget, data=None):
 		# Create image choosing dialog
 		image_chooser = Gtk.FileChooserDialog(title = _("Open Image..."), action = Gtk.FileChooserAction.OPEN,
-			buttons = (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK))
+			buttons = (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.ACCEPT))
 			
 		image_chooser.set_default_response(Gtk.ResponseType.OK)
 		image_chooser.set_select_multiple(True)
+		image_chooser.set_transient_for(self.window)
 		
 		# Add filters of supported formats from "loading" module
 		for fileFilter in loading.Filters:
 			image_chooser.add_filter(fileFilter)
 		
 		try:
-			if image_chooser.run() == Gtk.ResponseType.OK:
+			if image_chooser.run() == Gtk.ResponseType.ACCEPT:
 				uris = image_chooser.get_uris()
-				self.load_uris(uris)
+				self.load_uris(uris, False)
 								
 		except:
 			# Nothing to handle here

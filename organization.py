@@ -1,4 +1,5 @@
 import os
+from functools import cmp_to_key
 
 class ImageNodeList:
 	'''
@@ -26,8 +27,6 @@ class ImageNodeList:
 	
 	# Adds images to the list	and tries to sort them
 	def add(self, *images):
-		sorting_index = len(self.images) / 2
-		
 		for an_image in images:
 			index = len(self.images)
 				
@@ -64,7 +63,7 @@ class ImageNodeList:
 			return
 			
 		# Sorts list
-		self.images = sorted(self.images, cmp=comparer, reverse=self.reverse)
+		self.images = sorted(self.images, key=cmp_to_key(comparer), reverse=self.reverse)
 		
 		# Refreshes next/previous links
 		first_image = self.images[0]
@@ -83,12 +82,51 @@ class ImageNodeList:
 				return a_image
 		
 		return None
-	
-class Sorting:
+
+def cmp(a, b):
+	# Pfft, versions
+	return (a > b) - (b > a)
+
+class Ordering:
 	'''
-		Contains organizing methods
+		Contains ordering modes
 	'''
 	@staticmethod
-	def ByFullname(image_a, image_b):
-		return cmp(image_a.fullname, image_b.fullname)
+	def ByName(image_a, image_b):
+		return cmp(image_a.fullname.lower(), image_b.fullname.lower())
+			
+	@staticmethod
+	def ByFileSize(image_a, image_b):
+		meta_a = image_a.get_metadata()
+		meta_b = image_b.get_metadata()
+		
+		return cmp(meta_a.data_size, meta_b.data_size)
+		
+	@staticmethod
+	def ByFileDate(image_a, image_b):
+		meta_a = image_a.get_metadata()
+		meta_b = image_b.get_metadata()
+		
+		return cmp(meta_a.modification_date, meta_b.modification_date) * -1
+		
+	@staticmethod
+	def ByImageSize(image_a, image_b):
+		meta_a = image_a.get_metadata()
+		meta_b = image_b.get_metadata()
+		
+		return cmp(meta_a.get_area(), meta_b.get_area())
+		
+	@staticmethod
+	def ByImageWidth(image_a, image_b):
+		meta_a = image_a.get_metadata()
+		meta_b = image_b.get_metadata()
+		
+		return cmp(meta_a.width, meta_b.width)
+		
+	@staticmethod
+	def ByImageHeight(image_a, image_b):
+		meta_a = image_a.get_metadata()
+		meta_b = image_b.get_metadata()
+		
+		return cmp(meta_a.height, meta_b.height)
 	

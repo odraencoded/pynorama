@@ -2,7 +2,8 @@
 	This script creates the file filters required to load files
 '''
 
-import os, re, urllib, urllib2
+import os, re, urllib, datetime
+from urllib import error, request
 
 from gi.repository import Gtk, GdkPixbuf
 from gettext import gettext as _
@@ -56,14 +57,29 @@ for a_format in _formats:
 	format_filter.set_name(filter_name)
 	
 	Filters.append(format_filter)
+
+class ImageMeta():
+	'''
+		Contains some assorted metadata of an image
+		This should be used in sorting functions
+	'''
+	def __init__(self):
+		self.data_size = 0 # The size of the image on disk, in bytes
+		self.width = 0 # The width of the image in pixels
+		self.height = 0 # The height of the image in pixels
+		self.modification_date = None # Modification date
 	
-class ImageNode(object):
+	def get_area(self):
+		return self.width * self.height
+	
+class ImageNode():
 	def __init__(self):
 		self.pixbuf = None
-		self.name = ""
-		self.fullname = ""
+		self.metadata = None
+		
+		self.fullname, self.name = "", ""
 		self.next = self.previous = None
-	
+		
 	def reload(self):
 		if self.is_loaded():
 			self.do_unload()
@@ -77,6 +93,12 @@ class ImageNode(object):
 	def unload(self):
 		if self.is_loaded():
 			self.do_unload()
+			
+	def get_metadata(self):
+		if not self.metadata:
+			self.load_metadata()
+			
+		return self.metadata
 	
 	def insert_links(self, previous, next):
 		if self.next:
@@ -119,14 +141,32 @@ class ImageFileNode(ImageNode):
 		
 		self.fullname = self.filepath = filepath
 		self.name = os.path.basename(self.filepath)
-		self.pixbuf = None
-		
+				
 	def is_loaded(self):
 		return self.pixbuf is not None
 		
 	def do_load(self):
 		self.pixbuf = GdkPixbuf.Pixbuf.new_from_file(self.filepath)
+		
+		self.load_metadata()
+					
+	def load_metadata(self):
+		# Grab a bunch of info we aren't going to use in one go
+		file_stat = os.stat(self.filepath)
+		
+		if self.metadata is None:
+			self.metadata = ImageMeta()
+		
+		if self.pixbuf is None:
+			pixformat, self.metadata.width, self.metadata.height = GdkPixbuf.Pixbuf.get_file_info(self.filepath)
 			
+		else:
+			self.metadata.width = self.pixbuf.get_width()
+			self.metadata.height = self.pixbuf.get_height()
+			
+		self.metadata.data_size = file_stat.st_size
+		self.metadata.modification_date = datetime.datetime.fromtimestamp(file_stat.st_mtime)
+		
 	def do_unload(self):
 		self.pixbuf = None
 		
@@ -146,10 +186,13 @@ class ImageURINode(ImageNode):
 		loader = GdkPixbuf.PixbufLoader()
 		
 		try:		
-			response = urllib2.urlopen(self.uri)
+			response = urllib.request.urlopen(self.uri)
 			loader.write(response.read())
 			
-		except urllib2.URLError:
+			self.pixbuf = loader.get_pixbuf()
+			self.load_metadata(response)
+			
+		except urllib.error.URLError:
 			raise Exception(_("Could not access \"%s\"" % self.uri))
 			
 		except:
@@ -157,9 +200,20 @@ class ImageURINode(ImageNode):
 		
 		finally:
 			loader.close()
-			
-		self.pixbuf = loader.get_pixbuf()
+	
+	def load_metadata(self, response=None):
+		# Should go without saying that getting metadata over a network is
+		# Well, expensive. Don't mind it, nobody will ever notice!
+		# Gwahahaahahahhaahahahaha.
 		
+		if self.metadata is None:
+			self.metadata = ImageMeta()
+		
+		self.metadata.data_size = 0
+		self.metadata.modification_date = datetime.datetime.now()
+		self.metadata.width = 0
+		self.metadata.height = 0
+			
 	def do_unload(self):
 		self.pixbuf = None
 	
@@ -175,11 +229,21 @@ class ImageDataNode(ImageNode):
 		self.fullname = self.name = name
 		self.pixbuf = pixbuf
 		
+		self.load_metadata()
+				
 	def is_loaded(self):
 		return True # Data nodes are always loaded
 		
 	def do_load(self):
 		pass # Can't load data nodes
+	
+	def load_metadata(self):
+		if self.metadata is None:
+			self.metadata = ImageMeta()
+			
+		self.metadata.width, self.metadata.height = self.pixbuf.get_width(), self.pixbuf.get_height()
+		self.metadata.modification_date = datetime.datetime.now()
+		self.metadata.data_size = 0
 		
 	def do_unload(self):
 		pass # Can't unload data nodes
@@ -188,7 +252,7 @@ def PathFromURI(uri):
 	for prefix in ("file:\\\\\\", "file://", "file:"):
 		if uri.startswith(prefix):
 			uri_path = uri[len(prefix):]
-			filepath = urllib2.url2pathname(uri_path)
+			filepath = urllib.request.url2pathname(uri_path)
 			return filepath
 			
 	return None
