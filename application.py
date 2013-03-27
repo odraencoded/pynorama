@@ -6,32 +6,45 @@
 
 import gc, os, sys, urllib, math
 from gi.repository import Gtk, Gdk, GdkPixbuf, GObject
-import organization, navigation, loading
 from gettext import gettext as _
-#import navigation, loading, organization
+import organization, navigation, loading, preferences
 from ximage import xImage
 
 resource_dir = os.path.dirname(__file__)
 DND_URI_LIST, DND_IMAGE = range(2)
 
-class Pynorama(object):
+class Pynorama(Gtk.Application):
 	def __init__(self):
-		self.organizer = organization.ImageNodeList()
-		self.current_image = None	
-		self.autosort = True
+		Gtk.Application.__init__(self)
 		
-		# Create Window
-		self.window = Gtk.Window(Gtk.WindowType.TOPLEVEL)
-		self.window.set_default_size(600, 600)
-		self.window.set_title(_("Pynorama"))
-		self.window.show()
+	def do_activate(self):
+		self.main_window = MainWindow(self)
+		self.main_window.show()
+		
+		# Add navigator
+		self.main_window.navi_mode = navigation.DragNavi 
+		self.main_window.navigator = self.main_window.navi_mode.create(self.main_window.imageview)
+		
+	def do_startup(self):
+		Gtk.Application.do_startup(self)
+		
+class MainWindow(Gtk.ApplicationWindow):
+	def __init__(self, app):
+		Gtk.ApplicationWindow.__init__(self, title=_("Pynorama"), application=app)
+		self.app = app
+		self.set_default_size(600, 600)
+		
+		self.zoom_effect = 2		
+		self.organizer = organization.ImageNodeList()
+		self.current_image = None
+		self.autosort = True
 		
 		# Set clipboard
 		self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
 		
 		# Create layout
 		vlayout = Gtk.VBox()
-		self.window.add(vlayout)
+		self.add(vlayout)
 		vlayout.show()
 		
 		# Setup actions
@@ -47,21 +60,20 @@ class Pynorama(object):
 		self.menubar.show_all()
 		self.toolbar.show_all()
 		
-		# Create image and a scrolled window for it		
-		self.image = GObject.new(xImage)
-		self.image.connect("pixbuf-notify", self.pixbuf_changed)
+		# Create image and a scrolled window for it
+		self.image_scroller = Gtk.ScrolledWindow()
+		# FIXME: There ought to be a better way to drop the default key behaviour
+		self.image_scroller.connect("key-press-event", lambda x, y: True)
+		self.image_scroller.connect("key-release-event", lambda x, y: True)
+		self.image_scroller.connect("scroll-event", lambda x, y: True)
+		self.imageview = xImage()
+		self.imageview.connect("pixbuf-notify", self.pixbuf_changed)
 		
-		self.imageview = Gtk.ScrolledWindow()
-		self.imageview.add_with_viewport(self.image)
-		self.imageview.pixbuf =  None
+		self.image_scroller.add(self.imageview)
+		self.image_scroller.show_all()
 		
-		vlayout.pack_start(self.imageview, True, True, 0)
-		
-		# Add navigator
-		self.navigator = navigation.MapNavigator(self.imageview)
-		
-		self.imageview.show_all()
-				
+		vlayout.pack_start(self.image_scroller, True, True, 0)
+						
 		# Add a status bar
 		self.statusbar = Gtk.Statusbar()
 		self.statusbar.set_spacing(24)
@@ -83,9 +95,6 @@ class Pynorama(object):
 		self.refresh_transform()
 		self.refresh_index()
 		
-		# Connect events
-		self.window.connect("destroy", self._window_destroyed)
-		
 		# DnD setup	
 		self.imageview.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
 		
@@ -94,16 +103,17 @@ class Pynorama(object):
 		target_list.add_uri_targets(DND_URI_LIST)
 		
 		self.imageview.drag_dest_set_target_list(target_list)
-		
+		self.imageview.add_events(Gdk.EventMask.SCROLL_MASK)
+		self.imageview.connect("scroll-event", self.imageview_scrolling)
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
 	def setup_actions(self):
 		self.manager = Gtk.UIManager()
 		self.accelerators = self.manager.get_accel_group()
-		self.window.add_accel_group(self.accelerators)
+		self.add_accel_group(self.accelerators)
 		
 		self.actions = Gtk.ActionGroup("pynorama")
-		self.manager.insert_action_group(self.actions)	
+		self.manager.insert_action_group(self.actions)
 		
 		filemenu = Gtk.Action("file", _("File"), None, None)		
 				
@@ -161,7 +171,7 @@ class Pynorama(object):
 		clearaction.set_sensitive(False)
 		
 		quitaction = Gtk.Action("quit", _("_Quit"), _("Exit the program"), Gtk.STOCK_QUIT)
-		quitaction.connect("activate", self.quit)
+		quitaction.connect("activate", lambda w: self.destroy())
 		
 		# Gooooooo!!!
 		gomenu = Gtk.Action("go", _("Go"), None, None)		
@@ -196,8 +206,8 @@ class Pynorama(object):
 		nozoomaction = Gtk.Action("no-zoom", _("No Zoom"), _("Shows the image at it's normal size"), Gtk.STOCK_ZOOM_100)
 		
 		nozoomaction.connect("activate", self.reset_zoom)
-		zoominaction.connect("activate", self.change_zoom, 1)
-		zoomoutaction.connect("activate", self.change_zoom, -1)
+		zoominaction.connect("activate", self.handle_zoom_change, 1)
+		zoomoutaction.connect("activate", self.handle_zoom_change, -1)
 		
 		transformmenu = Gtk.Action("transform", _("Transform"), None, None)
 		rotatecwaction = Gtk.Action("cw-rotate", _("Rotate Clockwise"), _("Turns the image top side to the right side"), -1)
@@ -243,6 +253,9 @@ class Pynorama(object):
 		
 		noscrollbars.set_current_value(Gtk.CornerType.TOP_RIGHT)
 		noscrollbars.connect("changed", self.change_scrollbars)
+		
+		preferencesaction = Gtk.Action("preferences", _("Preferences..."), _("Configure Pynorama"), Gtk.STOCK_PREFERENCES)
+		preferencesaction.connect("activate", self.show_preferences)
 		
 		fullscreenaction = Gtk.ToggleAction("fullscreen", _("Fullscreen"), _("Fill the entire screen"), Gtk.STOCK_FULLSCREEN)
 		fullscreenaction.connect("toggled", self.toggle_fullscreen)
@@ -307,14 +320,16 @@ class Pynorama(object):
 		self.actions.add_action(tlscrollbars)
 		self.actions.add_action(trscrollbars)
 		
+		self.actions.add_action(preferencesaction)
+		
 		self.actions.add_action_with_accel(fullscreenaction, "F4")
-			
+		
 	# Logs a message into both console and status bar
 	def log(self, message):
 		self.statusbar.push(0, message)
 		print(message)
 		
-	# sets a image
+	# Sets a image
 	def set_image(self, image):
 		if self.current_image == image:
 			return
@@ -326,9 +341,9 @@ class Pynorama(object):
 		self.current_image = image
 	
 		if self.current_image is None:
-			self.imageview.pixbuf = self.image.source = None
+			self.imageview.source = None
 			
-			self.window.set_title(_("Pynorama"))
+			self.set_title(_("Pynorama"))
 				
 		else:
 			try:
@@ -338,17 +353,17 @@ class Pynorama(object):
 					
 			except:
 				self.log(str(sys.exc_info()[1]))
-				pixbuf = self.window.render_icon(Gtk.STOCK_MISSING_IMAGE, Gtk.IconSize.DIALOG)
+				pixbuf = self.render_icon(Gtk.STOCK_MISSING_IMAGE, Gtk.IconSize.DIALOG)
 								
 			else:
 				self.log(_("Loaded \"%s\"")  % self.current_image.fullname)
 				pixbuf = self.current_image.pixbuf
 				
-			self.imageview.pixbuf = self.image.source = pixbuf
+			self.imageview.source = pixbuf
 	
-			self.window.set_title(_("\"%s\" - Pynorama") % self.current_image.name)		
+			self.set_title(_("\"%s\" - Pynorama") % self.current_image.name)		
 		
-		self.image.refresh_pixbuf()
+		self.imageview.refresh_pixbuf()
 		self.readjust_view()
 		
 		self.refresh_index()
@@ -441,8 +456,8 @@ class Pynorama(object):
 	
 	# Adjusts the image to be on the top-center (so far)
 	def readjust_view(self):		
-		if self.image.pixbuf:
-			w, h = self.image.pixbuf.get_width(), self.image.pixbuf.get_height()
+		if self.imageview.pixbuf:
+			w, h = self.imageview.pixbuf.get_width(), self.imageview.pixbuf.get_height()
 			alloc = self.imageview.get_allocation()
 			vw, vh = alloc.width, alloc.height
 			
@@ -455,8 +470,19 @@ class Pynorama(object):
 	def run(self):
 		Gdk.set_program_class("Pynorama")
 		Gtk.main()
-	
-	# Events
+		
+	# Events		
+	def show_preferences(self, data=None):
+		prefs_dialog = preferences.Dialog(self.app)
+			
+		prefs_dialog.set_transient_for(self)
+		prefs_dialog.set_modal(True)
+		
+		if prefs_dialog.run() == Gtk.ResponseType.OK:
+			prefs_dialog.save_prefs()
+						
+		prefs_dialog.destroy()
+		
 	def change_ordering(self, radioaction, current):
 		sort_value = current.get_current_value()
 		self.active_ordering = self.ordering_modes[sort_value]
@@ -483,7 +509,7 @@ class Pynorama(object):
 		self.refresh_interp()
 		
 	def refresh_interp(self):	
-		interp = self.image.get_interpolation()
+		interp = self.imageview.get_interpolation()
 		self.actions.get_action("interpolation").set_sensitive(interp is not None)
 		
 		interp_group = self.actions.get_action("nearest-interp")
@@ -541,9 +567,9 @@ class Pynorama(object):
 		
 	def refresh_transform(self):
 		if self.current_image:
-			if self.current_image.pixbuf and self.image.pixbuf:
+			if self.current_image.pixbuf and self.imageview.pixbuf:
 				# The width and height are from the source
-				p = "{width}x{height}".format(width=self.image.source.get_width(), height=self.image.source.get_height())
+				p = "{width}x{height}".format(width=self.imageview.source.get_width(), height=self.imageview.source.get_height())
 			else:
 				# This just may happen
 				p = _("Error")
@@ -553,37 +579,32 @@ class Pynorama(object):
 			
 		# The the rotation used by gtk is counter clockwise
 		# This converts the degrees to clockwise
-		if self.image.rotation:
-			r = " " + "{angle}°".format(angle=int(360 - self.image.rotation))
+		if self.imageview.rotation:
+			r = " " + "{angle}°".format(angle=int(360 - self.imageview.rotation))
 		else:
 			r = ""
-			
-		# Magnification is logaritimic, so it must be converted to a scale.
-		# Furthermore, scales that make the image smaller start with : (division symbol)
-		if self.image.magnification:
-			scale = self.image.get_zoom()
-			
-			if self.image.magnification > 0 and scale == int(scale):
-				z = " " + _("x{zoom_in}").format(zoom_in = scale)
-				
-			elif self.image.magnification < 0 and 1.0 / scale == int(1.0 / scale):
-				z = " " + _(":{zoom_out}").format(zoom_out = int(1.0 / scale))
-					
+		
+		# Cache magnification because it is kind of a long variable
+		mag = self.imageview.magnification
+		if mag != 1:			
+			if mag > 1 and mag == int(mag):
+				z = " " + _("x{zoom_in:d}").format(zoom_in = int(mag))
+			elif mag < 1 and 1.0 / mag == int(1.0 / mag):
+				z = " " + _(":{zoom_out:d}").format(zoom_out = int(1.0 / mag))
 			else:
-				z = " " +  _("{zoom:.0%}").format(zoom = scale)
-				
+				z = " " +  _("{zoom:.0%}").format(zoom = mag)
 		else:
 			z = ""
 		
 		# For flipping/inverting/mirroring
 		# Pro-tip: Rotation affects it
-		if self.image.flip_horizontal:
-			if int(self.image.rotation) % 180:
+		if self.imageview.flip_horizontal:
+			if int(self.imageview.rotation) % 180:
 				f = " ↕"
 			else:
 				f = " ↔"
-		elif self.image.flip_vertical:
-			if int(self.image.rotation) % 180:
+		elif self.imageview.flip_vertical:
+			if int(self.imageview.rotation) % 180:
 				f = " ↔"
 			else:
 				f = " ↕"
@@ -598,68 +619,67 @@ class Pynorama(object):
 				
 	def flip(self, data=None, horizontal=False):
 		# Horizontal mirroring depends on the rotation of the image
-		if int(self.image.rotation) % 180:
+		if int(self.imageview.rotation) % 180:
 			# 90 or 270 degrees
 			if horizontal:
-				self.image.flip_vertical = not self.image.flip_vertical
+				self.imageview.flip_vertical = not self.imageview.flip_vertical
 			else:
-				self.image.flip_horizontal = not self.image.flip_horizontal
+				self.imageview.flip_horizontal = not self.imageview.flip_horizontal
 			
 		else:
 			# 0 or 180 degrees
 			if horizontal:
-				self.image.flip_horizontal = not self.image.flip_horizontal
+				self.imageview.flip_horizontal = not self.imageview.flip_horizontal
 			else:
-				self.image.flip_vertical = not self.image.flip_vertical
+				self.imageview.flip_vertical = not self.imageview.flip_vertical
 		
 		# If the image if flipped both horizontally and vertically
 		# Then it is rotated 180 degrees
-		if self.image.flip_vertical and self.image.flip_horizontal:
-			self.image.flip_vertical = self.image.flip_horizontal = False
-			self.image.rotation = (int(self.image.rotation) + 180) % 360
+		if self.imageview.flip_vertical and self.imageview.flip_horizontal:
+			self.imageview.flip_vertical = self.imageview.flip_horizontal = False
+			self.imageview.rotation = (int(self.imageview.rotation) + 180) % 360
 		
-		self.image.refresh_pixbuf()
+		self.imageview.refresh_pixbuf()
 			
 	def rotate(self, data=None, change=0):
-		self.image.rotation = (int(self.image.rotation) - change + 360) % 360
-		self.image.refresh_pixbuf()
+		self.imageview.rotation = (int(self.imageview.rotation) - change + 360) % 360
+		self.imageview.refresh_pixbuf()
 	
-	def change_zoom(self, data=None, change=0):		
-		self.image.magnification += change
-		self.image.refresh_pixbuf()
+	def handle_zoom_change(self, data, change):
+		self.change_zoom(change)
 		
 	def reset_zoom(self, data=None):
-		self.image.magnification = 0
-		self.image.refresh_pixbuf()
+		self.imageview.magnification = 1
+		self.imageview.refresh_pixbuf()
 
 	def change_interp(self, radioaction, current):
-		if self.image.magnification:
+		if self.imageview.magnification:
 			interpolation = current.props.value	
-			self.image.set_interpolation(interpolation)
+			self.imageview.set_interpolation(interpolation)
 			
-			self.image.refresh_pixbuf()
+			self.imageview.refresh_pixbuf()
 	
 	def change_scrollbars(self, radioaction, current):
 		placement = current.props.value
 		
 		if placement == -1:
-			self.imageview.get_hscrollbar().set_child_visible(False)
-			self.imageview.get_vscrollbar().set_child_visible(False)
+			self.image_scroller.get_hscrollbar().set_child_visible(False)
+			self.image_scroller.get_vscrollbar().set_child_visible(False)
 		else:
-			self.imageview.get_hscrollbar().set_child_visible(True)
-			self.imageview.get_vscrollbar().set_child_visible(True)
+			self.image_scroller.get_hscrollbar().set_child_visible(True)
+			self.image_scroller.get_vscrollbar().set_child_visible(True)
 			
-			self.imageview.set_placement(placement)
+			self.image_scroller.set_placement(placement)
 			
 	def toggle_fullscreen(self, data=None):
 		# This simply tries to fullscreen / unfullscreen
 		fullscreenaction = self.actions.get_action("fullscreen")
 		
 		if fullscreenaction.props.active:
-			self.window.fullscreen()
+			self.fullscreen()
 			fullscreenaction.set_stock_id(Gtk.STOCK_LEAVE_FULLSCREEN)
 		else:
-			self.window.unfullscreen()
+			self.unfullscreen()
 			fullscreenaction.set_stock_id(Gtk.STOCK_FULLSCREEN)
 	
 	def gofirst(self, data=None):
@@ -753,7 +773,7 @@ class Pynorama(object):
 			
 		image_chooser.set_default_response(Gtk.ResponseType.OK)
 		image_chooser.set_select_multiple(True)
-		image_chooser.set_transient_for(self.window)
+		image_chooser.set_transient_for(self)
 		
 		# Add filters of supported formats from "loading" module
 		for fileFilter in loading.Filters:
@@ -771,9 +791,20 @@ class Pynorama(object):
 		else:
 			# Destroy the dialog anyway
 			image_chooser.destroy()
-	
-	def quit(self, widget=None, data=None):
-		Gtk.main_quit()
-	
-	def _window_destroyed(self, widget, data=None):
-		self.quit()
+			
+	def change_zoom(self, power, anchor=None):
+		if self.zoom_effect and power:
+			self.imageview.magnification *= self.zoom_effect ** power
+			self.imageview.refresh_pixbuf()
+					
+	def imageview_scrolling(self, widget, data=None):
+		image = self.imageview.image
+		anchor = self.imageview.get_pointer()
+		
+		if data.direction == Gdk.ScrollDirection.UP:
+			self.change_zoom(1, anchor)
+		elif data.direction == Gdk.ScrollDirection.DOWN:
+			self.change_zoom(-1, anchor)
+					
+		# Makes the scrolled window not scroll
+		return True

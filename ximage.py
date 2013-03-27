@@ -1,21 +1,19 @@
 import gc
 from gi.repository import Gtk, GdkPixbuf, GObject
 
-class xImage(Gtk.Bin):
-	'''
-		This provides some features for gtk.Image
-	'''
+class xImage(Gtk.Viewport):
+	# This provides some transform features for gtk.Image
 	__gtype_name__ = "xImage"
 	__gsignals__ = {
         "pixbuf-notify": (GObject.SIGNAL_RUN_FIRST, None, ())
     }
-	# This is a limit on the number of pixels of an
-	# Image while zoomed in or out
-	# Got to make it customizable one day
-	zoom_pixel_limit = (64, 15000 * 15000)
+	''' This is a limit on the number of pixels of an
+	    Image while zoomed in or out, it is silly.
+	    Got to make it customizable one day '''
+	zoom_pixel_limit = (512, 15000 * 15000)
 	
 	def __init__(self):
-		Gtk.Bin.__init__(self)
+		Gtk.Layout.__init__(self)
 		
 		self.image = Gtk.Image()
 		self.add(self.image)
@@ -23,8 +21,7 @@ class xImage(Gtk.Bin):
 		
 		self.source = None
 		self.pixbuf = None
-		self.magnification = 0
-		self.zoom_base = 2
+		self.magnification = 1
 		self.rotation = 0
 		
 		# There are two interpolation settings: Zoom out and zoom in
@@ -33,15 +30,14 @@ class xImage(Gtk.Bin):
 		self.flip_horizontal = False
 		self.flip_vertical = False
 		
-	def get_zoom(self):
-		return self.zoom_base ** self.magnification
+		#self.image.connect("size-allocate", self.update_size)
 	
 	def get_interpolation(self):
 		# This gets the currently used interpolation.
-		if self.magnification < 0:
+		if self.magnification < 1:
 			return self.interpolation[0]
 			
-		if self.magnification > 0:
+		if self.magnification > 1:
 			return self.interpolation[1]
 			
 		# If not magnified, no interpolation is used, obviously
@@ -64,21 +60,19 @@ class xImage(Gtk.Bin):
 		
 		if self.pixbuf:
 			# The interpolation of "zoom-out" is the first one in the tuple
-			if self.magnification < 0:
-				valid_size = False
-				while not valid_size:
-					scale = self.get_zoom()					
-					sw, sh = int(self.source.get_width() * scale), int(self.source.get_height() * scale)
+			if self.magnification < 1:
+				mag = self.magnification
+				
+				sw, sh = int(self.source.get_width() * mag), int(self.source.get_height() * mag)
+				valid_size = (sw * sh) >= xImage.zoom_pixel_limit[0]
+				if not valid_size:
+					print("%sx%s is not a valid size" %(sw, sh))
+					pixel_count = self.source.get_width() * self.source.get_height()
+					mag = (xImage.zoom_pixel_limit[0] / float(pixel_count)) ** .5
+					sw, sh = int(self.source.get_width() * mag), int(self.source.get_height() * mag)
 					
-					pixel_count = sw * sh
-					valid_size = (sw * sh) >= xImage.zoom_pixel_limit[0]
-					
-					if self.magnification >= 0:
-						break
-					elif not valid_size:
-						self.magnification += 1
-						
-				if self.magnification < 0:
+				print("%sx%s is a valid size" %(sw, sh))
+				if mag < 1:
 					self.pixbuf = self.pixbuf.scale_simple(sw, sh, self.interpolation[0])
 			
 			if self.flip_vertical:
@@ -91,36 +85,38 @@ class xImage(Gtk.Bin):
 				self.pixbuf = self.pixbuf.rotate_simple(self.rotation)
 			
 			# The interpolation of "zoom in" is the second one in the tuple
-			if self.magnification > 0:
-				valid_size = False
-				while not valid_size:
-					scale = self.get_zoom()
-					sw, sh = int(self.source.get_width() * scale), int(self.source.get_height() * scale)
+			if self.magnification > 1:
+				mag = self.magnification
+				
+				sw, sh = int(self.source.get_width() * mag), int(self.source.get_height() * mag)
+				valid_size = (sw * sh) <= xImage.zoom_pixel_limit[1]
+				if not valid_size:
+					pixel_count = self.source.get_width() * self.source.get_height()
+					mag = (xImage.zoom_pixel_limit[1] / float(pixel_count)) ** .5
+					sw, sh = int(self.source.get_width() * mag), int(self.source.get_height() * mag)
 					
-					pixel_count = sw * sh
-					valid_size = (sw * sh) <= xImage.zoom_pixel_limit[1]
-					
-					if self.magnification <= 0:
-						break
-					elif not valid_size:
-						self.magnification -= 1
-						
-				if self.magnification > 0:
+				if mag > 1:
 					self.pixbuf = self.pixbuf.scale_simple(sw, sh, self.interpolation[1])
 			
 			gc.collect()
 			
 		self.image.set_from_pixbuf(self.pixbuf)
 		self.emit("pixbuf-notify")
+	
+	def update_size(self, widget=None, data=None):
+		img_allocation = self.image.get_allocation()
+		my_allocation = self.get_allocation()
 		
-	def do_size_allocate(self, allocation):
-		self.get_child().size_allocate(allocation)
-		self.set_allocation(allocation)
-		
-	def do_get_preferred_width(self):
-		return self.image.get_preferred_width()
-		
-	def do_get_preferred_height(self):
-		return self.image.get_preferred_height()
+		if img_allocation.width > my_allocation.width:
+			width = img_allocation.width
+		else:
+			width = my_allocation.width
+			
+		if img_allocation.height > my_allocation.height:
+			height = img_allocation.height
+		else:
+			height = my_allocation.height
+			
+		self.set_size(width, height)
 		
 GObject.type_register(xImage)

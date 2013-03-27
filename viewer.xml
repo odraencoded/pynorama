@@ -60,6 +60,8 @@
 				<menuitem action="bl-scrollbars" />
 			</menu>
 			<menuitem action="fullscreen" />
+			<separator />
+			<menuitem action="preferences" />
 		</menu>
 	</menubar>
 	<toolbar>
@@ -71,6 +73,8 @@
 		<separator/>
 		<toolitem action="in-zoom" />
 		<toolitem action="out-zoom" />
+		<separator />
+		<toolitem action="preferences" />
 		<separator />
 		<toolitem action="fullscreen" />
 	</toolbar>

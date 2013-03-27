@@ -38,4 +38,4 @@ if __name__ == "__main__":
 		app.load_uris(open_uris)
 	
 	# Run app
-	app.run()
+	app.run(None)
