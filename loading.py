@@ -2,10 +2,10 @@
 	This script creates the file filters required to load files
 '''
 
-import os, re, urllib, datetime
+import os, re, urllib, datetime, time
 from urllib import error, request
 
-from gi.repository import Gtk, GdkPixbuf
+from gi.repository import Gtk, GdkPixbuf, Gio
 from gettext import gettext as _
 
 Filters = []
@@ -132,91 +132,64 @@ class ImageNode():
 		
 		self.previous = self.next = None
 		
-class ImageFileNode(ImageNode):
-	'''
-		An ImageNode created from a file
-	'''
-	def __init__(self, filepath):
+class ImageGFileNode(ImageNode):
+	def __init__(self, gfile):
 		ImageNode.__init__(self)
+		self.gfile = gfile
 		
-		self.fullname = self.filepath = filepath
-		self.name = os.path.basename(self.filepath)
-				
+		info = gfile.query_info("standard::display-name", 0, None)
+		self.name = info.get_attribute_as_string("standard::display-name")
+		self.fullname = self.gfile.get_parse_name()
+		
 	def is_loaded(self):
 		return self.pixbuf is not None
 		
 	def do_load(self):
-		self.pixbuf = GdkPixbuf.Pixbuf.new_from_file(self.filepath)
-		
+		stream = self.gfile.read(None)
+		self.pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)			
 		self.load_metadata()
-					
+	
 	def load_metadata(self):
-		# Grab a bunch of info we aren't going to use in one go
-		file_stat = os.stat(self.filepath)
-		
 		if self.metadata is None:
 			self.metadata = ImageMeta()
 		
-		if self.pixbuf is None:
-			pixformat, self.metadata.width, self.metadata.height = GdkPixbuf.Pixbuf.get_file_info(self.filepath)
-			
-		else:
+		# These file properties are queried from the file info
+		try:
+			file_info = self.gfile.query_info("standard::size,time::modified", 0, None)
+			try:
+				size_str = file_info.get_attribute_as_string("standard::size")
+				self.metadata.data_size = int(size_str)
+			except:
+				self.metadata.data_size = 0
+			try:
+				time_str = file_info.get_attribute_as_string("time::modified")
+				self.metadata.modification_date = time.ctime(int(time_str))
+			except:
+				self.metadata.modification_date = time.time()
+		except:
+			self.metadata.modification_date = time.time()
+			self.metadata.data_size = 0
+		
+		# The width and height of the image are loaded from guess where
+		if self.pixbuf:
 			self.metadata.width = self.pixbuf.get_width()
 			self.metadata.height = self.pixbuf.get_height()
 			
-		self.metadata.data_size = file_stat.st_size
-		self.metadata.modification_date = datetime.datetime.fromtimestamp(file_stat.st_mtime)
+		elif self.gfile.is_native():
+			try:
+				filepath = self.gfile.get_path()
+				fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(filepath)
+				self.metadata.width = width
+				self.metadata.height = height
+			except:
+				self.metadata.width = 0
+				self.metadata.height = 0
+			
+		# TODO: Add support for non-native files
 		
 	def do_unload(self):
 		self.pixbuf = None
 		
-class ImageURINode(ImageNode):
-	'''
-		An ImageNode created from an URI
-	'''
-	def __init__(self, uri):
-		ImageNode.__init__(self)
-		
-		self.fullname = self.name = self.uri = uri
-	
-	def is_loaded(self):
-		return self.pixbuf is not None
-	
-	def do_load(self):
-		loader = GdkPixbuf.PixbufLoader()
-		
-		try:		
-			response = urllib.request.urlopen(self.uri)
-			loader.write(response.read())
-			
-			self.pixbuf = loader.get_pixbuf()
-			self.load_metadata(response)
-			
-		except urllib.error.URLError:
-			raise Exception(_("Could not access \"%s\"" % self.uri))
-			
-		except:
-			raise Exception(_("Could not load \"%s\"" % self.uri))
-		
-		finally:
-			loader.close()
-	
-	def load_metadata(self, response=None):
-		# Should go without saying that getting metadata over a network is
-		# Well, expensive. Don't mind it, nobody will ever notice!
-		# Gwahahaahahahhaahahahaha.
-		
-		if self.metadata is None:
-			self.metadata = ImageMeta()
-		
-		self.metadata.data_size = 0
-		self.metadata.modification_date = datetime.datetime.now()
-		self.metadata.width = 0
-		self.metadata.height = 0
-			
-	def do_unload(self):
-		self.pixbuf = None
-	
 class ImageDataNode(ImageNode):
 	'''
 		An ImageNode created from a pixbuf
@@ -259,7 +232,8 @@ def PathFromURI(uri):
 
 def get_image_paths(directory):
 	# Iterate through all filepaths in the directory
-	dir_paths = (os.path.join(directory, filename) for filename in os.listdir(directory))
+	dir_paths = (os.path.join(directory, filename) for filename \
+	             in os.listdir(directory))
 	
 	for a_path in dir_paths:
 		# if it is a file, check if the extension is a valid image extension
@@ -267,3 +241,36 @@ def get_image_paths(directory):
 			file_ext = os.path.splitext(a_path)[1]
 			if file_ext in Extensions:
 				yield a_path
+				
+def IsAlbumFile(possibly_album_file):
+	file_type = possibly_album_file.query_file_type(0, None)
+	return file_type == Gio.FileType.DIRECTORY
+	
+def GetAlbumImages(album_file):
+	result = []
+	album_enumerator = album_file.enumerate_children("", 0, None)
+	for a_file_info in album_enumerator:
+		if a_file_info.get_file_type() == Gio.FileType.REGULAR:
+			a_file = Gio.File.get_child(album_file, a_file_info.get_name())
+			if IsSupportedImage(a_file):
+				an_image = ImageGFileNode(a_file)
+				result.append(an_image)
+				
+	return result
+	
+def GetFileImageFiles(parent_file):
+	result = []
+	parent_enumerator = parent_file.enumerate_children("", 0, None)
+	for a_file_info in parent_enumerator:
+		if a_file_info.get_file_type() == Gio.FileType.REGULAR:
+			a_file = Gio.File.get_child(parent_file, a_file_info.get_name())
+			if IsSupportedImage(a_file):
+				result.append(a_file)
+				
+	return result
+	
+def IsSupportedImage(a_file):
+	an_uri = a_file.get_uri()
+	extension_test = any((an_uri.endswith(an_extension) \
+	                      for an_extension in Extensions))
+	return extension_test

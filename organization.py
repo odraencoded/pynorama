@@ -1,10 +1,8 @@
 import os
 from functools import cmp_to_key
 
-class ImageNodeList:
-	'''
-		It organizes files
-	'''
+class ImageList:
+	''' It organizes images '''
 	
 	def __init__(self):
 		self.images = []

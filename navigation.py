@@ -589,10 +589,10 @@ class MapNavi:
 		rect = self.get_map_rectangle()
 		
 		allocation = self.imageview.get_allocation()
-		
-		hadjust, vadjust = self.imageview.get_hadjustment(), self.imageview.get_vadjustment()
-		vw, vh = hadjust.props.upper - hadjust.props.page_size, vadjust.props.upper - vadjust.props.page_size
-				
+		hadjust = self.imageview.get_hadjustment()
+		vadjust = self.imageview.get_vadjustment()
+		vw = hadjust.props.upper - hadjust.props.page_size
+		vh = vadjust.props.upper - vadjust.props.page_size
 		# Shift and clamp x and y
 		x -= rect.x
 		if x < 0:
@@ -607,7 +607,8 @@ class MapNavi:
 			y = rect.height
 		
 		# Transform x and y to picture "adjustment" coordinates
-		tx, ty = int(float(x) / rect.width * vw), int(float(y) / rect.height * vh)
+		tx = int(float(x) / rect.width * vw)
+		ty = int(float(y) / rect.height * vh)
 		
 		hadjust.props.value, vadjust.props.value = tx, ty
 	
@@ -646,7 +647,8 @@ class MapNavi:
 		
 		stretched_mode = Gtk.RadioButton(_("Use a stretched map"))
 		square_mode = Gtk.RadioButton(_("Use a square map"))
-		proportional_mode = Gtk.RadioButton(_("Use a map proportional to the image"))
+		proportional_mode = Gtk.RadioButton(
+		                   _("Use a map proportional to the image"))
 		
 		square_mode.join_group(stretched_mode)
 		proportional_mode.join_group(square_mode)
@@ -667,7 +669,8 @@ class MapNavi:
 		mode_align.set_padding(0, 0, 20, 0)
 		mode_align.add(mode_vbox)
 		
-		mode_label = Gtk.Label(_("Choose the map figure in relation to the window"))
+		mode_label = Gtk.Label(
+		             _("Choose the map figure in relation to the window"))
 		mode_label.set_alignment(0, 0.5)
 		mode_label.set_line_wrap(True)
 		

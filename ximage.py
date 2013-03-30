@@ -63,15 +63,13 @@ class xImage(Gtk.Viewport):
 			if self.magnification < 1:
 				mag = self.magnification
 				
-				sw, sh = int(self.source.get_width() * mag), int(self.source.get_height() * mag)
+				sw, sh = int(self.pixbuf.get_width() * mag), int(self.pixbuf.get_height() * mag)
 				valid_size = (sw * sh) >= xImage.zoom_pixel_limit[0]
 				if not valid_size:
-					print("%sx%s is not a valid size" %(sw, sh))
-					pixel_count = self.source.get_width() * self.source.get_height()
+					pixel_count = self.pixbuf.get_width() * self.pixbuf.get_height()
 					mag = (xImage.zoom_pixel_limit[0] / float(pixel_count)) ** .5
-					sw, sh = int(self.source.get_width() * mag), int(self.source.get_height() * mag)
+					sw, sh = int(self.pixbuf.get_width() * mag), int(self.pixbuf.get_height() * mag)
 					
-				print("%sx%s is a valid size" %(sw, sh))
 				if mag < 1:
 					self.pixbuf = self.pixbuf.scale_simple(sw, sh, self.interpolation[0])
 			
@@ -88,12 +86,12 @@ class xImage(Gtk.Viewport):
 			if self.magnification > 1:
 				mag = self.magnification
 				
-				sw, sh = int(self.source.get_width() * mag), int(self.source.get_height() * mag)
+				sw, sh = int(self.pixbuf.get_width() * mag), int(self.pixbuf.get_height() * mag)
 				valid_size = (sw * sh) <= xImage.zoom_pixel_limit[1]
 				if not valid_size:
-					pixel_count = self.source.get_width() * self.source.get_height()
+					pixel_count = self.pixbuf.get_width() * self.pixbuf.get_height()
 					mag = (xImage.zoom_pixel_limit[1] / float(pixel_count)) ** .5
-					sw, sh = int(self.source.get_width() * mag), int(self.source.get_height() * mag)
+					sw, sh = int(self.pixbuf.get_width() * mag), int(self.pixbuf.get_height() * mag)
 					
 				if mag > 1:
 					self.pixbuf = self.pixbuf.scale_simple(sw, sh, self.interpolation[1])
