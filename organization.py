@@ -56,12 +56,12 @@ class ImageList:
 		
 		self.images.append(image)
 		
-	def sort(self, comparer):
+	def sort(self, comparer, reverse=False):
 		if len(self.images) <= 1:
 			return
 			
 		# Sorts list
-		self.images = sorted(self.images, key=cmp_to_key(comparer), reverse=self.reverse)
+		self.images = sorted(self.images, key=cmp_to_key(comparer), reverse=reverse)
 		
 		# Refreshes next/previous links
 		first_image = self.images[0]

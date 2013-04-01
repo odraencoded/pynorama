@@ -2,7 +2,7 @@
 	Some panning interface related code
 '''
 
-from gi.repository import Gtk, Gdk, GObject, GLib
+from gi.repository import Gtk, Gdk, GLib
 from gettext import gettext as _
 import math, time
 

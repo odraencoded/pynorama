@@ -1,9 +1,8 @@
-'''
-	This script creates the file filters required to load files
-'''
+''' This is the loading module. It should have all the stuff
+    loading related. Such as supported filters, mime types,
+    methods to load things and other stuff. '''
 
-import os, re, urllib, datetime, time
-from urllib import error, request
+import os, re, datetime, time
 
 from gi.repository import Gtk, GdkPixbuf, Gio
 from gettext import gettext as _
@@ -220,27 +219,6 @@ class ImageDataNode(ImageNode):
 		
 	def do_unload(self):
 		pass # Can't unload data nodes
-
-def PathFromURI(uri):
-	for prefix in ("file:\\\\\\", "file://", "file:"):
-		if uri.startswith(prefix):
-			uri_path = uri[len(prefix):]
-			filepath = urllib.request.url2pathname(uri_path)
-			return filepath
-			
-	return None
-
-def get_image_paths(directory):
-	# Iterate through all filepaths in the directory
-	dir_paths = (os.path.join(directory, filename) for filename \
-	             in os.listdir(directory))
-	
-	for a_path in dir_paths:
-		# if it is a file, check if the extension is a valid image extension
-		if os.path.isfile(a_path):
-			file_ext = os.path.splitext(a_path)[1]
-			if file_ext in Extensions:
-				yield a_path
 				
 def IsAlbumFile(possibly_album_file):
 	file_type = possibly_album_file.query_file_type(0, None)
@@ -248,7 +226,7 @@ def IsAlbumFile(possibly_album_file):
 	
 def GetAlbumImages(album_file):
 	result = []
-	album_enumerator = album_file.enumerate_children("", 0, None)
+	album_enumerator = album_file.enumerate_children("standard::type,standard::name", 0, None)
 	for a_file_info in album_enumerator:
 		if a_file_info.get_file_type() == Gio.FileType.REGULAR:
 			a_file = Gio.File.get_child(album_file, a_file_info.get_name())
@@ -260,7 +238,7 @@ def GetAlbumImages(album_file):
 	
 def GetFileImageFiles(parent_file):
 	result = []
-	parent_enumerator = parent_file.enumerate_children("", 0, None)
+	parent_enumerator = parent_file.enumerate_children("standard::type,standard::name", 0, None)
 	for a_file_info in parent_enumerator:
 		if a_file_info.get_file_type() == Gio.FileType.REGULAR:
 			a_file = Gio.File.get_child(parent_file, a_file_info.get_name())

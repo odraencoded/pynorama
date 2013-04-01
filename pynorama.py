@@ -3,12 +3,11 @@
  
 ''' Pynorama is an image viewer application. '''
 
-import gc, os, sys, urllib, math
+import gc, os, sys
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib
 from gettext import gettext as _
 import organization, navigation, loading, preferences
 from ximage import xImage
-import argparse
 
 resource_dir = os.path.dirname(__file__)
 DND_URI_LIST, DND_IMAGE = range(2)
@@ -126,7 +125,7 @@ class ImageViewer(Gtk.Application):
 		''' Marks images as not being listed by something,
 		    that means it no longer requires caching '''
 		
-		pass
+		gc.collect()
 	    
 	def flag_unrequired(self, window, *images):
 		''' Marks images as not being used right now,
@@ -136,6 +135,8 @@ class ImageViewer(Gtk.Application):
 		for an_image in images:
 			an_image.unload()
 			self.loaded_imagery.discard(an_image)
+		
+		gc.collect()
 		
 	def flag_required(self, window, *images):
 		''' Marks images as required by a window,
@@ -179,10 +180,21 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		                               application=app)
 		self.app = app
 		self.set_default_size(600, 600)
+		# Setup variables
 		self.current_image = None
 		self.autosort = True
+		self.reverse_sort = False
 		self.navigator = None
 		self.navi_mode = None
+		self.ordering_modes = [
+			organization.Ordering.ByName,
+			organization.Ordering.ByFileDate,
+			organization.Ordering.ByFileSize,
+			organization.Ordering.ByImageSize,
+			organization.Ordering.ByImageWidth,
+			organization.Ordering.ByImageHeight
+		]
+		self.active_ordering = organization.Ordering.ByName
 		self.image_list = organization.ImageList()
 		# Set clipboard
 		self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
@@ -240,9 +252,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.statusbar.show_all()
 		self.refresh_transform()
 		self.refresh_index()
+		self.refresh_interp()
 		
 		# DnD setup	
-		self.imageview.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
+		self.imageview.drag_dest_set(Gtk.DestDefaults.ALL,
+		                             [], Gdk.DragAction.COPY)
 		
 		target_list = Gtk.TargetList.new([])
 		target_list.add_image_targets(DND_IMAGE, False)
@@ -253,223 +267,207 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.connect("scroll-event", self.imageview_scrolling)
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
+		# Refresh actions
+		active_actions = [
+			"auto-sort", "name-sort", "br-scrollbars"
+		]
+		for an_action_name in active_actions:
+			self.actions.get_action(an_action_name).set_active(True)
+		
 	def setup_actions(self):
 		self.manager = Gtk.UIManager()
 		self.accelerators = self.manager.get_accel_group()
 		self.add_accel_group(self.accelerators)
-		
 		self.actions = Gtk.ActionGroup("pynorama")
 		self.manager.insert_action_group(self.actions)
 		
-		filemenu = Gtk.Action("file", _("File"), None, None)		
-				
-		openaction = Gtk.Action("open", _("Open..."), _("Open an image"), Gtk.STOCK_OPEN)
-		openaction.connect("activate", self.file_open)
-		
-		pasteaction = Gtk.Action("paste", _("Paste"), _("Show an image from the clipboard"), Gtk.STOCK_PASTE)
-		pasteaction.connect("activate", self.pasted_data)
-		
-		orderingmenu = Gtk.Action("ordering", _("Ordering"), None, None)
-		
-		sortaction = Gtk.Action("sort", _("Sort Images"), _("Sort the images currently loaded"), None)
-		sortaction.connect("activate", lambda data: self.sort_images())
-		
-		sort_auto_action = Gtk.ToggleAction("auto-sort", _("Sort Automatically"), _("Sort images as they are added"), None)
-		sort_auto_action.set_active(True)
-		sort_auto_action.connect("toggled", self.toggle_autosort)
-		
-		sort_reverse_action = Gtk.ToggleAction("reverse-sort", _("Reverse Order"), _("Order images in reverse"), None)
-		sort_reverse_action.connect("toggled", self.toggle_reversesort)
-		
-		self.ordering_modes = [
-			organization.Ordering.ByName,
-			organization.Ordering.ByFileDate,
-			organization.Ordering.ByFileSize,
-			organization.Ordering.ByImageSize,
-			organization.Ordering.ByImageWidth,
-			organization.Ordering.ByImageHeight
+		action_params = [
+		# File Menu
+		("file", _("File"), None, None),
+			("open", _("Open..."), _("Open an image"), Gtk.STOCK_OPEN),
+			("paste", _("Paste"), _("Show an image from the clipboard"),
+			 Gtk.STOCK_PASTE),
+			# Ordering submenu
+			("ordering", _("Ordering"), None, None),
+			    ("sort", _("Sort Images"),
+			     _("Sort the images currently loaded"), None),
+			    ("auto-sort", _("Sort Automatically"),
+			     _("Sort images as they are added"), None),
+			     ("reverse-sort", _("Reverse Order"),
+			      _("Order images in reverse"), None),
+				("name-sort", _("By Name"), _("Order images alphabetically"),
+				 None),
+				("file-date-sort", _("By Modification Date"),
+				 _("Recently modified images appear first"), None),
+				("file-size-sort", _("By File Size"),
+				 _("Smaller files appear first"), None),
+				("img-size-sort", _("By Image Size"),
+				 _("Smaller images appear first"), None),
+				("img-width-sort", _("By Image Width"),
+				 _("Narrower images appear first"), None),
+				("img-height-sort", _("By Image Height"),
+				 _("Shorter images appear first"), None),
+			("remove", _("Remove"), _("Remove the image from the viewer"),
+			 Gtk.STOCK_CLOSE),
+			("clear", _("Remove All"), _("Remove all images from the viewer"),
+			 Gtk.STOCK_CLEAR),
+			("quit", _("_Quit"), _("Exit the program"), Gtk.STOCK_QUIT),
+		# Go menu
+		("go", _("Go"), None, None),
+			("previous", _("Previous Image"), _("Open the previous image"),
+			 Gtk.STOCK_GO_BACK),
+			("next", _("Next Image"), _("Open the next image"),
+			 Gtk.STOCK_GO_FORWARD),
+			("first", _("First Image"), _("Open the first image"),
+			 Gtk.STOCK_GOTO_FIRST),
+			("last", _("Last Image"), _("Open the last image"),
+			 Gtk.STOCK_GOTO_LAST),
+		# View menu
+		("view", _("View"), None, None),
+			("in-zoom", _("Zoom In"), _("Makes the image look larger"),
+			 Gtk.STOCK_ZOOM_IN),
+			("out-zoom", _("Zoom Out"), _("Makes the image look smaller"),
+			 Gtk.STOCK_ZOOM_OUT),
+			("no-zoom", _("No Zoom"), _("Shows the image at it's normal size"),
+			 Gtk.STOCK_ZOOM_100),
+			# Transform submenu
+			("transform", _("Transform"), None, None),
+				("cw-rotate", _("Rotate Clockwise"),
+				 _("Turns the image top side to the right side"), None),
+				("ccw-rotate", _("Rotate Counter Clockwise"),
+				 _("Turns the image top side to the left side"), None),
+				("h-flip", _("Flip Horizontally"), 
+				 _("Inverts the left and right sides of the image"), None),
+				("v-flip", _("Flip Vertically"),
+				 _("Inverts the top and bottom sides of the image"), None),
+			# Interpolation submenu
+			("interpolation", _("Interpolation"), None, None),
+				("nearest-interp", _("Nearest Neighbour"), _(""), None),
+				("tiles-interp", _("Parallelogram Tiles"), _(""), None),
+				("bilinear-interp", _("Bilinear Function"), _(""), None),
+				("hyper-interp", _("Hyperbolic Function"), _(""), None),
+			# Scrollbar submenu
+			("scrollbars", _("_Scrollbars"), None, None),
+				("no-scrollbars", _("No Scroll Bars"), _("Hide scroll bars"), None),
+				("br-scrollbars", _("At Bottom Right"),
+				 _("Show scroll bars at the bottom right corner"), None),
+				("tr-scrollbars", _("At Top Right"),
+				 _("Show scroll bars at the top right corner"), None),
+				("tl-scrollbars", _("At Top Left"),
+				 _("Show scroll bars at the top left corner"), None),
+				("bl-scrollbars", _("At Bottom Left"),
+				 _("Show scroll bars at the bottom left corner"), None),
+			("preferences", _("Preferences..."), _("Configure Pynorama"),
+			 Gtk.STOCK_PREFERENCES),
+			("fullscreen", _("Fullscreen"), _("Fill the entire screen"),
+			 Gtk.STOCK_FULLSCREEN),
 		]
-		self.active_ordering = organization.Ordering.ByName
 		
-		sort_name_action = Gtk.RadioAction("name-sort", _("By Name"), _("Order images alphabetically"), None, 0)
-		sort_filedate_action = Gtk.RadioAction("file-date-sort", _("By Modification Date"), _("Recently modified images appear first"), None, 1)
-		sort_filesize_action = Gtk.RadioAction("file-size-sort", _("By File Size"), _("Smaller files appear first"), None, 2)
+		signaling_params = {
+			"open" : (self.file_open,),
+			"paste" : (self.pasted_data,),
+			"sort" : (lambda data: self.sort_images(),),
+			"auto-sort" : (self.toggle_autosort,),
+			"reverse-sort" : (self.toggle_reverse_sort,),
+			"name-sort" : (self.change_ordering,), # For group
+			"remove" : (self.handle_remove,),
+			"clear" : (self.handle_clear,),
+			"quit" : (lambda data: self.destroy(),),
+			"previous" : (self.go_previous,),
+			"next" : (self.go_next,),
+			"first" : (self.go_first,),
+			"last" : (self.go_last,),
+			"in-zoom" : (self.handle_zoom_change, 1),
+			"out-zoom" : (self.handle_zoom_change, -1),
+			"no-zoom" : (self.reset_zoom,),
+			"cw-rotate" : (self.handle_rotate, 90),
+			"ccw-rotate" : (self.handle_rotate, -90),
+			"h-flip" : (self.handle_flip, False),
+			"v-flip" : (self.handle_flip, True),
+			"nearest-interp" : (self.change_interp,), # For group
+			"no-scrollbars" : (self.change_scrollbars,), # Also for group
+			"preferences" : (self.show_preferences,),
+			"fullscreen" : (self.toggle_fullscreen,)
+		}
 		
-		sort_imgsize_action = Gtk.RadioAction("img-size-sort", _("By Image Size"), _("Smaller images appear first"), None, 3)
-		sort_imgwidth_action = Gtk.RadioAction("img-width-sort", _("By Image Width"), _("Narrower images appear first"), None, 4)
-		sort_imgheight_action = Gtk.RadioAction("img-height-sort", _("By Image Height"), _("Shorter images appear first"), None, 5)
+		sort_group, interp_group, scrollbar_group = [], [], []
+		toggleable_actions = {
+			"auto-sort" : None,
+			"reverse-sort" : None,
+			"name-sort" : (0, sort_group),
+			"file-date-sort" : (1, sort_group),
+			"file-size-sort" : (2, sort_group),
+			"img-size-sort" : (3, sort_group),
+			"img-width-sort" : (4, sort_group),
+			"img-height-sort" : (5, sort_group),
+			"nearest-interp" : (GdkPixbuf.InterpType.NEAREST, interp_group),
+			"tiles-interp" : (GdkPixbuf.InterpType.TILES, interp_group),
+			"bilinear-interp" : (GdkPixbuf.InterpType.BILINEAR, interp_group),
+			"hyper-interp" : (GdkPixbuf.InterpType.HYPER, interp_group),
+			"no-scrollbars" : (-1, scrollbar_group),
+			# The values seem inverted because... reasons
+			"br-scrollbars" : (Gtk.CornerType.TOP_LEFT, scrollbar_group),
+			"tr-scrollbars" : (Gtk.CornerType.BOTTOM_LEFT, scrollbar_group),
+			"tl-scrollbars" : (Gtk.CornerType.BOTTOM_RIGHT, scrollbar_group),
+			"bl-scrollbars" : (Gtk.CornerType.TOP_RIGHT, scrollbar_group),
+		}
 		
-		sort_filedate_action.join_group(sort_name_action)
-		sort_filesize_action.join_group(sort_filedate_action)
+		accel_actions = {
+			"open" : None,
+			"paste" : None,
+			"remove" : "Delete",
+			"clear" : "<ctrl>Delete",
+			"quit" : None,
+			"next" : "Page_Down",
+			"previous" : "Page_Up",
+			"first" : "Home",
+			"last" : "End",
+			"no-zoom" : "space",
+			"in-zoom" : "KP_Add",
+			"out-zoom" : "KP_Subtract",
+			"cw-rotate" : "R",
+			"ccw-rotate" : "<ctrl>R",
+			"h-flip" : "F",
+			"v-flip" : "<ctrl>F",
+			"fullscreen" : "F4",
+		}
 		
-		sort_imgsize_action.join_group(sort_filesize_action)
-		sort_imgwidth_action.join_group(sort_imgsize_action)
-		sort_imgheight_action.join_group(sort_imgwidth_action)
-		
-		sort_name_action.set_current_value(self.ordering_modes.index(self.active_ordering))
-		sort_name_action.connect("changed", self.change_ordering)
-		
-		removeaction = Gtk.Action("remove", _("Remove"), _("Remove the image from the viewer"), Gtk.STOCK_CLOSE)
-		removeaction.connect("activate", self.remove)
-		removeaction.set_sensitive(False)
-		
-		clearaction = Gtk.Action("clear", _("Remove All"), _("Remove all images from the viewer"), Gtk.STOCK_CLEAR)
-		clearaction.connect("activate", self.clear)
-		clearaction.set_sensitive(False)
-		
-		quitaction = Gtk.Action("quit", _("_Quit"), _("Exit the program"), Gtk.STOCK_QUIT)
-		quitaction.connect("activate", lambda w: self.destroy())
-		
-		# Gooooooo!!!
-		gomenu = Gtk.Action("go", _("Go"), None, None)		
-		
-		prevaction = Gtk.Action("previous", _("Previous Image"), _("Open the previous image"), Gtk.STOCK_GO_BACK)
-		prevaction.connect("activate", self.goprevious)
-		prevaction.set_sensitive(False)
-		
-		nextaction = Gtk.Action("next", _("Next Image"), _("Open the next image"), Gtk.STOCK_GO_FORWARD)
-		nextaction.connect("activate", self.gonext)
-		nextaction.set_sensitive(False)
-		
-		# Not
-		firstaction = Gtk.Action("first", _("First Image"), _("Open the first image"), Gtk.STOCK_GOTO_FIRST)
-		firstaction.connect("activate", self.gofirst)
-		firstaction.set_sensitive(False)
-		
-		# Neither
-		lastaction = Gtk.Action("last", _("Last Image"), _("Open the last image"), Gtk.STOCK_GOTO_LAST)
-		lastaction.connect("activate", self.golast)
-		lastaction.set_sensitive(False)
-		
-		sortingaction = Gtk.Action("last", _("Last Image"), _("Open the last image"), Gtk.STOCK_GOTO_LAST)
-		sortingaction.connect("activate", self.golast)
-		sortingaction.set_sensitive(False)
-		
-		# These actions are actual actions, not options.
-		viewmenu = Gtk.Action("view", _("View"), None, None)
-		
-		zoominaction = Gtk.Action("in-zoom", _("Zoom In"), _("Makes the image look larger"), Gtk.STOCK_ZOOM_IN)
-		zoomoutaction = Gtk.Action("out-zoom", _("Zoom Out"), _("Makes the image look smaller"), Gtk.STOCK_ZOOM_OUT)
-		nozoomaction = Gtk.Action("no-zoom", _("No Zoom"), _("Shows the image at it's normal size"), Gtk.STOCK_ZOOM_100)
-		
-		nozoomaction.connect("activate", self.reset_zoom)
-		zoominaction.connect("activate", self.handle_zoom_change, 1)
-		zoomoutaction.connect("activate", self.handle_zoom_change, -1)
-		
-		transformmenu = Gtk.Action("transform", _("Transform"), None, None)
-		rotatecwaction = Gtk.Action("cw-rotate", _("Rotate Clockwise"), _("Turns the image top side to the right side"), -1)
-		rotateccwaction = Gtk.Action("ccw-rotate", _("Rotate Counter Clockwise"), _("Turns the image top side to the left side"), -1)
-		
-		rotatecwaction.connect("activate", self.rotate, 90)
-		rotateccwaction.connect("activate", self.rotate, -90)
-		
-		fliphorizontalaction = Gtk.Action("h-flip", _("Flip Horizontally"), _("Inverts the left and right sides of the image"), -1)
-		flipverticalaction = Gtk.Action("v-flip", _("Flip Vertically"), _("Inverts the top and bottom sides of the image"), -1)
-		
-		flipverticalaction.connect("activate", self.flip, False)
-		fliphorizontalaction.connect("activate", self.flip, True)
+		for name, label, tip, stock in action_params:
+			some_signal_params = signaling_params.get(name, None)
+			if name in toggleable_actions:
+				# Toggleable actions :D
+				group_data = toggleable_actions[name]
+				if group_data is None:
+					# No group data = ToggleAction
+					signal_name = "toggled"
+					an_action = Gtk.ToggleAction(name, label, tip, stock)
+				else:
+					# Group data = RadioAction
+					signal_name = "changed"
+					radio_value, group_list = group_data
+					an_action = Gtk.RadioAction(name, label, tip, stock,
+					                            radio_value)
+					# Join the group of last radioaction in the list
+					if group_list:
+						an_action.join_group(group_list[-1])
+					group_list.append(an_action)
+			else:
+				# Non-rare kind of action
+				signal_name = "activate"
+				an_action = Gtk.Action(name, label, tip, stock)
+			
+			# Set signal
+			if some_signal_params:
+				an_action.connect(signal_name, *some_signal_params)
+			
+			# Add to action group
+			try:
+				an_accel = accel_actions[name]
+			except KeyError:
+				self.actions.add_action(an_action)
+			else:
+				self.actions.add_action_with_accel(an_action, an_accel)
 				
-		# Choices for pixel interpolation
-		interpolationmenu = Gtk.Action("interpolation", _("Inter_polation"), None, None)
-		
-		interpnearestaction = Gtk.RadioAction("nearest-interp", _("Nearest Neighbour"), _(""), -1, GdkPixbuf.InterpType.NEAREST)
-		interptilesaction = Gtk.RadioAction("tiles-interp", _("Parallelogram Tiles"), _(""), -1, GdkPixbuf.InterpType.TILES)
-		interpbilinearaction = Gtk.RadioAction("bilinear-interp", _("Bilinear Function"), _(""), -1, GdkPixbuf.InterpType.BILINEAR)
-		interphyperaction = Gtk.RadioAction("hyper-interp", _("Hyperbolic Function"), _(""), -1, GdkPixbuf.InterpType.HYPER)
-		
-		interptilesaction.join_group(interpnearestaction)
-		interpbilinearaction.join_group(interptilesaction)
-		interphyperaction.join_group(interpbilinearaction)
-		
-		interpolationmenu.set_sensitive(False)
-		interpnearestaction.connect("changed", self.change_interp)
-		
-		# This is a very original part of the entire program
-		scrollbarsmenu = Gtk.Action("scrollbars", _("_Scrollbars"), None, None)
-		
-		noscrollbars = Gtk.RadioAction("no-scrollbars", _("No Scroll Bars"), _("Hide scroll bars"), -1, -1)
-		brscrollbars = Gtk.RadioAction("br-scrollbars", _("At Bottom Right"), _("Show scroll bars at the bottom right corner"), -1, Gtk.CornerType.TOP_LEFT)
-		trscrollbars = Gtk.RadioAction("tr-scrollbars", _("At Top Right"), _("Show scroll bars at the top right corner"), -1, Gtk.CornerType.BOTTOM_LEFT)
-		tlscrollbars = Gtk.RadioAction("tl-scrollbars", _("At Top Left"), _("Show scroll bars at the top left corner"), -1, Gtk.CornerType.BOTTOM_RIGHT)
-		blscrollbars = Gtk.RadioAction("bl-scrollbars", _("At Bottom Left"), _("Show scroll bars at the bottom left corner"), -1, Gtk.CornerType.TOP_RIGHT)
-		
-		brscrollbars.join_group(noscrollbars)
-		trscrollbars.join_group(brscrollbars)
-		tlscrollbars.join_group(trscrollbars)
-		blscrollbars.join_group(tlscrollbars)
-		
-		noscrollbars.set_current_value(Gtk.CornerType.TOP_RIGHT)
-		noscrollbars.connect("changed", self.change_scrollbars)
-		
-		preferencesaction = Gtk.Action("preferences", _("Preferences..."), _("Configure Pynorama"), Gtk.STOCK_PREFERENCES)
-		preferencesaction.connect("activate", self.show_preferences)
-		
-		fullscreenaction = Gtk.ToggleAction("fullscreen", _("Fullscreen"), _("Fill the entire screen"), Gtk.STOCK_FULLSCREEN)
-		fullscreenaction.connect("toggled", self.toggle_fullscreen)
-		
-		# Add to the action group
-		# ALL the actions!
-		self.actions.add_action(filemenu)
-		
-		self.actions.add_action_with_accel(openaction, None)
-		self.actions.add_action_with_accel(pasteaction, None)
-				
-		self.actions.add_action_with_accel(removeaction, "Delete")
-		self.actions.add_action_with_accel(clearaction, "<ctrl>Delete")
-		
-		self.actions.add_action(orderingmenu)
-		self.actions.add_action(sortaction)
-		self.actions.add_action(sort_auto_action)
-		self.actions.add_action(sort_reverse_action)
-		
-		self.actions.add_action(sort_name_action)
-		self.actions.add_action(sort_filedate_action)
-		self.actions.add_action(sort_filesize_action)
-		
-		self.actions.add_action(sort_imgsize_action)
-		self.actions.add_action(sort_imgwidth_action)
-		self.actions.add_action(sort_imgheight_action)
-				
-		self.actions.add_action_with_accel(quitaction, None)
-		
-		self.actions.add_action(gomenu)
-		
-		self.actions.add_action_with_accel(prevaction, "Page_Up")
-		self.actions.add_action_with_accel(nextaction, "Page_Down")
-		
-		self.actions.add_action_with_accel(firstaction, "Home")
-		self.actions.add_action_with_accel(lastaction, "End")
-				
-		self.actions.add_action(viewmenu)
-		self.actions.add_action_with_accel(nozoomaction, "space")
-		self.actions.add_action_with_accel(zoominaction, "KP_Add")
-		self.actions.add_action_with_accel(zoomoutaction, "KP_Subtract")
-		
-		self.actions.add_action(transformmenu)
-		self.actions.add_action_with_accel(rotatecwaction, "R")
-		self.actions.add_action_with_accel(rotateccwaction, "<Ctrl>R")
-		
-		self.actions.add_action_with_accel(fliphorizontalaction, "F")
-		self.actions.add_action_with_accel(flipverticalaction, "<Ctrl>F")
-		
-		self.actions.add_action(interpolationmenu)
-		
-		self.actions.add_action(interpnearestaction)
-		self.actions.add_action(interptilesaction)
-		self.actions.add_action(interpbilinearaction)
-		self.actions.add_action(interphyperaction)
-		
-		self.actions.add_action(scrollbarsmenu)
-		self.actions.add_action(noscrollbars)
-		self.actions.add_action(brscrollbars)
-		self.actions.add_action(blscrollbars)
-		self.actions.add_action(tlscrollbars)
-		self.actions.add_action(trscrollbars)
-		
-		self.actions.add_action(preferencesaction)
-		
-		self.actions.add_action_with_accel(fullscreenaction, "F4")
-		
 	# Events		
 	def show_preferences(self, data=None):
 		prefs_dialog = preferences.Dialog(self.app)
@@ -489,10 +487,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.image_list.sort(self.active_ordering)
 		self.refresh_index()
 		
-	def toggle_reversesort(self, data=None):
-		reverse = self.actions.get_action("reverse-sort").get_active()
-		if self.image_list.reverse != reverse:
-			self.image_list.reverse = reverse
+	def toggle_reverse_sort(self, data=None):
+		reverse_state = self.actions.get_action("reverse-sort").get_active()
+		if self.reverse_sort != reverse_state:
+			self.reverse_sort = reverse_state
 			self.image_list.images.reverse()
 			self.refresh_index()
 		
@@ -551,15 +549,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				can_next = can_previous = False
 		else:
 			can_remove = can_previous = can_next = False
-			
-		self.actions.get_action("remove").set_sensitive(can_remove)
-		self.actions.get_action("clear").set_sensitive(len(images) > 0)
 		
-		self.actions.get_action("next").set_sensitive(can_next)
-		self.actions.get_action("previous").set_sensitive(can_previous)
+		sensible_list = [
+			("remove", can_remove),
+			("clear", len(images) > 0),
+			("next", can_next),
+			("previous", can_previous),
+			("first", can_goto_extremity),
+			("last", can_goto_extremity),
+		]
 		
-		self.actions.get_action("first").set_sensitive(can_goto_extremity)
-		self.actions.get_action("last").set_sensitive(can_goto_extremity)
+		for action_name, sensitivity in sensible_list:
+			self.actions.get_action(action_name).set_sensitive(sensitivity)
 		
 	def refresh_transform(self):
 		if self.current_image:
@@ -619,7 +620,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			    Because there is nothing to transform. '''
 			self.transform_label.set_text(_("Nothing"))
 							
-	def flip(self, data=None, horizontal=False):
+	def handle_flip(self, data=None, horizontal=False):
 		# Horizontal mirroring depends on the rotation of the image
 		if int(self.imageview.rotation) % 180:
 			# 90 or 270 degrees
@@ -643,7 +644,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		self.imageview.refresh_pixbuf()
 			
-	def rotate(self, data=None, change=0):
+	def handle_rotate(self, data=None, change=0):
 		self.imageview.rotation = (int(self.imageview.rotation) - change + 360) % 360
 		self.imageview.refresh_pixbuf()
 	
@@ -684,34 +685,29 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.unfullscreen()
 			fullscreenaction.set_stock_id(Gtk.STOCK_FULLSCREEN)
 	
-	def gofirst(self, data=None):
+	def go_first(self, data=None):
 		first_image = self.image_list.get_first()
 		if first_image:
 			self.set_image(first_image)
 	
-	def golast(self, data=None):
+	def go_last(self, data=None):
 		last_image = self.image_list.get_last()
 		if last_image:
 			self.set_image(last_image)
 	
 	
-	def gonext(self, data=None):
+	def go_next(self, data=None):
 		if self.current_image and self.current_image.next:
 			self.set_image(self.current_image.next)
 		
-	def goprevious(self, data=None):
+	def go_previous(self, data=None):
 		if self.current_image and self.current_image.previous:
 			self.set_image(self.current_image.previous)
 	
-	def clear(self, data=None):
-		self.image_list.clear()
-		self.set_image(None)
-		gc.collect()
+	def handle_clear(self, data=None):
+		self.unlist(*self.image_list.images)
 		
-		self.refresh_index()
-		self.log(_("Removed all images"))
-		
-	def remove(self, data=None):
+	def handle_remove(self, data=None):
 		if self.current_image is not None:
 			self.unlist(self.current_image)
 	
@@ -857,6 +853,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 						new_current_image = None
 					
 				self.image_list.remove(removed_image)
+				
 			self.set_image(new_current_image)
 			self.app.flag_unlisted(self, *images)
 	
