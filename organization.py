@@ -1,5 +1,6 @@
 import os
 from functools import cmp_to_key
+from gi.repository import GLib
 
 class ImageList:
 	''' It organizes images '''
@@ -92,11 +93,17 @@ def cmp(a, b):
 	return (a > b) - (b > a)
 
 class Ordering:
-	'''
-		Contains ordering modes
-	'''
+	''' Contains ordering functions '''
+	
 	@staticmethod
 	def ByName(image_a, image_b):
+		keymaker = GLib.utf8_collate_key_for_filename
+		key_a = keymaker(image_a.fullname, len(image_a.fullname))
+		key_b = keymaker(image_b.fullname, len(image_b.fullname))
+		return cmp(key_a, key_b)
+		
+	@staticmethod
+	def ByCharacters(image_a, image_b):
 		return cmp(image_a.fullname.lower(), image_b.fullname.lower())
 			
 	@staticmethod

@@ -11,6 +11,7 @@
 				<menuitem action="reverse-sort" />
 				<separator />
 				<menuitem action="name-sort" />
+				<menuitem action="char-sort" />
 				<separator />
 				<menuitem action="file-date-sort" />
 				<menuitem action="file-size-sort" />

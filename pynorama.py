@@ -17,8 +17,9 @@ class ImageViewer(Gtk.Application):
 		Gtk.Application.__init__(self)
 		self.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
 		
-		# Default prefs stuff		
+		# Default prefs stuff
 		self.zoom_effect = 2
+		self.spin_effect = 90
 		self.navi_factory = navigation.DragNavi
 		self.loaded_imagery = set()
 		
@@ -189,6 +190,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.navi_mode = None
 		self.ordering_modes = [
 			organization.Ordering.ByName,
+			organization.Ordering.ByCharacters,
 			organization.Ordering.ByFileDate,
 			organization.Ordering.ByFileSize,
 			organization.Ordering.ByImageSize,
@@ -301,8 +303,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			     _("Sort images as they are added"), None),
 			     ("reverse-sort", _("Reverse Order"),
 			      _("Order images in reverse"), None),
-				("name-sort", _("By Name"), _("Order images alphabetically"),
+				("name-sort", _("By Name"), _("Order images by name"),
 				 None),
+				("char-sort", _("By Characters"),
+				 _("Order images by name comparing only the characters"), None),
 				("file-date-sort", _("By Modification Date"),
 				 _("Recently modified images appear first"), None),
 				("file-size-sort", _("By File Size"),
@@ -387,8 +391,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"in-zoom" : (self.handle_zoom_change, 1),
 			"out-zoom" : (self.handle_zoom_change, -1),
 			"no-zoom" : (self.reset_zoom,),
-			"cw-rotate" : (self.handle_rotate, 90),
-			"ccw-rotate" : (self.handle_rotate, -90),
+			"cw-rotate" : (self.handle_rotate, 1),
+			"ccw-rotate" : (self.handle_rotate, -1),
 			"h-flip" : (self.handle_flip, False),
 			"v-flip" : (self.handle_flip, True),
 			"nearest-interp" : (self.change_interp,), # For group
@@ -403,11 +407,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"reverse-sort" : None,
 			"fullscreen" : None,
 			"name-sort" : (0, sort_group),
-			"file-date-sort" : (1, sort_group),
-			"file-size-sort" : (2, sort_group),
-			"img-size-sort" : (3, sort_group),
-			"img-width-sort" : (4, sort_group),
-			"img-height-sort" : (5, sort_group),
+			"char-sort" : (1, sort_group),
+			"file-date-sort" : (2, sort_group),
+			"file-size-sort" : (3, sort_group),
+			"img-size-sort" : (4, sort_group),
+			"img-width-sort" : (5, sort_group),
+			"img-height-sort" : (6, sort_group),
 			"nearest-interp" : (cairo.FILTER_NEAREST, interp_group),
 			"bilinear-interp" : (cairo.FILTER_BILINEAR, interp_group),
 			"fast-interp" : (cairo.FILTER_FAST, interp_group),
@@ -657,7 +662,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			
 		self.imageview.set_flip((hflip, vflip))
 			
-	def handle_rotate(self, data=None, change=0):
+	def handle_rotate(self, data=None, power=0):
+		change = self.app.spin_effect * power
 		if change < 0:
 			change += (change // 360) * -360
 		

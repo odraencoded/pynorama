@@ -10,15 +10,15 @@ class Dialog(Gtk.Dialog):
 		
 		self.app = app
 		
+		# Setup notebook
 		tabs = Gtk.Notebook()
 		tabs_align = Gtk.Alignment()
 		tabs_align.set_padding(15, 15, 15, 15)
-		
 		tabs_align.add(tabs)
 		self.get_content_area().pack_start(tabs_align, True, True, 0)
-		
 		tabs_align.show_all()
 		
+		# Create tabs
 		tab_labels = [_("Panning"), _("Zooming")]
 		tab_grids = []
 		for a_tab_label in tab_labels:
@@ -31,8 +31,9 @@ class Dialog(Gtk.Dialog):
 			tabs.append_page(a_tab_align, Gtk.Label(a_tab_label))
 			tab_grids.append(a_tab_grid)
 		
-		pan_grid, zoom_grid = tab_grids
-						
+		pan_grid, view_grid = tab_grids
+		
+		# Setup navigator tab				
 		self.nav_book = Gtk.Notebook()
 		self.nav_book.set_show_tabs(False)
 		self.nav_book.set_show_border(False)
@@ -41,6 +42,7 @@ class Dialog(Gtk.Dialog):
 		self.navi_widgets = []
 		self.navigators = []
 		
+		# Load navi widgets and names
 		for navi in navigation.NaviList:
 			name = navi.get_name()
 			label = Gtk.Label(name)
@@ -49,16 +51,18 @@ class Dialog(Gtk.Dialog):
 			self.nav_book.append_page(widgets, label)
 			self.nav_selection.append_text(name)
 			self.navigators.append(navi)
-					
+		
+		# Add navi selection widgets
 		self.nav_selection.connect("changed", self.refresh_nav_book)	
 		self.nav_enabler = Gtk.CheckButton(_("Enable mouse panning"))
 		
-		current_navi = self.app.navi_factory
-		self.nav_enabler.set_active(current_navi is not None)
-		
+		# If the navi_factory is none, then navi aided panning is disabled.
+		current_navi = self.app.navi_factory		
 		if current_navi is None:
+			self.nav_enabler.set_active(False)
 			self.nav_selection.set_active(0)
 		else:
+			self.nav_enabler.set_active(True)
 			self.nav_selection.set_active(self.navigators.index(current_navi))
 			
 		nav_mode_label = Gtk.Label(_("Mouse panning mode"))
@@ -69,11 +73,40 @@ class Dialog(Gtk.Dialog):
 		                0, 1, 3, 1)
 		pan_grid.attach(self.nav_book, 0, 2, 3, 1)
 		
+		# Setup view tab
+		spin_button_specs = [
+			(_("Rotatation effect"),
+			 (self.app.spin_effect, 1, 359, 3, 30)),
+			(_("Zoom in/out effect"),
+			 (self.app.zoom_effect, 1.02, 4, 0.1, 0.25))
+		]
+		spin_buttons = []
+		for a_label_string, an_adjustment_args in spin_button_specs:
+			a_button_label = Gtk.Label(a_label_string)
+			a_button_label.set_hexpand(True)
+			a_button_label.set_alignment(0, 0.5)
+			
+			an_adjustment = Gtk.Adjustment(*(an_adjustment_args + (0,)))
+			a_spin_button = Gtk.SpinButton()
+			a_spin_button.set_adjustment(an_adjustment)
+			
+			row = len(spin_buttons)
+			view_grid.attach(a_button_label, 0, row, 1, 1)
+			view_grid.attach(a_spin_button, 1, row, 1, 1)
+			spin_buttons.append(a_spin_button)
+		
+		self.spin_effect, self.zoom_effect = spin_buttons
+		self.zoom_effect.set_digits(2)
+		'''
+		self.spin_effect = Gtk.SpinButton()
+		spin_adjustment = Gtk.Adjustment(self.app.spin_effect,
+		                                1, 359, 18, 45, 0)
+		self.spin_effect.set_adjustment(spin_adjustment)
+		                                
 		self.zoom_effect = Gtk.SpinButton()
-		self.zoom_effect.set_adjustment(Gtk.Adjustment(
-		                                self.app.zoom_effect,
-		                                1.02, 4, 0.1, 0.25, 0
-		                                ))
+		zoom_adjustment = Gtk.Adjustment(self.app.zoom_effect,
+		                                 1.02, 4, 0.1, 0.25, 0)
+		self.zoom_effect.set_adjustment(zoom_adjustment)
 		self.zoom_effect.set_digits(2)
 		
 		zoom_label = Gtk.Label(_("Zoom in/out effect"))
@@ -81,7 +114,7 @@ class Dialog(Gtk.Dialog):
 		zoom_label.set_alignment(0, 0.5)
 		zoom_grid.attach(zoom_label, 0, 0, 1, 1)
 		zoom_grid.attach(self.zoom_effect, 1, 0, 1, 1)
-		
+		'''
 		tabs.show_all()
 		self.refresh_nav_book()
 		
@@ -114,3 +147,4 @@ class Dialog(Gtk.Dialog):
 		# Maybe I should reattach the same navigator, maybe not
 		self.app.set_navi_factory(selected_navi)
 		self.app.zoom_effect = self.zoom_effect.get_value()
+		self.app.spin_effect = self.spin_effect.get_value()
