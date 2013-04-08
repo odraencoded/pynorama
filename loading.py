@@ -4,8 +4,9 @@
 
 import os, re, datetime, time
 
-from gi.repository import Gtk, GdkPixbuf, Gio
+from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GObject
 from gettext import gettext as _
+import cairo
 
 Filters = []
 Mimes = []
@@ -78,7 +79,7 @@ class ImageNode():
 		
 		self.fullname, self.name = "", ""
 		self.next = self.previous = None
-		
+	
 	def reload(self):
 		if self.is_loaded():
 			self.do_unload()
@@ -143,9 +144,20 @@ class ImageGFileNode(ImageNode):
 	def is_loaded(self):
 		return self.pixbuf is not None
 		
-	def do_load(self):
+	def do_load(self):		
 		stream = self.gfile.read(None)
-		self.pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)			
+		self.pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)
+		'''
+		format = cairo.FORMAT_RGB24
+		if self.pixbuf.get_has_alpha():
+			format = cairo.FORMAT_ARGB32
+		width, height = self.pixbuf.get_width(), self.pixbuf.get_height()
+		self.surface = cairo.ImageSurface(format, width, height)
+		cr = cairo.Context(self.surface)
+		Gdk.cairo_set_source_pixbuf
+		cr.set_source(self.pixbuf)
+		cr.paint()'''
+		
 		self.load_metadata()
 	
 	def load_metadata(self):

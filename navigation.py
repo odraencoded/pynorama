@@ -2,7 +2,7 @@
 	Some panning interface related code
 '''
 
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gtk, Gdk, GLib, GObject
 from gettext import gettext as _
 import math, time
 
@@ -13,6 +13,7 @@ class DragNavi:
 	def __init__(self, imageview):
 		self.imageview = imageview
 		
+		self.idling = False
 		self.dragging = False
 		self.last_step = None
 		self.margin_handling_ref = None
@@ -34,13 +35,13 @@ class DragNavi:
 		for handler in self.view_handlers:
 			self.imageview.disconnect(handler)
 			
-		self.imageview.get_bin_window().set_cursor(None)
+		self.imageview.get_window().set_cursor(None)
 	
 	def button_press(self, widget, data):
 		if data.button == 1:
 			self.dragging = True
 			self.last_step = self.imageview.get_pointer()
-			self.imageview.get_bin_window().set_cursor(Gdk.Cursor(Gdk.CursorType.FLEUR))
+			self.imageview.get_window().set_cursor(Gdk.Cursor(Gdk.CursorType.FLEUR))
 			
 			if self.margin_handling_ref is None and self.check_margin(False):
 				self.attach_timeout()
@@ -49,7 +50,7 @@ class DragNavi:
 		if data.button == 1:
 			self.dragging = False
 			self.last_step = None
-			self.imageview.get_bin_window().set_cursor(None)
+			self.imageview.get_window().set_cursor(None)
 			
 			if self.margin_handling_ref is not None:
 				self.remove_timeout()
@@ -63,58 +64,66 @@ class DragNavi:
 		GLib.source_remove(self.margin_handling_ref)
 		self.margin_handling_ref = None
 		
-	def motion_event(self, widget, data):		
-		x, y = self.imageview.get_pointer()
-		if self.dragging:
-			if self.check_margin(False):
-				if self.margin_handling_ref is None:
-					self.attach_timeout()
+	def motion_event(self, widget, data):
+		if not self.idling:
+			GObject.idle_add(self.delayed_motion)
+			self.idling = True
 			
-			elif self.margin_handling_ref is not None:
-				self.remove_timeout()
-				self.imageview.get_bin_window().set_cursor(Gdk.Cursor(Gdk.CursorType.FLEUR))
+	def delayed_motion(self):
+		try:
+			x, y = self.imageview.get_pointer()
+			if self.dragging:
+				if self.check_margin(False):
+					if self.margin_handling_ref is None:
+						self.attach_timeout()
 			
-			if self.margin_handling_ref is None and self.last_step:
-				dx, dy = self.last_step
-				dx, dy = int((x - dx) * DragNavi.Speed), int((y - dy) * DragNavi.Speed)
+				elif self.margin_handling_ref is not None:
+					self.remove_timeout()
+					self.imageview.get_window().set_cursor(Gdk.Cursor(Gdk.CursorType.FLEUR))
+			
+				if self.margin_handling_ref is None and self.last_step:
+					dx, dy = self.last_step
+					dx, dy = x - dx, y - dy
+					dx, dy = dx * DragNavi.Speed, dy * DragNavi.Speed
+					magnification = self.imageview.get_magnification()
+					dx, dy = dx / magnification, dy / magnification
+										
+					if dx:
+						hadjust = self.imageview.get_hadjustment()
+						vw = hadjust.get_upper() - hadjust.get_page_size() - hadjust.get_lower()
+			
+						nx = hadjust.get_value() + dx
+			
+						if nx < hadjust.get_lower():
+							nx = hadjust.get_lower()
+						if nx > vw:
+							nx = vw
 				
-				if dx:
-					hadjust = self.imageview.get_hadjustment()
-					vw = hadjust.get_upper() - hadjust.get_page_size()
+						hadjust.set_value(nx)
+						
+					else:
+						x = self.last_step[0]
 			
-					nx = hadjust.get_value() + dx
+					if dy:
+						vadjust = self.imageview.get_vadjustment()
+						vh = vadjust.get_upper() - vadjust.get_page_size() - vadjust.get_lower()
 			
-					if nx < hadjust.get_lower():
-						nx = hadjust.get_lower()
-					if nx > vw:
-						nx = vw
+						ny = vadjust.get_value() + dy
+			
+						if ny < vadjust.get_lower():
+							ny = vadjust.get_lower()
+						if ny > vh:
+							ny = vh
 				
-					hadjust.set_value(nx)
-					self.imageview.set_hadjustment(hadjust)
-				else:
-					x = self.last_step[0]
-			
-				if dy:
-					vadjust = self.imageview.get_vadjustment()
-					vh = vadjust.get_upper() - vadjust.get_page_size()
-			
-					ny = vadjust.get_value() + dy
-			
-					if ny < vadjust.get_lower():
-						ny = vadjust.get_lower()
-					if ny > vh:
-						ny = vh
+						vadjust.set_value(ny)
+									
+					else:
+						y = self.last_step[1]
 				
-					vadjust.set_value(ny)
-					self.imageview.set_vadjustment(vadjust)
-			
-				else:
-					y = self.last_step[1]
-				
-		self.last_step = x, y
-		
-		return True
-		
+				self.last_step = x, y
+		finally:
+			self.idling = False
+					
 	def margin_handler(self):
 		return self.check_margin(True)
 		
@@ -180,7 +189,7 @@ class DragNavi:
 				elif yshift > 0:
 					cursor_type = Gdk.CursorType.BOTTOM_SIDE
 					
-				self.imageview.get_bin_window().set_cursor(Gdk.Cursor(cursor_type))
+				self.imageview.get_window().set_cursor(Gdk.Cursor(cursor_type))
 				
 				relatively_current_time = time.time()
 				delta_time = relatively_current_time - self.moving_timestamp
@@ -318,7 +327,7 @@ class RollNavi:
 		for handler in self.view_handlers:
 			self.imageview.disconnect(handler)
 			
-		self.imageview.get_bin_window().set_cursor(None)
+		self.imageview.get_window().set_cursor(None)
 	
 	def attach_timeout(self):
 		self.roller_ref = GLib.timeout_add(int(1000 * RollNavi.Frequency), self.roll)
@@ -368,14 +377,14 @@ class RollNavi:
 				Gdk.CursorType.TOP_SIDE,
 				 )[angle_index]
 			
-			self.imageview.get_bin_window().set_cursor(Gdk.Cursor(cursor_type))
+			self.imageview.get_window().set_cursor(Gdk.Cursor(cursor_type))
 		else:
 			# Cancel timeout callback
 			if self.roller_ref is not None:
 				self.remove_timeout()
 				
 			# Reset cursor
-			self.imageview.get_bin_window().set_cursor(None)
+			self.imageview.get_window().set_cursor(None)
 			
 	def leave_event(self, widget, data):
 		self.pointer = None
@@ -479,7 +488,8 @@ class MapNavi:
 		
 	def __init__(self, imageview):
 		self.imageview = imageview
-				
+		self.idling = False
+		
 		# Setup events
 		self.imageview.add_events(Gdk.EventMask.POINTER_MOTION_MASK |
 			Gdk.EventMask.BUTTON_PRESS_MASK |
@@ -489,13 +499,11 @@ class MapNavi:
 		self.view_handlers = [
 			self.imageview.connect("button-press-event", self.button_press),
 			self.imageview.connect("button-release-event", self.button_release),
-			self.imageview.connect("motion-notify-event", self.mouse_motion)
+			self.imageview.connect("motion-notify-event", self.mouse_motion),
+			self.imageview.connect("size-change", self.refresh_adjustments)
 			]
 			
-		self.imageview.get_bin_window().set_cursor(Gdk.Cursor(Gdk.CursorType.CROSSHAIR))
-		
-		image = self.imageview.image
-		self.image_handlers = [image.connect("size-allocate", self.refresh_adjustments)]
+		self.imageview.get_window().set_cursor(Gdk.Cursor(Gdk.CursorType.CROSSHAIR))
 		
 		self.clicked = False
 		self.refresh_adjustments()
@@ -508,7 +516,7 @@ class MapNavi:
 		for handler in self.image_handlers:
 			image.disconnect(handler)
 			
-		self.imageview.get_bin_window().set_cursor(None)
+		self.imageview.get_window().set_cursor(None)
 	
 	def button_press(self, widget=None, data=None):
 		if data.button == 1:
@@ -522,9 +530,17 @@ class MapNavi:
 			self.clicked = False
 	
 	def mouse_motion(self, widget=None, data=None):
-		if not MapNavi.RequireClick or self.clicked:
+		if not self.idling and (not MapNavi.RequireClick or self.clicked):
+			GObject.idle_add(self.delayed_refresh)
+			self.idling = True
 			self.refresh_adjustments()
-	
+			
+	def delayed_refresh(self):
+		try:
+			self.refresh_adjustments()
+		finally:
+			self.idling = False
+		
 	def get_map_rectangle(self):
 		allocation = self.imageview.get_allocation()
 		
@@ -548,8 +564,8 @@ class MapNavi:
 			else:
 				smallest_side = allocation.width
 			
-			half_width_diff = (allocation.width - smallest_side) // 2
-			half_height_diff = (allocation.height - smallest_side) // 2
+			half_width_diff = (allocation.width - smallest_side) / 2
+			half_height_diff = (allocation.height - smallest_side) / 2
 			
 			rect_tuple = (
 				allocation.x + half_width_diff, allocation.y + half_height_diff,
@@ -557,19 +573,23 @@ class MapNavi:
 			)
 			
 		elif MapNavi.MapMode == "proportional":
-			hadjust, vadjust = self.imageview.props.hadjustment, self.imageview.props.vadjustment
-			vw, vh = hadjust.props.upper, vadjust.props.upper
-			vw_ratio, vh_ratio = float(allocation.width) / vw, float(allocation.height) / vh
-			
-			if vw_ratio > vh_ratio:
-				smallest_ratio = vh_ratio
+			hadjust = self.imageview.get_hadjustment()
+			vadjust = self.imageview.get_vadjustment()
+			full_width = hadjust.get_upper() - hadjust.get_lower()
+			full_height = vadjust.get_upper() - vadjust.get_lower()
+			fw_ratio = allocation.width / full_width
+			fh_ratio = allocation.height / full_height
+						
+			if fw_ratio > fh_ratio:
+				smallest_ratio = fh_ratio
 			else:
-				smallest_ratio = vw_ratio
-				
-			tw, th = int(smallest_ratio * vw), int(smallest_ratio * vh)
+				smallest_ratio = fw_ratio
 			
-			half_width_diff = (allocation.width - tw) // 2
-			half_height_diff = (allocation.height - th) // 2
+			transformed_width = smallest_ratio * full_width
+			transformed_height = smallest_ratio * full_height
+			
+			half_width_diff = (allocation.width - transformed_width) / 2
+			half_height_diff = (allocation.height - transformed_height) / 2
 			
 			rect_tuple = (
 				allocation.x + half_width_diff, allocation.y + half_height_diff,
@@ -588,30 +608,25 @@ class MapNavi:
 		x, y = self.imageview.get_pointer()
 		rect = self.get_map_rectangle()
 		
+		# Shift and clamp x and y
 		allocation = self.imageview.get_allocation()
+		x = max(0, min(rect.width, x - rect.x))
+		y = max(0, min(rect.height, y - rect.y))
+		
 		hadjust = self.imageview.get_hadjustment()
 		vadjust = self.imageview.get_vadjustment()
-		vw = hadjust.props.upper - hadjust.props.page_size
-		vh = vadjust.props.upper - vadjust.props.page_size
-		# Shift and clamp x and y
-		x -= rect.x
-		if x < 0:
-			x = 0
-		elif x > rect.width:
-			x = rect.width
-		
-		y -= rect.y
-		if y < 0:
-			y = 0
-		elif y > rect.height:
-			y = rect.height
-		
+		# Get content size
+		full_width = hadjust.get_upper() - hadjust.get_lower()
+		full_width -= hadjust.get_page_size()
+		full_height = vadjust.get_upper() - vadjust.get_lower()
+		full_height -= vadjust.get_page_size()
 		# Transform x and y to picture "adjustment" coordinates
-		tx = int(float(x) / rect.width * vw)
-		ty = int(float(y) / rect.height * vh)
+		tx = float(x) / rect.width * full_width + hadjust.get_lower()
+		ty = float(y) / rect.height * full_height + vadjust.get_lower()
 		
-		hadjust.props.value, vadjust.props.value = tx, ty
-	
+		hadjust.set_value(tx)
+		vadjust.set_value(ty)
+			
 	Margin = 32
 	RequireClick = False
 	MapMode = "proportional"

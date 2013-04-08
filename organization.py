@@ -7,7 +7,13 @@ class ImageList:
 	def __init__(self):
 		self.images = []
 		self.reverse = False
-							
+	
+	def __len__(self):
+		return len(self.images)
+	
+	def __getitem__(self, index):
+		return self.images[index]
+	
 	def clear(self):
 		del self.images[:]
 	

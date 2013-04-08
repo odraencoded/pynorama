@@ -46,9 +46,11 @@
 			</menu>
 			<menu action="interpolation">
 				<menuitem action="nearest-interp" />
-				<menuitem action="tiles-interp" />
 				<menuitem action="bilinear-interp" />
-				<menuitem action="hyper-interp" />
+				<separator />
+				<menuitem action="fast-interp" />
+				<menuitem action="good-interp" />
+				<menuitem action="best-interp" />
 			</menu>
 			<separator />
 			<menu action="scrollbars">

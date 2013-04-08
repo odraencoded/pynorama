@@ -3,11 +3,11 @@
  
 ''' Pynorama is an image viewer application. '''
 
-import gc, os, sys
+import gc, math, os, sys
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib
+import cairo
 from gettext import gettext as _
-import organization, navigation, loading, preferences
-from ximage import xImage
+import organization, navigation, loading, preferences, viewing
 
 resource_dir = os.path.dirname(__file__)
 DND_URI_LIST, DND_IMAGE = range(2)
@@ -17,9 +17,9 @@ class ImageViewer(Gtk.Application):
 		Gtk.Application.__init__(self)
 		self.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
 		
-		# Default prefs stuff
+		# Default prefs stuff		
 		self.zoom_effect = 2
-		self.navi_factory = navigation.MapNavi
+		self.navi_factory = navigation.DragNavi
 		self.loaded_imagery = set()
 		
 	def do_startup(self):
@@ -171,7 +171,7 @@ class ImageViewer(Gtk.Application):
 		self.navi_factory = navi_factory
 		for a_window in self.get_windows():
 			if a_window.navi_mode != navi_factory:
-				a_window.set_navigator(self, navi_factory)
+				a_window.set_navigator(navi_factory)
 	
 class ViewerWindow(Gtk.ApplicationWindow):
 	def __init__(self, app):
@@ -182,6 +182,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.set_default_size(600, 600)
 		# Setup variables
 		self.current_image = None
+		self.current_frame = viewing.PictureFrame()
 		self.autosort = True
 		self.reverse_sort = False
 		self.navigator = None
@@ -224,8 +225,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.image_scroller.connect("key-press-event", lambda x, y: True)
 		self.image_scroller.connect("key-release-event", lambda x, y: True)
 		self.image_scroller.connect("scroll-event", lambda x, y: True)
-		self.imageview = xImage()
-		self.imageview.connect("pixbuf-notify", self.pixbuf_changed)
+		self.imageview = viewing.GalleryView()
+		self.imageview.add_frame(self.current_frame)
+		
+		self.imageview.connect("notify::magnification", self.magnification_changed)
+		self.imageview.connect("notify::magnification", self.view_changed)
+		self.imageview.connect("notify::rotation", self.view_changed)
+		self.imageview.connect("notify::flip", self.view_changed)
 		
 		self.image_scroller.add(self.imageview)
 		self.image_scroller.show_all()
@@ -342,10 +348,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				 _("Inverts the top and bottom sides of the image"), None),
 			# Interpolation submenu
 			("interpolation", _("Interpolation"), None, None),
-				("nearest-interp", _("Nearest Neighbour"), _(""), None),
-				("tiles-interp", _("Parallelogram Tiles"), _(""), None),
-				("bilinear-interp", _("Bilinear Function"), _(""), None),
-				("hyper-interp", _("Hyperbolic Function"), _(""), None),
+				("nearest-interp", _("Nearest Neighbour Filter"), _(""), None),
+				("bilinear-interp", _("Bilinear Filter"), _(""), None),
+				("fast-interp", _("Faster Filter"), _(""), None),
+				("good-interp", _("Better Filter"), _(""), None),
+				("best-interp", _("Stronger Filter"), _(""), None),
 			# Scrollbar submenu
 			("scrollbars", _("_Scrollbars"), None, None),
 				("no-scrollbars", _("No Scroll Bars"), _("Hide scroll bars"), None),
@@ -394,16 +401,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		toggleable_actions = {
 			"auto-sort" : None,
 			"reverse-sort" : None,
+			"fullscreen" : None,
 			"name-sort" : (0, sort_group),
 			"file-date-sort" : (1, sort_group),
 			"file-size-sort" : (2, sort_group),
 			"img-size-sort" : (3, sort_group),
 			"img-width-sort" : (4, sort_group),
 			"img-height-sort" : (5, sort_group),
-			"nearest-interp" : (GdkPixbuf.InterpType.NEAREST, interp_group),
-			"tiles-interp" : (GdkPixbuf.InterpType.TILES, interp_group),
-			"bilinear-interp" : (GdkPixbuf.InterpType.BILINEAR, interp_group),
-			"hyper-interp" : (GdkPixbuf.InterpType.HYPER, interp_group),
+			"nearest-interp" : (cairo.FILTER_NEAREST, interp_group),
+			"bilinear-interp" : (cairo.FILTER_BILINEAR, interp_group),
+			"fast-interp" : (cairo.FILTER_FAST, interp_group),
+			"good-interp" : (cairo.FILTER_GOOD, interp_group),
+			"best-interp" : (cairo.FILTER_BEST, interp_group),
 			"no-scrollbars" : (-1, scrollbar_group),
 			# The values seem inverted because... reasons
 			"br-scrollbars" : (Gtk.CornerType.TOP_LEFT, scrollbar_group),
@@ -496,11 +505,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def toggle_autosort(self, data=None):
 		self.autosort = self.actions.get_action("auto-sort").get_active()
-		
-	def pixbuf_changed(self, data=None):
-		self.refresh_transform()
+	
+	def magnification_changed(self, widget, data=None):
 		self.refresh_interp()
 		
+	def view_changed(self, widget, data):
+		self.refresh_transform()
+	
 	def refresh_interp(self):	
 		interp = self.imageview.get_interpolation()
 		self.actions.get_action("interpolation").set_sensitive(interp is not None)
@@ -564,17 +575,17 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def refresh_transform(self):
 		if self.current_image:
-			if self.current_image.pixbuf and self.imageview.pixbuf:
+			pixbuf = self.current_image.pixbuf
+			if pixbuf:
 				# The width and height are from the source
-				width = self.imageview.source.get_width()
-				height = self.imageview.source.get_height()
-				pic = "{width}x{height}".format(width=width, height=height)
+				pic = "{width}x{height}".format(width=pixbuf.get_width(),
+				                                height=pixbuf.get_height())
 			else:
 				# This just may happen
 				pic = _("Error")
 			
 			# Cache magnification because it is kind of a long variable
-			mag = self.imageview.magnification
+			mag = self.imageview.get_magnification()
 			if mag != 1:			
 				if mag > 1 and mag == int(mag):
 					zoom_fmt = " " + _("x{zoom_in:d}")
@@ -587,80 +598,82 @@ class ViewerWindow(Gtk.ApplicationWindow):
 					zoom = zoom_fmt.format(zoom=mag)
 			else:
 				zoom = ""
-		
-			''' The the rotation used by gtk is counter clockwise
-			    This converts the degrees to clockwise '''
-			if self.imageview.rotation:
-				rot_fmt = " " + _("{angle}°")
-				rot = rot_fmt.format(angle=int(360 - self.imageview.rotation))
-			else:
-				rot = ""
 			
-			''' For flipping/inverting/mirroring
-				Pro-tip: Rotation affects it '''
-			if self.imageview.flip_horizontal:
-				if int(self.imageview.rotation) % 180:
-					mirror = " ↕"
-				else:
+			
+			# Cachin' variables
+			rot = self.imageview.get_rotation()
+			hflip, vflip = self.imageview.get_flip()
+			if hflip or vflip:
+				''' If the view is flipped in either direction apply this
+				    intricate looking math stuff to rotation. Normally, there
+				    would be another expression if both are true, but in that
+				    is handled beforehand by rotating the view by 180° '''
+				    
+				rot = (rot + (45 - ((rot + 45) % 180)) * 2) % 360
+				
+				if hflip:
 					mirror = " ↔"
-			elif self.imageview.flip_vertical:
-				if int(self.imageview.rotation) % 180:
-					mirror = " ↔"
 				else:
 					mirror = " ↕"
-			else: 
+			else:
 				mirror = ""
+				
+			# Create angle string for label
+			if rot:
+				angle_fmt = " " + _("{angle}°")
+				angle = angle_fmt.format(angle=int(rot))
+			else:
+				angle = ""
 				
 			''' Sets the transform label to Width x Height or "Error",
 			    zoom, rotation and mirroring combined '''
-			transform = (pic, zoom, rot, mirror)
+			transform = (pic, zoom, angle, mirror)
 			self.transform_label.set_text("%s%s%s%s" % transform)
 		else:
 			''' Sets the transform label to nothing.
 			    Because there is nothing to transform. '''
 			self.transform_label.set_text(_("Nothing"))
 							
-	def handle_flip(self, data=None, horizontal=False):
+	def handle_flip(self, data=None, vertical=False):
 		# Horizontal mirroring depends on the rotation of the image
-		if int(self.imageview.rotation) % 180:
-			# 90 or 270 degrees
-			if horizontal:
-				self.imageview.flip_vertical = not self.imageview.flip_vertical
-			else:
-				self.imageview.flip_horizontal = not self.imageview.flip_horizontal
-			
+		hflip, vflip = self.imageview.get_flip()
+		if vertical:
+			vflip = not vflip
 		else:
-			# 0 or 180 degrees
-			if horizontal:
-				self.imageview.flip_horizontal = not self.imageview.flip_horizontal
-			else:
-				self.imageview.flip_vertical = not self.imageview.flip_vertical
+			hflip = not hflip
+		
+		# ih8triGNOMEtricks
+		rot = self.imageview.get_rotation()
+		angle_change = (45 - ((rot + 45) % 180)) * 2
 		
 		# If the image if flipped both horizontally and vertically
 		# Then it is rotated 180 degrees
-		if self.imageview.flip_vertical and self.imageview.flip_horizontal:
-			self.imageview.flip_vertical = self.imageview.flip_horizontal = False
-			self.imageview.rotation = (int(self.imageview.rotation) + 180) % 360
+		if vflip and hflip:
+			vflip = hflip = False
+			angle_change += 180
 		
-		self.imageview.refresh_pixbuf()
+		if angle_change:
+			self.imageview.set_rotation((rot + angle_change) % 360)
+			
+		self.imageview.set_flip((hflip, vflip))
 			
 	def handle_rotate(self, data=None, change=0):
-		self.imageview.rotation = (int(self.imageview.rotation) - change + 360) % 360
-		self.imageview.refresh_pixbuf()
+		if change < 0:
+			change += (change // 360) * -360
+		
+		altered_rotation = self.imageview.get_rotation() + change
+		self.imageview.set_rotation(altered_rotation % 360)
 	
 	def handle_zoom_change(self, data, change):
 		self.change_zoom(change)
 		
 	def reset_zoom(self, data=None):
-		self.imageview.magnification = 1
-		self.imageview.refresh_pixbuf()
+		self.imageview.set_magnification(1)
 
 	def change_interp(self, radioaction, current):
-		if self.imageview.magnification:
+		if self.imageview.get_magnification():
 			interpolation = current.props.value	
 			self.imageview.set_interpolation(interpolation)
-			
-			self.imageview.refresh_pixbuf()
 	
 	def change_scrollbars(self, radioaction, current):
 		placement = current.props.value
@@ -678,7 +691,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# This simply tries to fullscreen / unfullscreen
 		fullscreenaction = self.actions.get_action("fullscreen")
 		
-		if fullscreenaction.props.active:
+		if fullscreenaction.get_active():
 			self.fullscreen()
 			fullscreenaction.set_stock_id(Gtk.STOCK_LEAVE_FULLSCREEN)
 		else:
@@ -758,11 +771,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			image_chooser.destroy()
 			
 	def imageview_scrolling(self, widget, data=None):
-		image = self.imageview.image
 		anchor = self.imageview.get_pointer()
 		
 		if data.direction == Gdk.ScrollDirection.UP:
 			self.change_zoom(1, anchor)
+			
 		elif data.direction == Gdk.ScrollDirection.DOWN:
 			self.change_zoom(-1, anchor)
 					
@@ -786,7 +799,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		if self.current_image is None:
 			# Current image being none means nothing is displayed.
-			self.imageview.source = None
+			self.current_frame.set_surface(None)
 			self.set_title(_("Pynorama"))
 			
 		else:
@@ -796,12 +809,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			if self.current_image.is_loaded():
 				# Since we just required it, it should be loaded
 				pixbuf = self.current_image.pixbuf
+				
 			else:
 				# Case it's not that means the loading has failed terribly.
 				pixbuf = self.render_icon(Gtk.STOCK_MISSING_IMAGE,
 				                          Gtk.IconSize.DIALOG)
-				
-			self.imageview.source = pixbuf
+			
+			self.current_frame.set_pixbuf(pixbuf)
 			# Sets the window title
 			img_name = self.current_image.name
 			img_fullname = self.current_image.fullname
@@ -813,24 +827,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			new_title = title_fmt.format(name=img_name, fullname=img_fullname)
 			self.set_title(new_title)
 			
-		self.imageview.refresh_pixbuf()
-		self.readjust_view()
 		self.refresh_index()
+		self.refresh_transform()
 		
-	def readjust_view(self):
-		# TODO: Make this thing useful
-		if self.imageview.pixbuf:
-			w = self.imageview.pixbuf.get_width()
-			h = self.imageview.pixbuf.get_height()
-			alloc = self.imageview.get_allocation()
-			vw, vh = alloc.width, alloc.height
-			
-			x = (w - vw) // 2
-			y = 0
-			
-			self.imageview.get_hadjustment().set_value(x)
-			self.imageview.get_vadjustment().set_value(y)
-	
 	def enlist(self, *images):
 		if images:
 			self.image_list.add(*images)
@@ -879,8 +878,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def change_zoom(self, power, anchor=None):
 		zoom_effect = self.app.zoom_effect
 		if zoom_effect and power:
-			self.imageview.magnification *= zoom_effect ** power
-			self.imageview.refresh_pixbuf()
+			self.imageview.props.magnification *= zoom_effect ** power
 			
 if __name__ == "__main__":
 	# Run the program
