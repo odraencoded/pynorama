@@ -292,7 +292,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		action_params = [
 		# File Menu
 		("file", _("File"), None, None),
-			("open", _("Open..."), _("Open an image"), Gtk.STOCK_OPEN),
+			("open", _("Open..."), _("Open an image in the viewer"), Gtk.STOCK_OPEN),
 			("paste", _("Paste"), _("Show an image from the clipboard"),
 			 Gtk.STOCK_PASTE),
 			# Ordering submenu
@@ -756,11 +756,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		                title = _("Open Image..."),
 		                action = Gtk.FileChooserAction.OPEN,
 		                buttons = (Gtk.STOCK_CANCEL,
-		                           Gtk.ResponseType.CANCEL,
-		                           Gtk.STOCK_OPEN,
-		                           Gtk.ResponseType.ACCEPT))
+		                           0,
+		                           Gtk.STOCK_ADD,
+		                           1,
+   		                           Gtk.STOCK_OPEN,
+		                           2))
 			
-		image_chooser.set_default_response(Gtk.ResponseType.OK)
+		image_chooser.set_default_response(2)
 		image_chooser.set_select_multiple(True)
 		image_chooser.set_transient_for(self)
 		
@@ -769,9 +771,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			image_chooser.add_filter(fileFilter)
 			
 		try:
-			if image_chooser.run() == Gtk.ResponseType.ACCEPT:
+			response = image_chooser.run()
+			if response == 2:
+				self.unlist(*self.image_list.images)
+				
+			if response >= 1:
 				filenames = image_chooser.get_filenames()
 				self.insert_images(self.app.load_paths(filenames))
+				
 		finally:
 			# Destroy the dialog anyway
 			image_chooser.destroy()
