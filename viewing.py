@@ -6,6 +6,10 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 	''' This widget can display PictureFrames.
 	    It can also zoom in, out, rotate, adjust and etc. '''
 	
+	__gsignals__ = {
+		"transform-change" : (GObject.SIGNAL_RUN_FIRST, None, [])
+	}
+	
 	def __init__(self):
 		Gtk.DrawingArea.__init__(self)
 		
@@ -206,6 +210,7 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 		# I saw a black cat walk by. Twice.
 		self.compute_adjustments()
 		self.queue_draw()
+		self.emit("transform-change")
 			
 	def get_hadjustment(self):
 		return self.__hadjustment

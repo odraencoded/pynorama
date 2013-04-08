@@ -41,7 +41,8 @@ class DragNavi:
 		if data.button == 1:
 			self.dragging = True
 			self.last_step = self.imageview.get_pointer()
-			self.imageview.get_window().set_cursor(Gdk.Cursor(Gdk.CursorType.FLEUR))
+			fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
+			self.imageview.get_window().set_cursor(fleur_cursor)
 			
 			if self.margin_handling_ref is None and self.check_margin(False):
 				self.attach_timeout()
@@ -56,7 +57,9 @@ class DragNavi:
 				self.remove_timeout()
 				
 	def attach_timeout(self):
-		self.margin_handling_ref = GLib.timeout_add(int(1000 * DragNavi.Frequency), self.margin_handler)
+		timeout_in_ms = int(1000 * DragNavi.Frequency)
+		self.margin_handling_ref = GLib.timeout_add(timeout_in_ms,
+		                                            self.margin_handler)
 		self.moving_timestamp = time.time()
 		
 	def remove_timeout(self):
@@ -79,26 +82,29 @@ class DragNavi:
 			
 				elif self.margin_handling_ref is not None:
 					self.remove_timeout()
-					self.imageview.get_window().set_cursor(Gdk.Cursor(Gdk.CursorType.FLEUR))
+					fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
+					self.imageview.get_window().set_cursor(fleur_cursor)
 			
 				if self.margin_handling_ref is None and self.last_step:
 					dx, dy = self.last_step
 					dx, dy = x - dx, y - dy
 					dx, dy = dx * DragNavi.Speed, dy * DragNavi.Speed
-					magnification = self.imageview.get_magnification()
-					dx, dy = dx / magnification, dy / magnification
+					# Yep, this is done by dividing by magnification.
+					if not DragNavi.MagnifySpeed:
+						magnification = self.imageview.get_magnification()
+						dx, dy = dx / magnification, dy / magnification
 										
 					if dx:
 						hadjust = self.imageview.get_hadjustment()
-						vw = hadjust.get_upper() - hadjust.get_page_size() - hadjust.get_lower()
-			
+						vw = hadjust.get_upper() - hadjust.get_lower()
+						vw -= hadjust.get_page_size() 
 						nx = hadjust.get_value() + dx
 			
 						if nx < hadjust.get_lower():
 							nx = hadjust.get_lower()
 						if nx > vw:
 							nx = vw
-				
+							
 						hadjust.set_value(nx)
 						
 					else:
@@ -106,15 +112,15 @@ class DragNavi:
 			
 					if dy:
 						vadjust = self.imageview.get_vadjustment()
-						vh = vadjust.get_upper() - vadjust.get_page_size() - vadjust.get_lower()
-			
+						vh = vadjust.get_upper() - vadjust.get_lower()
+						vh -= vadjust.get_page_size()
 						ny = vadjust.get_value() + dy
 			
 						if ny < vadjust.get_lower():
 							ny = vadjust.get_lower()
 						if ny > vh:
 							ny = vh
-				
+							
 						vadjust.set_value(ny)
 									
 					else:
@@ -195,16 +201,18 @@ class DragNavi:
 				delta_time = relatively_current_time - self.moving_timestamp
 				self.moving_timestamp = relatively_current_time
 				
-				xshift = xshift * delta_time * DragNavi.ContinuousSpeed * DragNavi.Speed
-				yshift = yshift * delta_time * DragNavi.ContinuousSpeed * DragNavi.Speed
+				scalar = delta_time * DragNavi.ContinuousSpeed * DragNavi.Speed
+				if not DragNavi.MagnifySpeed:
+					scalar /= self.imageview.get_magnification()
+				xshift, yshift = xshift * scalar, yshift * scalar
 				
 				hadjust = self.imageview.get_hadjustment()
 				vadjust = self.imageview.get_vadjustment()
 				for adjust, shift in ((hadjust, xshift), (vadjust, yshift)):
 					new_value = adjust.get_value() + shift
-					new_value = max(adjust.get_lower(),
-					                min(adjust.get_upper() - adjust.get_page_size(),
-					                new_value))
+					new_value = min(adjust.get_upper() - adjust.get_page_size(),
+					                new_value)
+					new_value = max(adjust.get_lower(), new_value)
 					
 					adjust.set_value(new_value)
 				
@@ -219,9 +227,10 @@ class DragNavi:
 				y < ymargin or y > allocation.height - ymargin
 					
 	Speed = -1.0
-	ContinuousSpeed = 200
+	MagnifySpeed = False
+	ContinuousSpeed = 500
 	Margin = 32
-	Frequency = 0.05
+	Frequency = 0.033
 	
 	@staticmethod
 	def create(imageview):
@@ -243,11 +252,19 @@ class DragNavi:
 		speed_label = Gtk.Label(_("Dragging speed"))
 		speed_label.set_alignment(0, 0.5)
 		speed_label.set_hexpand(True)
-		speed.set_adjustment(Gtk.Adjustment(abs(DragNavi.Speed), 0.1, 10, 0.3, 2, 0))
+		speed.set_adjustment(Gtk.Adjustment(abs(DragNavi.Speed),
+		                     0.1, 10, 0.3, 2, 0))
 		speed.set_digits(1)
 		widgets.attach(speed_label, 0, 0, 1, 1)
 		widgets.attach(speed, 1, 0, 1, 1)
 		widgets.speed = speed
+		
+		# When this is set, the speed in a 2x zoom image is twice
+		# as fast as usual
+		magnify = Gtk.CheckButton(_("Magnify speed"))
+		magnify.set_active(DragNavi.MagnifySpeed)
+		widgets.attach(magnify, 0, 1, 2, 1)
+		widgets.magnify = magnify
 		
 		# Unexpected dragging mode is unexpected.
 		# Maybe I should have allowed for negative speed instead...
@@ -266,25 +283,27 @@ class DragNavi:
 		mode_row.pack_start(image_drag, False, True, 10)
 		mode_row.pack_start(view_drag, False, True, 10)
 		
-		widgets.attach(mode_row, 0, 1, 2, 1)
+		widgets.attach(mode_row, 0, 2, 2, 1)
 		widgets.drag_modes = { "image":image_drag, "view":view_drag }
 		
-		# If the mouse is pressed in the margin, it starts dragging... CONTINUOUSLY
+		# If the mouse is pressed in the margin, it starts dragging...
+		# Continuously!
 		margin_label = Gtk.Label(_("Continuous dragging margin"))
 		margin_label.set_alignment(0, 0.5)
 		margin = Gtk.SpinButton()
 		margin.set_adjustment(Gtk.Adjustment(DragNavi.Margin, 0, 128, 1, 8, 0))
-		widgets.attach(margin_label, 0, 3, 1, 1)
-		widgets.attach(margin, 1, 3, 1, 1)
+		widgets.attach(margin_label, 0, 4, 1, 1)
+		widgets.attach(margin, 1, 4, 1, 1)
 		widgets.margin = margin
 		
 		# Continuous dragging "speed". Don't even ask me how this works.
 		cont_speed_label = Gtk.Label(_("Continuous dragging speed"))
 		cont_speed_label.set_alignment(0, 0.5)
 		cont_speed = Gtk.SpinButton()
-		cont_speed.set_adjustment(Gtk.Adjustment(DragNavi.ContinuousSpeed, 0, 5000, 10, 50, 0))
-		widgets.attach(cont_speed_label, 0, 4, 1, 1)
-		widgets.attach(cont_speed, 1, 4, 1, 1)
+		cont_speed.set_adjustment(Gtk.Adjustment(DragNavi.ContinuousSpeed,
+		                                         0, 5000, 10, 50, 0))
+		widgets.attach(cont_speed_label, 0, 5, 1, 1)
+		widgets.attach(cont_speed, 1, 5, 1, 1)
 		widgets.cont_speed = cont_speed
 		
 		# What am I doing here...
@@ -295,7 +314,7 @@ class DragNavi:
 	@staticmethod
 	def apply_settings(widgets):
 		DragNavi.Margin = widgets.margin.get_value()
-		
+		DragNavi.MagnifySpeed = widgets.magnify.get_active()
 		if widgets.drag_modes["image"].get_active():
 			DragNavi.Speed = widgets.speed.get_value() * -1
 		else:
@@ -356,7 +375,8 @@ class RollNavi:
 		if d >= RollNavi.Threshold:
 			rolling = True
 			
-		elif mx < RollNavi.Margin or my < RollNavi.Margin or mx > w - RollNavi.Margin or my > h - RollNavi.Margin:
+		elif mx < RollNavi.Margin or mx > w - RollNavi.Margin or \
+		     my < RollNavi.Margin or my > h - RollNavi.Margin:
 			rolling = True
 			
 		if rolling:
@@ -401,6 +421,8 @@ class RollNavi:
 		s = min(1, (d - RollNavi.Threshold) / (r - RollNavi.Threshold))
 		s = 1 - (1 - s) ** 3
 		s *= RollNavi.Speed
+		if not RollNavi.MagnifySpeed:
+			s /= self.imageview.get_magnification()
 		sx, sy = [min(1, max(-1, v / r)) * s for v in (rx, ry) ]
 		# Apply delta
 		relatively_current_time = time.time()
@@ -408,19 +430,23 @@ class RollNavi:
 		self.movement_timestamp = relatively_current_time
 		sx, sy = sx * delta_time, sy * delta_time
 		# Move the thing
-		hadjust, vadjust = self.imageview.get_hadjustment(), self.imageview.get_vadjustment()
+		hadjust = self.imageview.get_hadjustment()
+		vadjust = self.imageview.get_vadjustment()
 		
 		for adjust, offset in ((hadjust, sx), (vadjust, sy)):
 			new_value = adjust.get_value() + offset
-			new_value = max(adjust.get_lower(), min(adjust.get_upper() - adjust.get_page_size(), new_value))
+			new_value = min(adjust.get_upper() - adjust.get_page_size(),
+			                new_value)
+			new_value = max(adjust.get_lower(), new_value)
 			
 			adjust.set_value(new_value)
 			
 		return True
-		
-	Frequency = 0.05
+	
+	Speed = 750
+	MagnifySpeed = False
+	Frequency = 0.033
 	Threshold = 32
-	Speed = 200
 	Margin = 32
 	
 	@staticmethod
@@ -442,27 +468,36 @@ class RollNavi:
 		speed_label.set_alignment(0, 0.5)
 		speed_label.set_hexpand(True)
 		speed = Gtk.SpinButton()
-		speed.set_adjustment(Gtk.Adjustment(RollNavi.Speed, 10, 2000, 20, 200, 0))
+		speed.set_adjustment(Gtk.Adjustment(RollNavi.Speed,
+		                                    10, 2000, 20, 200, 0))
 		widgets.attach(speed_label, 0, 0, 1, 1)
 		widgets.attach(speed, 1, 0, 1, 1)
 		widgets.speed = speed
+		
+		# Magnify speed, same as DragNavi
+		magnify = Gtk.CheckButton(_("Magnify speed"))
+		magnify.set_active(RollNavi.MagnifySpeed)
+		widgets.attach(magnify, 0, 1, 2, 1)
+		widgets.magnify = magnify
 		
 		# Margins!
 		margin_label = Gtk.Label(_("Sphere margin"))
 		margin_label.set_alignment(0, 0.5)
 		margin = Gtk.SpinButton()
-		margin.set_adjustment(Gtk.Adjustment(RollNavi.Margin, 0, 128, 1, 8, 0))
-		widgets.attach(margin_label, 0, 1, 1, 1)
-		widgets.attach(margin, 1, 1, 1, 1)
+		margin.set_adjustment(Gtk.Adjustment(RollNavi.Margin,
+		                                     0, 128, 1, 8, 0))
+		widgets.attach(margin_label, 0, 2, 1, 1)
+		widgets.attach(margin, 1, 2, 1, 1)
 		widgets.margin = margin
 		
 		# Sometimes you want to settle down, the middle
 		threshold_label = Gtk.Label(_("Activation distance"))
 		threshold_label.set_alignment(0, 0.5)
 		threshold = Gtk.SpinButton()
-		threshold.set_adjustment(Gtk.Adjustment(RollNavi.Threshold, 0, 256, 4, 16, 0))
-		widgets.attach(threshold_label, 0, 2, 1, 1)
-		widgets.attach(threshold, 1, 2, 1, 1)
+		threshold.set_adjustment(Gtk.Adjustment(RollNavi.Threshold,
+		                                        0, 256, 4, 16, 0))
+		widgets.attach(threshold_label, 0, 3, 1, 1)
+		widgets.attach(threshold, 1, 3, 1, 1)
 		widgets.threshold = threshold
 		
 		# I still don't have the slightest idea of what I'm doing here
@@ -475,14 +510,21 @@ class RollNavi:
 		RollNavi.Threshold = widgets.threshold.get_value()
 		RollNavi.Speed = widgets.speed.get_value()
 		RollNavi.Margin = widgets.margin.get_value()
+		RollNavi.MagnifySpeed = widgets.magnify.get_active()
 		
 class MapNavi:
-	''' This navigator adjusts the view so that the adjustment of the image in the view is equal to the mouse position for the view
+	''' This navigator adjusts the view so that the adjustment of the image
+	    in the view is equal to the mouse position for the view
 	    
 	    The map mode is either of the following:
-	    "stretched": The pointer position is divided by the viewport size and then scaled to the image size
-	    "square": The pointer position is clamped and divided by a square whose side is the smallest of the viewport sides(width or height) and then scaled to the image size
-	    "proportional": The pointer position is clamped and divided by a rectangle proportional to the image size and then to the image size
+	    "stretched": The pointer position is divided by the viewport size and
+	                 then scaled to the image size
+	    "square": The pointer position is clamped and divided by a square whose
+	              side is the smallest of the viewport sides(width or height)
+	              and then scaled to the image size
+	    "proportional": The pointer position is clamped and divided by a
+	                    rectangle proportional to the image size and then to
+	                    the image size
 	    
 	    The margin value is used to clamp before scaling '''
 		
@@ -500,10 +542,11 @@ class MapNavi:
 			self.imageview.connect("button-press-event", self.button_press),
 			self.imageview.connect("button-release-event", self.button_release),
 			self.imageview.connect("motion-notify-event", self.mouse_motion),
-			self.imageview.connect("size-change", self.refresh_adjustments)
+			self.imageview.connect("transform-change", self.refresh_adjustments)
 			]
-			
-		self.imageview.get_window().set_cursor(Gdk.Cursor(Gdk.CursorType.CROSSHAIR))
+		
+		crosshair_cursor = Gdk.Cursor(Gdk.CursorType.CROSSHAIR)
+		self.imageview.get_window().set_cursor(crosshair_cursor)
 		
 		self.clicked = False
 		self.refresh_adjustments()
@@ -567,10 +610,10 @@ class MapNavi:
 			half_width_diff = (allocation.width - smallest_side) / 2
 			half_height_diff = (allocation.height - smallest_side) / 2
 			
-			rect_tuple = (
-				allocation.x + half_width_diff, allocation.y + half_height_diff,
-				allocation.width - half_width_diff * 2, allocation.height - half_height_diff * 2
-			)
+			return (allocation.x + half_width_diff,
+				    allocation.y + half_height_diff,
+				    allocation.width - half_width_diff * 2,
+				    allocation.height - half_height_diff * 2)
 			
 		elif MapNavi.MapMode == "proportional":
 			hadjust = self.imageview.get_hadjustment()
@@ -591,42 +634,35 @@ class MapNavi:
 			half_width_diff = (allocation.width - transformed_width) / 2
 			half_height_diff = (allocation.height - transformed_height) / 2
 			
-			rect_tuple = (
-				allocation.x + half_width_diff, allocation.y + half_height_diff,
-				allocation.width - half_width_diff * 2, allocation.height - half_height_diff * 2
-			)
+			return (allocation.x + half_width_diff,
+				    allocation.y + half_height_diff,
+				    allocation.width - half_width_diff * 2,
+				    allocation.height - half_height_diff * 2)
 			
 		else:
-			rect_tuple = allocation.x, allocation.y, allocation.width, allocation.height
-		
-		rect = Gdk.Rectangle()
-		rect.x, rect.y, rect.width, rect.height = rect_tuple
-				
-		return rect
+			return (allocation.x, allocation.y,
+			        allocation.width, allocation.height)
 					
-	def refresh_adjustments(self, widget=None, data=None):		
-		x, y = self.imageview.get_pointer()
-		rect = self.get_map_rectangle()
-		
-		# Shift and clamp x and y
-		allocation = self.imageview.get_allocation()
-		x = max(0, min(rect.width, x - rect.x))
-		y = max(0, min(rect.height, y - rect.y))
-		
+	def refresh_adjustments(self, widget=None, data=None):
+		# Clamp mouse pointer to map
+		rx, ry, rw, rh = self.get_map_rectangle()
+		mx, my = self.imageview.get_pointer()
+		x = max(0, min(rw, mx - rx))
+		y = max(0, min(rh, my - ry))
+		# The adjustments
 		hadjust = self.imageview.get_hadjustment()
 		vadjust = self.imageview.get_vadjustment()
-		# Get content size
+		# Get content bounding box
 		full_width = hadjust.get_upper() - hadjust.get_lower()
-		full_width -= hadjust.get_page_size()
 		full_height = vadjust.get_upper() - vadjust.get_lower()
+		full_width -= hadjust.get_page_size()
 		full_height -= vadjust.get_page_size()
 		# Transform x and y to picture "adjustment" coordinates
-		tx = float(x) / rect.width * full_width + hadjust.get_lower()
-		ty = float(y) / rect.height * full_height + vadjust.get_lower()
-		
+		tx = x / rw * full_width + hadjust.get_lower()
+		ty = y / rh * full_height + vadjust.get_lower()
 		hadjust.set_value(tx)
 		vadjust.set_value(ty)
-			
+		
 	Margin = 32
 	RequireClick = False
 	MapMode = "proportional"
