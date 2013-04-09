@@ -752,19 +752,17 @@ class ViewerWindow(Gtk.ApplicationWindow):
 								
 	def file_open(self, widget, data=None):
 		# Create image choosing dialog
-		image_chooser = Gtk.FileChooserDialog(
-		                title = _("Open Image..."),
-		                action = Gtk.FileChooserAction.OPEN,
-		                buttons = (Gtk.STOCK_CANCEL,
-		                           Gtk.ResponseType.CANCEL,
-		                           Gtk.STOCK_ADD,
-		                           1,
-   		                           Gtk.STOCK_OPEN,
-		                           2))
+		image_chooser = Gtk.FileChooserDialog(_("Open Image..."), self,
+		                                      Gtk.FileChooserAction.OPEN,
+		                                      (Gtk.STOCK_CANCEL,
+		                                       Gtk.ResponseType.CANCEL,
+		                                       Gtk.STOCK_ADD,
+		                                       Gtk.ResponseType.APPLY,
+		                                       Gtk.STOCK_OPEN,
+		                                       Gtk.ResponseType.OK))
 			
-		image_chooser.set_default_response(2)
+		image_chooser.set_default_response(Gtk.ResponseType.OK)
 		image_chooser.set_select_multiple(True)
-		image_chooser.set_transient_for(self)
 		
 		# Add filters of supported formats from "loading" module
 		for fileFilter in loading.Filters:
@@ -772,10 +770,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			
 		try:
 			response = image_chooser.run()
-			if response == 2:
+			if response == Gtk.ResponseType.OK:
 				self.unlist(*self.image_list.images)
 				
-			if response >= 1:
+			if response in [Gtk.ResponseType.APPLY, Gtk.ResponseType.OK]:
 				filenames = image_chooser.get_filenames()
 				images = self.app.load_paths(filenames)
 				self.insert_images(images)
