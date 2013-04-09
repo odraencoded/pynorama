@@ -108,7 +108,7 @@ class Dialog(Gtk.Dialog):
 		self.point_adjustments = hadjust, vadjust
 		
 		spin_button_specs = [
-			(_("Rotatation effect"),
+			(_("Rotation effect"),
 			 (self.app.spin_effect, 1, 359, 3, 30)),
 			(_("Zoom in/out effect"),
 			 (self.app.zoom_effect, 1.02, 4, 0.1, 0.25))
