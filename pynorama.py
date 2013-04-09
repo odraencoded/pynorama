@@ -20,6 +20,7 @@ class ImageViewer(Gtk.Application):
 		# Default prefs stuff
 		self.zoom_effect = 2
 		self.spin_effect = 90
+		self.default_position = .5, .5
 		self.navi_factory = navigation.DragNavi
 		self.loaded_imagery = set()
 		
@@ -50,7 +51,7 @@ class ImageViewer(Gtk.Application):
 			some_window.set_image(images[0])
 			
 		some_window.present()
-	
+			
 	def load_files(self, files):
 		loaded_images = []
 		front_image = None
@@ -77,34 +78,26 @@ class ImageViewer(Gtk.Application):
 										
 		# Load images from files!
 		for a_file in files:
-			if loading.IsAlbumFile(a_file):
-				some_images = loading.GetAlbumImages(a_file)
-				loaded_images.extend(some_images)
-			else:
-				an_image = loading.ImageGFileNode(a_file)
-				loaded_images.append(an_image)
+			try:
+				if loading.IsAlbumFile(a_file):
+					some_images = loading.GetAlbumImages(a_file)
+					loaded_images.extend(some_images)
+				else:
+					an_image = loading.ImageGFileNode(a_file)
+					loaded_images.append(an_image)
+			except:
+				self.tell_exception()
 				
 		return loaded_images
-		if new_images:
-			self.organizer.add(*new_images)
-			if front_image is None:
-				front_image = new_images[0]
-			
-			# Do some sorting
-			if self.main_window.autosort:
-				self.organizer.sort(self.main_window.active_ordering)
-							
-			self.main_window.set_image(front_image)
-			self.tell_info(_("Added %d images for viewing") % len(new_images))
-			
-	def load_paths(self, paths):			
+		
+	def load_paths(self, paths):
 		gfiles = [Gio.File.new_for_path(a_path) for a_path in paths]
 		return self.load_files(gfiles)
 	
 	def load_uris(self, uris):
 		gfiles = [Gio.File.new_for_uri(an_uri) for an_uri in uris]
 		return self.load_files(gfiles)
-	
+			
 	def load_pixels(self, pixels):
 		pixelated_image = loading.ImageDataNode(pixels, "Pixels")
 		return [pixelated_image]
@@ -144,29 +137,34 @@ class ImageViewer(Gtk.Application):
 		    that means we need it loaded.
 		    Like, right now. '''
 		    
-		loading_fmt = _("Loading “%s”")
-		loaded_fmt = _("“%s” is loaded")
+		loading_fmt = _("Loading “{filename}”")
+		loaded_fmt = _("“{filename}” is loaded")
 		for an_image in images:
 			if not an_image.is_loaded():
+				filename = an_image.fullname
 				try:
-					self.tell_info(loading_fmt % an_image.fullname, window)
+					loading_msg = loading_fmt.format(filename=filename)
+					self.tell_info(loading_msg, window)
 					an_image.load()
 					self.loaded_imagery.add(an_image)
 				except:
 					self.tell_exception(window)
 				else:
-					self.tell_info(loaded_fmt % an_image.fullname, window)
+					loaded_msg = loaded_fmt.format(filename=filename)
+					self.tell_info(loaded_msg, window)
 	
 	''' These methods tell things
 	    And stuff '''	
-	def tell_info(self, message, window):
-		window.statusbar.push(0, message)
+	def tell_info(self, message, window=None):
 		print(message)
+		if window:
+			window.statusbar.push(0, message)
 	
-	def tell_exception(self, window):
+	def tell_exception(self, window=None):
 		info = sys.exc_info()
-		window.statusbar.push(0, _("Error: %s" % info[1]))
 		print(info[1])
+		if window:
+			window.statusbar.push(0, _("Error: %s" % info[1]))
 		
 	def set_navi_factory(self, navi_factory):
 		self.navi_factory = navi_factory
@@ -734,7 +732,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		some_uris = self.clipboard.wait_for_uris()
 			
 		if some_uris:
-			self.insert_images(self.app.load_uris(some_uris))
+			images = self.app.load_uris(some_uris)
+			self.insert_images(images)
 				
 		some_pixels = self.clipboard.wait_for_image()
 		if some_pixels:
@@ -743,7 +742,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def dragged_data(self, widget, context, x, y, selection, info, timestamp):
 		if info == DND_URI_LIST:
 			some_uris = selection.get_uris()
-			self.insert_images(self.app.load_uris(some_uris))
+			images = self.app.load_uris(some_uris)
+			self.insert_images(images)
 							
 		elif info == DND_IMAGE:
 			some_pixels = selection.data.get_pixbuf()
@@ -756,7 +756,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		                title = _("Open Image..."),
 		                action = Gtk.FileChooserAction.OPEN,
 		                buttons = (Gtk.STOCK_CANCEL,
-		                           0,
+		                           Gtk.ResponseType.CANCEL,
 		                           Gtk.STOCK_ADD,
 		                           1,
    		                           Gtk.STOCK_OPEN,
@@ -777,7 +777,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				
 			if response >= 1:
 				filenames = image_chooser.get_filenames()
-				self.insert_images(self.app.load_paths(filenames))
+				images = self.app.load_paths(filenames)
+				self.insert_images(images)
 				
 		finally:
 			# Destroy the dialog anyway
@@ -829,6 +830,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				                          Gtk.IconSize.DIALOG)
 			
 			self.current_frame.set_pixbuf(pixbuf)
+			self.imageview.adjust_to_boundaries(*self.app.default_position)
 			# Sets the window title
 			img_name = self.current_image.name
 			img_fullname = self.current_image.fullname

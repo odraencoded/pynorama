@@ -59,10 +59,9 @@ for a_format in _formats:
 	Filters.append(format_filter)
 
 class ImageMeta():
-	'''
-		Contains some assorted metadata of an image
-		This should be used in sorting functions
-	'''
+	''' Contains some assorted metadata of an image
+	    This should be used in sorting functions '''
+	    
 	def __init__(self):
 		self.data_size = 0 # The size of the image on disk, in bytes
 		self.width = 0 # The width of the image in pixels

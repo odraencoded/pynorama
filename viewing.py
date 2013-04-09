@@ -63,6 +63,52 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 			self.compute_frames()
 			self.queue_draw()
 	
+	def adjust_to_frame(self, frame, rx=.5, ry=.5):
+		hadjust = self.get_hadjustment()
+		vadjust = self.get_vadjustment()
+		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
+		fw, fh = frame.get_size()
+		fx, fy = frame.get_center()
+		fl, ft = fx - fw / 2, fy - fh / 2
+		
+		x, y = rx * fw + fl, ry * fh + ft
+		x, y = spin_point(x, y, self.get_rotation() / 180 * math.pi)
+		
+		self.adjust_to(x - vw * rx, y - vh * ry)
+	
+	def adjust_to_boundaries(self, rx, ry):
+		hadjust = self.get_hadjustment()
+		vadjust = self.get_vadjustment()
+		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
+		lx, ux = hadjust.get_lower(), hadjust.get_upper()
+		ly, uy = vadjust.get_lower(), vadjust.get_upper()
+		
+		x = (ux - lx - vw) * rx + lx
+		y = (uy - ly - vh) * ry + ly
+		self.adjust_to(x, y)
+	
+	def adjust_to(self, x, y):
+		hadjust = self.get_hadjustment()
+		if hadjust:
+			lx, ux = hadjust.get_lower(), hadjust.get_upper()
+			vw = hadjust.get_page_size()
+			x = max(lx, min(ux, x))
+			hadjust.handler_block(self.hadjust_signal)
+			hadjust.set_value(x)
+			hadjust.handler_unblock(self.hadjust_signal)
+			
+		vadjust = self.get_vadjustment()
+		if vadjust:
+			ly, uy = vadjust.get_lower(), vadjust.get_upper()
+			vh = vadjust.get_page_size()
+			y = max(ly, min(uy, y))
+			vadjust.handler_block(self.vadjust_signal)
+			vadjust.set_value(y)
+			vadjust.handler_unblock(self.vadjust_signal)
+			
+		self.need_computing = True
+		self.queue_draw()
+								
 	def frame_changed(self, data, some_other_data_we_are_not_gonna_use_anyway):
 		''' Callback for when a picture frame surface changes '''
 		self.compute_frames()
@@ -147,7 +193,7 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 						
 		self.need_computing = False
 		self.offset = x, y
-	
+		
 	def adjustment_changed(self, data):
 		self.need_computing = True
 		self.queue_draw()
@@ -164,6 +210,7 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 		                      self.get_allocated_height())
 		if self.need_computing:
 			self.compute_offset()
+			
 		# Apply the zooooooom
 		zoooooom = self.get_magnification()
 		cr.scale(zoooooom, zoooooom)
