@@ -37,6 +37,17 @@
 			<menuitem action="in-zoom" />
 			<menuitem action="out-zoom" />
 			<menuitem action="no-zoom" />
+			<menu action="auto-zoom" >
+				<menuitem action="auto-zoom-enable" />
+				<separator />
+				<menuitem action="auto-fit" />
+				<menuitem action="auto-fill" />
+				<menuitem action="auto-match-width" />
+				<menuitem action="auto-match-height" />
+				<separator />
+				<menuitem action="auto-magnify" />
+				<menuitem action="auto-minify" />
+			</menu>
 			<separator />
 			<menu action="transform">
 				<menuitem action="ccw-rotate" />

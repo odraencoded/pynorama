@@ -108,7 +108,50 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 			
 		self.need_computing = True
 		self.queue_draw()
-								
+		
+	def compute_side_scale(self, mode):
+		''' Calculates the ratio between the combined frames size
+		    and the allocated widget size '''
+			  
+		hadjust = self.get_hadjustment()
+		vadjust = self.get_vadjustment()
+		lx, ux = hadjust.get_lower(), hadjust.get_upper()
+		ly, uy = vadjust.get_lower(), vadjust.get_upper()
+		w, h = ux - lx, uy - ly
+		vw, vh = self.get_allocated_width(), self.get_allocated_height()
+			
+		if mode == "width":
+			# Match width
+			side = w
+			view = vw
+			
+		elif mode == "height":
+			# Match height
+			side = h
+			view = vh
+		else:
+			rw, rh = vw / w, vh / h
+			if mode == "smallest":
+				# Smallest side = largest ratio
+				if rw > rh:
+					side = w
+					view = vw
+				else:
+					side = h
+					view = vh
+			elif mode == "largest":
+				# Largest side = smallest ratio
+				if rw < rh:
+					side = w
+					view = vw
+				else:
+					side = h
+					view = vh
+			else:
+			 view = side = 1
+			 
+		return view / side
+	
 	def frame_changed(self, data, some_other_data_we_are_not_gonna_use_anyway):
 		''' Callback for when a picture frame surface changes '''
 		self.compute_frames()
