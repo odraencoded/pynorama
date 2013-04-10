@@ -74,6 +74,7 @@ class ImageMeta():
 class ImageNode():
 	def __init__(self):
 		self.pixbuf = None
+		self.animation = None
 		self.metadata = None
 		
 		self.fullname, self.name = "", ""
@@ -141,22 +142,20 @@ class ImageGFileNode(ImageNode):
 		self.fullname = self.gfile.get_parse_name()
 		
 	def is_loaded(self):
-		return self.pixbuf is not None
+		return not(self.pixbuf is None and self.animation is None)
 		
 	def do_load(self):		
 		stream = self.gfile.read(None)
-		self.pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)
-		'''
-		format = cairo.FORMAT_RGB24
-		if self.pixbuf.get_has_alpha():
-			format = cairo.FORMAT_ARGB32
-		width, height = self.pixbuf.get_width(), self.pixbuf.get_height()
-		self.surface = cairo.ImageSurface(format, width, height)
-		cr = cairo.Context(self.surface)
-		Gdk.cairo_set_source_pixbuf
-		cr.set_source(self.pixbuf)
-		cr.paint()'''
 		
+		parsename = self.gfile.get_parse_name()
+		if self.gfile.is_native() and parsename.endswith(".gif"):
+			self.animation = GdkPixbuf.PixbufAnimation.new_from_file(parsename)
+			if self.animation.is_static_image():
+				self.pixbuf = self.animation.get_static_image()
+				self.animation = None
+		else:
+			self.pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)
+			
 		self.load_metadata()
 	
 	def load_metadata(self):
@@ -185,6 +184,10 @@ class ImageGFileNode(ImageNode):
 			self.metadata.width = self.pixbuf.get_width()
 			self.metadata.height = self.pixbuf.get_height()
 			
+		elif self.animation:
+			self.metadata.width = self.animation.get_width()
+			self.metadata.height = self.animation.get_height()
+			
 		elif self.gfile.is_native():
 			try:
 				filepath = self.gfile.get_path()
@@ -199,13 +202,13 @@ class ImageGFileNode(ImageNode):
 		
 	def do_unload(self):
 		self.pixbuf = None
+		self.animation = None
 		
 class ImageDataNode(ImageNode):
-	'''
-		An ImageNode created from a pixbuf
-		This ImageNode can not be loaded or unloaded
-		Because it can not find the data source by itself
-	'''
+	''' An ImageNode created from a pixbuf
+	    This ImageNode can not be loaded or unloaded
+	    Because it can not find the data source by itself '''
+	    
 	def __init__(self, pixbuf, name="Image Data"):
 		ImageNode.__init__(self)
 		

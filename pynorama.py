@@ -182,6 +182,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Setup variables
 		self.current_image = None
 		self.current_frame = viewing.PictureFrame()
+		# Animation stuff
+		self.anim_handle = None
+		self.anim_iter = None
+		# Auto zoom stuff
 		self.auto_zoom_magnify = False
 		self.auto_zoom_minify = True
 		self.auto_zoom_mode = 0
@@ -618,11 +622,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def refresh_transform(self):
 		if self.current_image:
-			pixbuf = self.current_image.pixbuf
-			if pixbuf:
+			if self.current_image.is_loaded():
+				metadata = self.current_image.metadata
 				# The width and height are from the source
-				pic = "{width}x{height}".format(width=pixbuf.get_width(),
-				                                height=pixbuf.get_height())
+				pic = "{width}x{height}".format(width=metadata.width,
+				                                height=metadata.height)
 			else:
 				# This just may happen
 				pic = _("Error")
@@ -872,13 +876,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		    This is quite the important method '''
 		if self.current_image == image:
 			return
+			
 		previous_image = self.current_image
 		self.current_image = image
 		
 		if previous_image is not None:
 			# Flags the previous image as unrequired
 			self.app.flag_unrequired(self, previous_image)
-		
+			if self.anim_handle is not None:
+				GLib.source_remove(self.anim_handle)
+				self.anim_handle = None
+				self.anim_iter = None
+				
 		if self.current_image is None:
 			# Current image being none means nothing is displayed.
 			self.current_frame.set_surface(None)
@@ -890,7 +899,20 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.app.flag_required(self, self.current_image)
 			if self.current_image.is_loaded():
 				# Since we just required it, it should be loaded
-				pixbuf = self.current_image.pixbuf
+				if self.current_image.animation:
+					animation = self.current_image.animation
+					self.anim_iter = animation.get_iter(None)
+					delay = self.anim_iter.get_delay_time()
+					if delay != -1:
+						self.anim_handle = GLib.timeout_add(
+						                        delay,
+						                        self.refresh_animation)
+						                        
+					
+					pixbuf = self.anim_iter.get_pixbuf()
+					
+				else:
+					pixbuf = self.current_image.pixbuf
 				
 			else:
 				# Case it's not that means the loading has failed terribly.
@@ -914,6 +936,20 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			
 		self.refresh_index()
 		self.refresh_transform()
+		
+	def refresh_animation(self):
+		self.anim_iter.advance(None)
+		delay = self.anim_iter.get_delay_time()
+		if delay != -1:
+			self.anim_handle = GLib.timeout_add(
+			                        delay,
+			                        self.refresh_animation)
+			                        
+		
+		pixbuf = self.anim_iter.get_pixbuf()
+		self.current_frame.set_pixbuf(pixbuf)
+		
+		return False
 		
 	def enlist(self, *images):
 		if images:
