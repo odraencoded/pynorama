@@ -26,7 +26,7 @@ class ImageViewer(Gtk.Application):
 		
 	def do_startup(self):
 		Gtk.Application.do_startup(self)
-	
+			
 	def get_window(self):
 		windows = self.get_windows() # XP, Vista, 7, 8?
 		if windows:
@@ -53,6 +53,11 @@ class ImageViewer(Gtk.Application):
 		some_window.present()
 			
 	def load_files(self, files):
+		recent_manager = Gtk.RecentManager.get_default()
+		for a_file in files:
+			an_uri = a_file.get_uri()
+			recent_manager.add_item(an_uri)
+						
 		loaded_images = []
 		front_image = None
 		if len(files) == 1:
@@ -87,7 +92,7 @@ class ImageViewer(Gtk.Application):
 					loaded_images.append(an_image)
 			except:
 				self.tell_exception()
-				
+								
 		return loaded_images
 		
 	def load_paths(self, paths):
@@ -223,7 +228,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.manager.add_ui_from_file(os.path.join(resource_dir, "viewer.xml"))
 		self.menubar = self.manager.get_widget("/menubar")
 		self.toolbar = self.manager.get_widget("/toolbar")
-		
 		vlayout.pack_start(self.menubar, False, False, 0)
 		vlayout.pack_start(self.toolbar, False, False, 0)
 		
