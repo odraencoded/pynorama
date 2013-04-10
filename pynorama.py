@@ -289,8 +289,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		# Refresh actions
 		active_actions = [
-			"auto-sort", "name-sort", "auto-fill",
-			"auto-minify", "br-scrollbars"
+			"auto-sort", "name-sort", "auto-fill", "auto-minify",
+			"view-toolbar", "view-statusbar",
+			"bottom-scrollbar", "right-scrollbar"
+			
 		]
 		for an_action_name in active_actions:
 			self.actions.get_action(an_action_name).set_active(True)
@@ -379,17 +381,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				("fast-interp", _("Faster Filter"), _(""), None),
 				("good-interp", _("Better Filter"), _(""), None),
 				("best-interp", _("Stronger Filter"), _(""), None),
-			# Scrollbar submenu
-			("scrollbars", _("_Scrollbars"), None, None),
-				("no-scrollbars", _("No Scroll Bars"), _("Hide scroll bars"), None),
-				("br-scrollbars", _("At Bottom Right"),
-				 _("Show scroll bars at the bottom right corner"), None),
-				("tr-scrollbars", _("At Top Right"),
-				 _("Show scroll bars at the top right corner"), None),
-				("tl-scrollbars", _("At Top Left"),
-				 _("Show scroll bars at the top left corner"), None),
-				("bl-scrollbars", _("At Bottom Left"),
-				 _("Show scroll bars at the bottom left corner"), None),
+			# Interface submenu
+			("interface", _("Interface"), None, None),
+				("view-toolbar", _("Toolbar"), _("Display a toolbar with the tools"), None),
+				("view-statusbar", _("Statusbar"), _("Display a statusbar with the status"), None),
+				("top-scrollbar", _("Top Scroll Bar"),
+				 _("Display the horizontal scrollbar at the top side"), None),
+				("bottom-scrollbar", _("Bottom Scroll Bar"),
+				 _("Display the horizontal scrollbar at the bottom side"), None),
+				("left-scrollbar", _("Left Scroll Bar"),
+				 _("Display the vertical scrollbar at the left side"), None),
+				("right-scrollbar", _("Right Scroll Bar"),
+				 _("Display the vertical scrollbar at the right side"), None),
 			("preferences", _("Preferences..."), _("Configure Pynorama"),
 			 Gtk.STOCK_PREFERENCES),
 			("fullscreen", _("Fullscreen"), _("Fill the entire screen"),
@@ -422,14 +425,17 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"h-flip" : (self.handle_flip, False),
 			"v-flip" : (self.handle_flip, True),
 			"nearest-interp" : (self.change_interp,), # For group
-			"no-scrollbars" : (self.change_scrollbars,), # Also for group
+			"view-toolbar" : (self.change_interface,),
+			"view-statusbar" : (self.change_interface,),
+			"top-scrollbar" : (self.change_scrollbars,),
+			"bottom-scrollbar" : (self.change_scrollbars,),
+			"right-scrollbar" : (self.change_scrollbars,),
+			"left-scrollbar" : (self.change_scrollbars,),
 			"preferences" : (self.show_preferences,),
 			"fullscreen" : (self.toggle_fullscreen,)
 		}
 		
-		sort_group, interp_group, scrollbar_group, = [], [], []
-		zoom_mode_group = []
-		
+		sort_group, interp_group, zoom_mode_group = [], [], []
 		toggleable_actions = {
 			"auto-sort" : None,
 			"reverse-sort" : None,
@@ -454,12 +460,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"fast-interp" : (cairo.FILTER_FAST, interp_group),
 			"good-interp" : (cairo.FILTER_GOOD, interp_group),
 			"best-interp" : (cairo.FILTER_BEST, interp_group),
-			"no-scrollbars" : (-1, scrollbar_group),
+			"view-statusbar" : None,
+			"view-toolbar" :None,
 			# The values seem inverted because... reasons
-			"br-scrollbars" : (Gtk.CornerType.TOP_LEFT, scrollbar_group),
-			"tr-scrollbars" : (Gtk.CornerType.BOTTOM_LEFT, scrollbar_group),
-			"tl-scrollbars" : (Gtk.CornerType.BOTTOM_RIGHT, scrollbar_group),
-			"bl-scrollbars" : (Gtk.CornerType.TOP_RIGHT, scrollbar_group),
+			"top-scrollbar" : None,
+			"bottom-scrollbar" : None,
+			"right-scrollbar" : None,
+			"left-scrollbar" : None
 		}
 		
 		accel_actions = {
@@ -752,18 +759,55 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if self.imageview.get_magnification():
 			interpolation = current.props.value
 			self.imageview.set_interpolation(interpolation)
-	
-	def change_scrollbars(self, radioaction, current):
-		placement = current.props.value
-		
-		if placement == -1:
-			self.image_scroller.get_hscrollbar().set_child_visible(False)
-			self.image_scroller.get_vscrollbar().set_child_visible(False)
-		else:
-			self.image_scroller.get_hscrollbar().set_child_visible(True)
-			self.image_scroller.get_vscrollbar().set_child_visible(True)
 			
-			self.image_scroller.set_placement(placement)
+	def change_interface(self, *data):
+		show_tools = self.actions.get_action("view-toolbar").get_active()
+		show_status = self.actions.get_action("view-statusbar").get_active()
+		self.toolbar.set_visible(show_tools)		
+		self.statusbar.set_visible(show_status)		
+	
+	def change_scrollbars(self, *data):
+		get_active = lambda name: self.actions.get_action(name).get_active()
+		current_placement = self.image_scroller.get_placement()
+		
+		top_active = get_active("top-scrollbar")
+		bottom_active = get_active("bottom-scrollbar")
+		if top_active and bottom_active:
+			if current_placement == Gtk.CornerType.TOP_LEFT or \
+			   current_placement == Gtk.CornerType.TOP_RIGHT:
+				self.actions.get_action("bottom-scrollbar").set_active(False)
+			else:
+				self.actions.get_action("top-scrollbar").set_active(False)
+			return
+			
+		elif top_active or bottom_active:
+			self.image_scroller.get_hscrollbar().set_child_visible(True)
+		else:
+			self.image_scroller.get_hscrollbar().set_child_visible(False)
+		
+		left_active = get_active("left-scrollbar")
+		right_active = get_active("right-scrollbar")
+		if left_active and right_active:
+			if current_placement == Gtk.CornerType.TOP_LEFT or \
+			   current_placement == Gtk.CornerType.BOTTOM_LEFT:
+				self.actions.get_action("right-scrollbar").set_active(False)
+			else:
+				self.actions.get_action("left-scrollbar").set_active(False)
+			return
+			
+		elif left_active or right_active:
+			self.image_scroller.get_vscrollbar().set_child_visible(True)
+		else:
+			self.image_scroller.get_vscrollbar().set_child_visible(False)
+			
+		if top_active:
+			placement = Gtk.CornerType.BOTTOM_RIGHT if left_active \
+			            else Gtk.CornerType.BOTTOM_LEFT
+		else:
+			placement = Gtk.CornerType.TOP_RIGHT if left_active \
+			            else Gtk.CornerType.TOP_LEFT
+		        
+		self.image_scroller.set_placement(placement)
 			
 	def toggle_fullscreen(self, data=None):
 		# This simply tries to fullscreen / unfullscreen

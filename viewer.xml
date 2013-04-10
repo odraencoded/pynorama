@@ -65,13 +65,14 @@
 				<menuitem action="best-interp" />
 			</menu>
 			<separator />
-			<menu action="scrollbars">
-				<menuitem action="no-scrollbars" />
+			<menu action="interface">
+				<menuitem action="view-toolbar" />
+				<menuitem action="view-statusbar" />
 				<separator />
-				<menuitem action="br-scrollbars" />
-				<menuitem action="tr-scrollbars" />
-				<menuitem action="tl-scrollbars" />
-				<menuitem action="bl-scrollbars" />
+				<menuitem action="top-scrollbar" />
+				<menuitem action="bottom-scrollbar" />
+				<menuitem action="left-scrollbar" />
+				<menuitem action="right-scrollbar" />
 			</menu>
 			<menuitem action="fullscreen" />
 			<separator />
