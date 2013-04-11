@@ -786,9 +786,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			return
 			
 		elif top_active or bottom_active:
-			self.image_scroller.get_hscrollbar().set_child_visible(True)
+			hpolicy = Gtk.PolicyType.AUTOMATIC
 		else:
-			self.image_scroller.get_hscrollbar().set_child_visible(False)
+			hpolicy = Gtk.PolicyType.NEVER
 		
 		left_active = get_active("left-scrollbar")
 		right_active = get_active("right-scrollbar")
@@ -801,10 +801,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			return
 			
 		elif left_active or right_active:
-			self.image_scroller.get_vscrollbar().set_child_visible(True)
+			vpolicy = Gtk.PolicyType.AUTOMATIC
 		else:
-			self.image_scroller.get_vscrollbar().set_child_visible(False)
-			
+			vpolicy = Gtk.PolicyType.NEVER
+						
 		if top_active:
 			placement = Gtk.CornerType.BOTTOM_RIGHT if left_active \
 			            else Gtk.CornerType.BOTTOM_LEFT
@@ -812,6 +812,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			placement = Gtk.CornerType.TOP_RIGHT if left_active \
 			            else Gtk.CornerType.TOP_LEFT
 		        
+		self.image_scroller.set_policy(hpolicy, vpolicy)
 		self.image_scroller.set_placement(placement)
 			
 	def toggle_fullscreen(self, data=None):
