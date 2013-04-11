@@ -742,6 +742,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			   scale < 1 and self.auto_zoom_minify:
 				self.imageview.set_magnification(scale)
 				self.auto_zoom_zoom_modified = False
+			else:
+				self.imageview.set_magnification(1)
 					
 	def change_auto_zoom(self, *data):
 		mode = self.actions.get_action("auto-fit").get_current_value()
