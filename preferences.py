@@ -1,13 +1,16 @@
-from gi.repository import Gtk, Gdk, GObject
+from gi.repository import Gio, GLib, Gtk, Gdk, GObject
 from gettext import gettext as _
 import cairo, math
 import navigation
+
+Settings = Gio.Settings("com.example.pynorama")
 
 class Dialog(Gtk.Dialog):
 	def __init__(self, app):
 		Gtk.Dialog.__init__(self, _("Pynorama Preferences"), None,
 			Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
-			(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OK, Gtk.ResponseType.OK))
+			(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+			 Gtk.STOCK_OK, Gtk.ResponseType.OK))
 		
 		self.app = app
 		
@@ -162,12 +165,120 @@ class Dialog(Gtk.Dialog):
 			selected_navi = None
 		# Maybe I should reattach the same navigator, maybe not
 		self.app.set_navi_factory(selected_navi)
-		self.app.zoom_effect = self.zoom_effect.get_value()
-		self.app.spin_effect = self.spin_effect.get_value()
 		
-		self.app.default_position = [adjust.get_value() for adjust \
-		                             in self.point_adjustments]
+		rotation_effect = self.spin_effect.get_value()
+		zoom_effect = self.zoom_effect.get_value()
+		default_h, default_v =  [adjust.get_value() for adjust \
+                         in self.point_adjustments]
 		
+		self.app.zoom_effect = zoom_effect
+		self.app.spin_effect = rotation_effect
+		self.app.default_position = default_h, default_v
+		
+		Settings.set_double("start-horizontal-position", default_h)
+		Settings.set_double("start-vertical-position", default_v)
+		Settings.set_double("zoom-effect", zoom_effect)
+		Settings.set_int("rotation-effect", rotation_effect)
+		
+def load_into_app(app):
+	default_h = Settings.get_double("start-horizontal-position")
+	default_v = Settings.get_double("start-vertical-position")
+	app.default_position = default_h, default_v
+	app.zoom_effect = Settings.get_double("zoom-effect")
+	app.spin_effect = Settings.get_int("rotation-effect")
+	
+def load_into_window(window):
+	sort_auto = Settings.get_boolean("sort-auto")
+	sort_reverse = Settings.get_boolean("sort-reverse")
+	sort_mode_str = Settings.get_string("sort-mode")
+	sort_mode = ["By Name", "By Characters",
+	                 "By Modification Date",
+	                 "By File Size", "By Image Size",
+	                 "By Image Width", "By Image Height"].index(sort_mode_str)
+	toolbar = Settings.get_boolean("interface-toolbar")
+	statusbar = Settings.get_boolean("interface-statusbar")
+	hscrollbar_str = Settings.get_string("interface-horizontal-scrollbar")
+	vscrollbar_str = Settings.get_string("interface-vertical-scrollbar")
+	hscrollbar = ["Hidden", "Top Side", "Bottom Side"].index(hscrollbar_str)
+	vscrollbar = ["Hidden", "Left Side", "Right Side"].index(vscrollbar_str)
+	interp_min_str = Settings.get_string("interpolation-minify")
+	interp_mag_str = Settings.get_string("interpolation-magnify")
+	interp_dict = {"Nearest Neighbour" : cairo.FILTER_NEAREST,
+	               "Bilinear Interpolation" : cairo.FILTER_BILINEAR,
+	               "Faster Filter" : cairo.FILTER_FAST,
+	               "Better Filter" : cairo.FILTER_GOOD,
+	               "Stronger Filter" : cairo.FILTER_BEST }
+	interp_min = interp_dict.get(interp_min_str, cairo.FILTER_BILINEAR)
+	interp_mag = interp_dict.get(interp_mag_str, cairo.FILTER_NEAREST)
+	
+	auto_zoom = Settings.get_boolean("auto-zoom")
+	auto_zoom_minify = Settings.get_boolean("auto-zoom-minify")
+	auto_zoom_magnify = Settings.get_boolean("auto-zoom-magnify")
+	auto_zoom_mode_str = Settings.get_string("auto-zoom-mode")
+	auto_zoom_mode = ["Fill Window",
+	                  "Match Width",
+	                  "Match Height",
+	                  "Fit Image"].index(auto_zoom_mode_str)
+	
+	window.set_enable_auto_sort(sort_auto)
+	window.set_reverse_sort(sort_reverse)
+	window.set_sort_mode(sort_mode)
+	window.set_toolbar_visible(toolbar)
+	window.set_statusbar_visible(statusbar)
+	window.set_hscrollbar_placement(hscrollbar)
+	window.set_vscrollbar_placement(vscrollbar)
+	window.set_interpolation(interp_min, interp_mag)
+	window.set_auto_zoom_mode(auto_zoom_mode)
+	window.set_auto_zoom(auto_zoom, auto_zoom_minify, auto_zoom_magnify)
+	
+def set_from_window(window):
+	get_active = lambda name: window.actions.get_action(name).get_active()
+	sort_auto = window.get_enable_auto_sort()
+	sort_reverse = window.get_reverse_sort()
+	sort_mode = window.get_sort_mode()
+	sort_mode_str = ["By Name", "By Characters",
+	                 "By Modification Date",
+	                 "By File Size", "By Image Size",
+	                 "By Image Width", "By Image Height"][sort_mode]
+	                 
+	toolbar = window.get_toolbar_visible()
+	statusbar = window.get_statusbar_visible()
+	hscrollbar = window.get_hscrollbar_placement()
+	vscrollbar = window.get_vscrollbar_placement()
+	hscrollbar_str = ["Hidden", "Top Side", "Bottom Side"][hscrollbar]
+	vscrollbar_str = ["Hidden", "Left Side", "Right Side"][vscrollbar]
+	interp_min, interp_mag = window.get_interpolation()
+	interp_dict = { cairo.FILTER_NEAREST : "Nearest Neighbour",
+	                cairo.FILTER_BILINEAR : "Bilinear Interpolation",
+	                cairo.FILTER_FAST : "Faster Filter",
+	                cairo.FILTER_GOOD : "Better Filter",
+	                cairo.FILTER_BEST : "Stronger Filter" }
+	interp_min_str = interp_dict.get(interp_min, "Bilinear Interpolation")
+	interp_mag_str = interp_dict.get(interp_mag, "Nearest Neighbour")
+	auto_zoom, auto_zoom_minify, auto_zoom_magnify = window.get_auto_zoom()
+	auto_zoom_mode = window.get_auto_zoom_mode()
+	auto_zoom_mode_str = ["Fill Window",
+	                  "Match Width",
+	                  "Match Height",
+	                  "Fit Image"][auto_zoom_mode]
+	                  
+	Settings.set_boolean("sort-auto", sort_auto)
+	Settings.set_boolean("sort-reverse", sort_reverse)
+	Settings.set_string("sort-mode", sort_mode_str)
+	Settings.set_boolean("auto-zoom", auto_zoom)
+	Settings.set_boolean("auto-zoom-minify", auto_zoom_minify)
+	Settings.set_boolean("auto-zoom-magnify", auto_zoom_magnify)
+	Settings.set_string("auto-zoom-mode", auto_zoom_mode_str)
+	Settings.set_boolean("interface-toolbar", get_active("view-toolbar"))
+	Settings.set_boolean("interface-statusbar", get_active("view-statusbar"))
+	Settings.set_string("interface-horizontal-scrollbar", hscrollbar_str)
+	Settings.set_string("interface-vertical-scrollbar", vscrollbar_str)
+	Settings.set_string("interpolation-minify", interp_min_str)
+	Settings.set_string("interpolation-magnify", interp_mag_str)
+	
+	fullscreen = window.get_fullscreen()
+	Settings.set_boolean("start-fullscreen", fullscreen)
+	
 class PointScale(Gtk.DrawingArea):
 	''' A widget like a Gtk.HScale and Gtk.VScale together. '''
 	def __init__(self, hrange, vrange):

@@ -22,7 +22,8 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 		self.rotation = 0
 		self.flip = False, False
 		# There are two interpolation settings: Zoom out and zoom in
-		self.__interpolation = (cairo.FILTER_BILINEAR, cairo.FILTER_FAST)
+		self.minify_interpolation = cairo.FILTER_BILINEAR
+		self.magnify_interpolation = cairo.FILTER_NEAREST
 		self.__hadjustment = self.__vadjustment = None
 		self.hadjust_signal = self.vadjust_signal = None
 		self.frame_signals = dict()
@@ -30,6 +31,10 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 		self.connect("notify::magnification", self.matrix_changed)
 		self.connect("notify::rotation", self.matrix_changed)
 		self.connect("notify::flip", self.matrix_changed)
+		self.connect("notify::minify-interpolation",
+		             self.interpolation_changed)
+		self.connect("notify::magnify-interpolation",
+                     self.interpolation_changed)
 		
 	def add_frame(self, *frames):
 		''' Adds one or more pictures to the gallery '''
@@ -284,7 +289,7 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 					
 					# Set filter
 					a_pattern = cr.get_source()
-					a_filter = self.get_interpolation()
+					a_filter = self.get_interpolation_for_scale(zoooooom)
 					if a_filter is not None:
 						a_pattern.set_filter(a_filter)
 					
@@ -296,12 +301,15 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 				finally:
 					cr.restore()
 					
-	def matrix_changed(self, data, dota):
+	def matrix_changed(self, *data):
 		# I saw a black cat walk by. Twice.
 		self.compute_adjustments()
 		self.queue_draw()
 		self.emit("transform-change")
-			
+	
+	def interpolation_changed(self, *data):
+		self.queue_draw()
+		
 	def get_hadjustment(self):
 		return self.__hadjustment
 	def set_hadjustment(self, adjustment):
@@ -371,25 +379,33 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 	magnification = GObject.property(type=float, default=1)
 	rotation = GObject.property(type=float, default=0)
 	flip = GObject.property(type=GObject.TYPE_PYOBJECT)
-	
-	def get_interpolation(self):
-		if self.get_magnification() > 1:
-			return self.__interpolation[1]
-		elif self.get_magnification() < 1:
-			return self.__interpolation[0]
+		
+	def get_interpolation_for_scale(self, scale):
+		if scale > 1:
+			return self.get_magnify_interpolation()
+		elif scale < 1:
+			return self.get_minify_interpolation()
 		else:
 			return None
 			
-	def set_interpolation(self, value):
-		if self.get_magnification() > 1:
-			self.__interpolation = self.__interpolation[0], value
-		elif self.get_magnification() < 1:
-			self.__interpolation = value, self.__interpolation[1]
-			
-		self.queue_draw()
+	def set_interpolation_for_scale(self, scale, value):
+		if scale > 1:
+			self.set_magnify_interpolation(value)
+		elif scale < 1:
+			self.set_minify_interpolation(value)
 	
-	interpolation = GObject.property(get_interpolation, set_interpolation,
-	                                 type=GObject.TYPE_PYOBJECT)
+	def get_minify_interpolation(self):
+		return self.minify_interpolation
+	def set_minify_interpolation(self, value):
+		self.minify_interpolation = value
+	
+	def get_magnify_interpolation(self):
+		return self.magnify_interpolation
+	def set_magnify_interpolation(self, value):
+		self.magnify_interpolation = value
+	
+	minify_interpolation = GObject.property(type=GObject.TYPE_INT)
+	magnify_interpolation = GObject.property(type=GObject.TYPE_INT)
     
 class PictureFrame(GObject.Object):
 	''' Contains picture '''

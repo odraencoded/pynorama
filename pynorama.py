@@ -26,7 +26,8 @@ class ImageViewer(Gtk.Application):
 		
 	def do_startup(self):
 		Gtk.Application.do_startup(self)
-			
+		preferences.load_into_app(self)
+					
 	def get_window(self):
 		windows = self.get_windows() # XP, Vista, 7, 8?
 		if windows:
@@ -37,6 +38,8 @@ class ImageViewer(Gtk.Application):
 			a_window = ViewerWindow(self)
 			a_window.show()
 			a_window.set_navigator(self.navi_factory)
+			fillscreen = preferences.Settings.get_boolean("start-fullscreen")
+			a_window.set_fullscreen(fillscreen)
 			return a_window
 		
 	def do_activate(self):
@@ -291,15 +294,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.connect("scroll-event", self.imageview_scrolling)
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
-		# Refresh actions
-		active_actions = [
-			"auto-sort", "name-sort", "auto-fill", "auto-minify",
-			"view-toolbar", "view-statusbar",
-			"bottom-scrollbar", "right-scrollbar"
-			
-		]
-		for an_action_name in active_actions:
-			self.actions.get_action(an_action_name).set_active(True)
+		preferences.load_into_window(self)
 		
 	def setup_actions(self):
 		self.manager = Gtk.UIManager()
@@ -571,8 +566,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.auto_zoom()
 			
 	def refresh_interp(self):	
-		interp = self.imageview.get_interpolation()
-		self.actions.get_action("interpolation").set_sensitive(interp is not None)
+		magnification = self.imageview.get_magnification()
+		interp = self.imageview.get_interpolation_for_scale(magnification)
+		interp_menu_action = self.actions.get_action("interpolation")
+		interp_menu_action.set_sensitive(interp is not None)
 		
 		interp_group = self.actions.get_action("nearest-interp")
 		interp_group.block_activate()
@@ -762,7 +759,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def change_interp(self, radioaction, current):
 		if self.imageview.get_magnification():
 			interpolation = current.props.value
-			self.imageview.set_interpolation(interpolation)
+			magnification = self.imageview.get_magnification()
+			self.imageview.set_interpolation_for_scale(magnification,
+			                                           interpolation)
 			
 	def change_interface(self, *data):
 		show_tools = self.actions.get_action("view-toolbar").get_active()
@@ -819,10 +818,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		if fullscreenaction.get_active():
 			self.fullscreen()
-			fullscreenaction.set_stock_id(Gtk.STOCK_LEAVE_FULLSCREEN)
 		else:
 			self.unfullscreen()
-			fullscreenaction.set_stock_id(Gtk.STOCK_FULLSCREEN)
 	
 	def go_first(self, data=None):
 		first_image = self.image_list.get_first()
@@ -918,6 +915,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	
 	''' Methods after this comment are actually kind of a big deal.
 	    Do not rename them. '''
+	
+	def do_destroy(self, *data):
+		try:
+			preferences.set_from_window(self)
+		except:
+			self.app.tell_exception()
+		finally:
+			return Gtk.Window.do_destroy(self)
 	
 	def set_image(self, image):
 		''' Sets the image to be displayed in the window.
@@ -1048,7 +1053,96 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		zoom_effect = self.app.zoom_effect
 		if zoom_effect and power:
 			self.imageview.props.magnification *= zoom_effect ** power
+	
+	def get_enable_auto_sort(self):
+		return self.actions.get_action("auto-sort").get_active()
+	def set_enable_auto_sort(self, value):
+		self.actions.get_action("auto-sort").set_active(value)
+		
+	def get_reverse_sort(self):
+		return self.actions.get_action("reverse-sort").get_active()
+	def set_reverse_sort(self, value):
+		self.actions.get_action("reverse-sort").set_active(value)
+	
+	def get_auto_zoom(self):
+		enabled = self.actions.get_action("auto-zoom-enable").get_active()
+		minify = self.actions.get_action("auto-minify").get_active()
+		magnify = self.actions.get_action("auto-magnify").get_active()
+		return enabled, minify, magnify
+		
+	def set_auto_zoom(self, enabled, minify, magnify):
+		self.actions.get_action("auto-minify").set_active(minify)
+		self.actions.get_action("auto-magnify").set_active(magnify)
+		self.actions.get_action("auto-zoom-enable").set_active(enabled)
+		
+	def get_auto_zoom_mode(self):
+		return self.actions.get_action("auto-fit").get_current_value()
+	def set_auto_zoom_mode(self, mode):
+		self.actions.get_action("auto-fit").set_current_value(mode)
+	
+	def get_sort_mode(self):
+		return self.actions.get_action("name-sort").get_current_value()
+	def set_sort_mode(self, value):
+		self.actions.get_action("name-sort").set_current_value(value)
+	
+	def get_interpolation(self):
+		return (self.imageview.get_minify_interpolation(),
+		        self.imageview.get_magnify_interpolation())
+	def set_interpolation(self, minify, magnify):
+		self.imageview.set_minify_interpolation(minify)
+		self.imageview.set_magnify_interpolation(magnify)
+		self.refresh_interp()
+	
+	def get_toolbar_visible(self):
+		return self.toolbar.get_visible()
+	def set_toolbar_visible(self, value):
+		self.actions.get_action("view-toolbar").set_active(value)
+		self.toolbar.set_visible(value)
+		
+	def get_statusbar_visible(self):
+		return self.statusbar.get_visible()
+	def set_statusbar_visible(self, value):
+		self.actions.get_action("view-statusbar").set_active(value)
+		self.statusbar.set_visible(value)
+	
+	def get_hscrollbar_placement(self):
+		top = self.actions.get_action("top-scrollbar").get_active()
+		bottom = self.actions.get_action("bottom-scrollbar").get_active()
+		return 2 if bottom else 1 if top else 0
+	
+	def set_hscrollbar_placement(self, value):
+		if value == 2:
+			self.actions.get_action("bottom-scrollbar").set_active(True)
+		elif value == 1:
+			self.actions.get_action("top-scrollbar").set_active(True)
+		else:
+			self.actions.get_action("top-scrollbar").set_active(False)
+			self.actions.get_action("bottom-scrollbar").set_active(False)
+		
+		self.change_scrollbars()
+	
+	def get_vscrollbar_placement(self):
+		left = self.actions.get_action("left-scrollbar").get_active()
+		right = self.actions.get_action("right-scrollbar").get_active()
+		return 2 if right else 1 if left else 0
+	
+	def set_vscrollbar_placement(self, value):
+		if value == 2:
+			self.actions.get_action("right-scrollbar").set_active(True)
+		elif value == 1:
+			self.actions.get_action("left-scrollbar").set_active(True)
+		else:
+			self.actions.get_action("left-scrollbar").set_active(False)
+			self.actions.get_action("right-scrollbar").set_active(False)
 			
+		self.change_scrollbars()
+		
+	def get_fullscreen(self):
+		return self.actions.get_action("fullscreen").get_active()
+		
+	def set_fullscreen(self, value):
+		self.actions.get_action("fullscreen").set_active(value)
+	
 if __name__ == "__main__":
 	# Run the program
 	app = ImageViewer()

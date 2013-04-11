@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+	<schema id="com.example.pynorama" path="/com/example/pynorama/">
+		<key name="start-horizontal-position" type="d">
+			<summary>Horizontal scrollbar position after loading an image</summary>
+			<range min="0" max="1" />
+			<default>0.5</default>
+		</key>
+		<key name="start-vertical-position" type="d">
+			<summary>Vertical scrollbar position after loading an image</summary>
+			<range min="0" max="1" />
+			<default>0.5</default>
+		</key>
+		<key name="zoom-effect" type="d">
+			<summary>Zoom in effect as a ratio</summary>
+			<range min="1.02" max="4" />
+			<default>2</default>
+		</key>
+		<key name="rotation-effect" type="i">
+			<summary>Rotation increment in degrees</summary>
+			<range min="1" max="359" />
+			<default>90</default>
+		</key>
+		<key name="sort-auto" type="b">
+			<summary>Sort images automatic</summary>
+			<default>true</default>
+		</key>
+		<key name="sort-reverse" type="b">
+			<summary>Sort images in reverse order</summary>
+			<default>false</default>
+		</key>
+		<key name="sort-mode" type="s">
+			<summary>How images should be ordered</summary>
+			<choices>
+				<choice value="By Name" />
+				<choice value="By Characters" />
+				<choice value="By Modification Date" />
+				<choice value="By File Size" />
+				<choice value="By Image Size" />
+				<choice value="By Image Width" />
+				<choice value="By Image Height" />
+			</choices>
+			<default>"By Name"</default>
+		</key>
+		<key name="auto-zoom" type="b">
+			<summary>Automatic zoom</summary>
+			<description>Automatically adjusts images to the window after they are loaded and after they are rotated</description>
+			<default>false</default>
+		</key>
+		<key name="auto-zoom-minify" type="b">
+			<summary>Lets auto-zoom minify images</summary>
+			<description>If this is disabled images will not be minified to match the auto-zoom-mode</description>
+			<default>true</default>
+		</key>
+		<key name="auto-zoom-magnify" type="b">
+			<summary>Lets auto-zoom magnify images</summary>
+			<description>If this is disabled images will not be magnified to match the auto-zoom-mode</description>
+			<default>false</default>
+		</key>
+		<key name="auto-zoom-mode" type="s">
+			<summary>Automatic zoom mode</summary>
+			<description>Rule to use for adjusting images.</description>
+			<choices>
+				<choice value="Fit Image" />
+				<choice value="Fill Window" />
+				<choice value="Match Width" />
+				<choice value="Match Height" />
+			</choices>
+			<default>"Fill Window"</default>
+		</key>
+		<key name="interpolation-minify" type="s">
+			<summary>Interpolation filter for minified images</summary>
+			<description>The interpolation filter used in images made smaller than they originally were</description>
+			<choices>
+				<choice value="Nearest Neighbour" />
+				<choice value="Bilinear Interpolation" />
+				<choice value="Faster Filter" />
+				<choice value="Better Filter" />
+				<choice value="Stronger Filter" />
+			</choices>
+			<default>"Nearest Neighbour"</default>
+		</key>
+		<key name="interpolation-magnify" type="s">
+			<summary>Interpolation filter for magnified images</summary>
+			<description>The interpolation filter used in images made bigger than they originally were</description>
+			<choices>
+				<choice value="Nearest Neighbour" />
+				<choice value="Bilinear Interpolation" />
+				<choice value="Faster Filter" />
+				<choice value="Better Filter" />
+				<choice value="Stronger Filter" />
+			</choices>
+			<default>"Bilinear Interpolation"</default>
+		</key>
+		<key name="interface-toolbar" type="b">
+			<summary>Shows/hides toolbar</summary>
+			<description>Whether to display the toolbar with the tools in the window</description>
+			<default>true</default>
+		</key>
+		<key name="interface-statusbar" type="b">
+			<summary>Shows/hides statusbar</summary>
+			<description>Whether to display the statusbar with the status in the window</description>
+			<default>true</default>
+		</key>
+		<key name="interface-horizontal-scrollbar" type="s">
+			<summary>Horizontal scrollbar placement in the window</summary>
+			<choices>
+				<choice value="Bottom Side" />
+				<choice value="Top Side" />
+				<choice value="Hidden" />
+			</choices>
+			<default>"Bottom Side"</default>
+		</key>
+		<key name="interface-vertical-scrollbar" type="s">
+			<summary>Vertical scrollbar placement in the window</summary>
+			<choices>
+				<choice value="Right Side" />
+				<choice value="Left Side" />
+				<choice value="Hidden" />
+			</choices>
+			<default>"Right Side"</default>
+		</key>
+		<key name="start-fullscreen" type="b">
+			<summary>Start image viewer in fullscreen</summary>
+			<default>false</default>
+		</key>
+	</schema>
+</schemalist>
