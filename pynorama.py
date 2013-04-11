@@ -231,22 +231,28 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.manager.add_ui_from_file(os.path.join(resource_dir, "viewer.xml"))
 		self.menubar = self.manager.get_widget("/menubar")
 		self.toolbar = self.manager.get_widget("/toolbar")
+		# Make the toolbar look primary
+		toolbar_style = self.toolbar.get_style_context()
+		toolbar_style.add_class(Gtk.STYLE_CLASS_PRIMARY_TOOLBAR)
 		vlayout.pack_start(self.menubar, False, False, 0)
 		vlayout.pack_start(self.toolbar, False, False, 0)
-		
 		self.menubar.show_all()
 		self.toolbar.show_all()
 		
-		# Create image and a scrolled window for it
+		# Create a scrollwindow and a imagev--, galleryview,
+		# and then set the VIEW style to the scrolled window,
+		# NOT the galleryview, the scrolled window.
 		self.image_scroller = Gtk.ScrolledWindow()
-		# FIXME: There ought to be a better way
+		scroller_style = self.image_scroller.get_style_context()
+		scroller_style.add_class(Gtk.STYLE_CLASS_VIEW)
+		# TODO: There ought to be a better way
 		# to drop the default key behaviour
 		self.image_scroller.connect("key-press-event", lambda x, y: True)
 		self.image_scroller.connect("key-release-event", lambda x, y: True)
 		self.image_scroller.connect("scroll-event", lambda x, y: True)
 		self.imageview = viewing.GalleryView()
 		self.imageview.add_frame(self.current_frame)
-		
+		# Setup a bunch of reactions to all sorts of things
 		self.imageview.connect("notify::magnification", self.magnification_changed)
 		self.imageview.connect("notify::rotation", self.reapply_auto_zoom)
 		self.imageview.connect("size-allocate", self.reapply_auto_zoom)
