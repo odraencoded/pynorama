@@ -38,6 +38,11 @@ class DragNavi:
 		self.imageview.get_window().set_cursor(None)
 	
 	def button_press(self, widget, data):
+		if not DragNavi.RequireClick:
+			# In this case, the navi drags without clicking,
+			# so we don't need to handle this
+			return
+			
 		if data.button == 1:
 			self.dragging = True
 			self.last_step = self.imageview.get_pointer()
@@ -48,6 +53,9 @@ class DragNavi:
 				self.attach_timeout()
 			
 	def button_release(self, widget, data):
+		if not DragNavi.RequireClick:
+			return
+			
 		if data.button == 1:
 			self.dragging = False
 			self.last_step = None
@@ -75,7 +83,7 @@ class DragNavi:
 	def delayed_motion(self):
 		try:
 			x, y = self.imageview.get_pointer()
-			if self.dragging:
+			if self.dragging or not DragNavi.RequireClick:
 				if self.check_margin(False):
 					if self.margin_handling_ref is None:
 						self.attach_timeout()
@@ -231,6 +239,7 @@ class DragNavi:
 	ContinuousSpeed = 500
 	Margin = 32
 	Frequency = 0.033
+	RequireClick = True
 	
 	@staticmethod
 	def create(imageview):
@@ -259,13 +268,6 @@ class DragNavi:
 		widgets.attach(speed, 1, 0, 1, 1)
 		widgets.speed = speed
 		
-		# When this is set, the speed in a 2x zoom image is twice
-		# as fast as usual
-		magnify = Gtk.CheckButton(_("Magnify speed"))
-		magnify.set_active(DragNavi.MagnifySpeed)
-		widgets.attach(magnify, 0, 1, 2, 1)
-		widgets.magnify = magnify
-		
 		# Unexpected dragging mode is unexpected.
 		# Maybe I should have allowed for negative speed instead...
 		image_drag = Gtk.RadioButton(_("Drag the image"))
@@ -280,11 +282,27 @@ class DragNavi:
 			view_drag.set_active(True)
 			
 		mode_row = Gtk.HBox()
-		mode_row.pack_start(image_drag, False, True, 10)
-		mode_row.pack_start(view_drag, False, True, 10)
+		mode_row.pack_start(image_drag, False, True, 0)
+		mode_row.pack_start(view_drag, False, True, 20)
 		
-		widgets.attach(mode_row, 0, 2, 2, 1)
+		widgets.attach(mode_row, 0, 1, 2, 1)
 		widgets.drag_modes = { "image":image_drag, "view":view_drag }
+		
+		speed_subrow = Gtk.HBox()
+		
+		# When this is set, the speed in a 2x zoom image is twice
+		# as fast as usual
+		magnify = Gtk.CheckButton(_("Magnify speed"))
+		magnify.set_active(DragNavi.MagnifySpeed)
+		widgets.magnify = magnify
+		speed_subrow.pack_start(magnify, False, True, 0)
+				
+		require_click = Gtk.CheckButton(_("Require click to move"))
+		require_click.set_active(DragNavi.RequireClick)
+		widgets.require_click = require_click
+		speed_subrow.pack_start(require_click, False, True, 20)
+		
+		widgets.attach(speed_subrow, 0, 2, 2, 1)
 		
 		# If the mouse is pressed in the margin, it starts dragging...
 		# Continuously!
@@ -315,6 +333,7 @@ class DragNavi:
 	def apply_settings(widgets):
 		DragNavi.Margin = widgets.margin.get_value()
 		DragNavi.MagnifySpeed = widgets.magnify.get_active()
+		DragNavi.RequireClick = widgets.require_click.get_active()
 		if widgets.drag_modes["image"].get_active():
 			DragNavi.Speed = widgets.speed.get_value() * -1
 		else:
