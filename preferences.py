@@ -180,12 +180,28 @@ class Dialog(Gtk.Dialog):
 		Settings.set_double("zoom-effect", zoom_effect)
 		Settings.set_int("rotation-effect", rotation_effect)
 		
+		if selected_navi is None:
+			Settings.set_boolean("navi-aided-panning", False)
+		else:
+			Settings.set_boolean("navi-aided-panning", True)
+			Settings.set_string("navi-codename", selected_navi.get_codename())
+		
 def load_into_app(app):
 	default_h = Settings.get_double("start-horizontal-position")
 	default_v = Settings.get_double("start-vertical-position")
 	app.default_position = default_h, default_v
 	app.zoom_effect = Settings.get_double("zoom-effect")
 	app.spin_effect = Settings.get_int("rotation-effect")
+	
+	preferred_navi = None
+	use_navi = Settings.get_boolean("navi-aided-panning")
+	if use_navi:
+		preferred_codename = Settings.get_string("navi-codename")
+		for navi in navigation.NaviList:
+			if navi.get_codename() == preferred_codename:
+				preferred_navi = navi
+				             
+	app.set_navi_factory(preferred_navi)
 	
 def load_into_window(window):
 	sort_auto = Settings.get_boolean("sort-auto")

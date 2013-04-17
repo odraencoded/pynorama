@@ -27,7 +27,9 @@ class ImageViewer(Gtk.Application):
 	def do_startup(self):
 		Gtk.Application.do_startup(self)
 		preferences.load_into_app(self)
-					
+		for navi in navigation.NaviList:
+			navi.load_settings()
+			
 	def get_window(self):
 		windows = self.get_windows() # XP, Vista, 7, 8?
 		if windows:

@@ -124,5 +124,77 @@
 			<summary>Start image viewer in fullscreen</summary>
 			<default>false</default>
 		</key>
+		<key name="navi-aided-panning" type="b">
+			<summary>Use the mouse to pan</summary>
+			<default>true</default>
+		</key>
+		<key name="navi-codename" type="s">
+			<summary>Codename of the mouse panning mode</summary>
+			<default>"drag-navi"</default>
+		</key>
+		<key name="navi-drag-speed" type="d">
+			<summary>Dragging speed</summary>
+			<range min="0.1" max="10" />
+			<default>1.0</default>
+		</key>
+		<key name="navi-drag-invert" type="b">
+			<summary>Invert dragging, drags view instead of image</summary>
+			<default>false</default>
+		</key>
+		<key name="navi-drag-magnify-speed" type="b">
+			<summary>Magnify speed</summary>
+			<default>false</default>
+		</key>
+		<key name="navi-drag-require-click" type="b">
+			<summary>Click to drag, or move to slide</summary>
+			<default>true</default>
+		</key>
+		<key name="navi-drag-margin" type="i">
+			<summary>Margin for continuous dragging</summary>
+			<range min="0" max="500" />
+			<default>24</default>
+		</key>
+		<key name="navi-drag-continuous-speed" type="d">
+			<summary>Speed for continuous dragging</summary>
+			<range min="0.1" max="5000" />
+			<default>500</default>
+		</key>
+		<key name="navi-roll-max-speed" type="d">
+			<summary>Maximum speed for rolling</summary>
+			<range min="10" max="10000" />
+			<default>750</default>
+		</key>
+		<key name="navi-roll-magnify-speed" type="b">
+			<summary>Magnify rolling speed</summary>
+			<default>false</default>
+		</key>
+		<key name="navi-roll-threshold" type="i">
+			<summary>Sphere inner radius</summary>
+			<range min="0" max="250" />
+			<default>16</default>
+		</key>
+		<key name="navi-roll-margin" type="i">
+			<summary>Margin for the rolling sphere</summary>
+			<range min="0" max="500" />
+			<default>64</default>
+		</key>
+		<key name="navi-map-margin" type="i">
+			<summary>Margin of the map</summary>
+			<range min="0" max="500" />
+			<default>32</default>
+		</key>
+		<key name="navi-map-require-click" type="b">
+			<summary>Require click to pan</summary>
+			<default>false</default>
+		</key>
+		<key name="navi-map-mode" type="s">
+			<summary>Mapping mode</summary>
+			<choices>
+				<choice value="Stretched" />
+				<choice value="Proportional" />
+				<choice value="Square" />
+			</choices>
+			<default>"Proportional"</default>
+		</key>
 	</schema>
 </schemalist>

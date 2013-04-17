@@ -1,11 +1,11 @@
-'''
-	Some panning interface related code
-'''
+''' Some panning interface related code '''
 
 from gi.repository import Gtk, Gdk, GLib, GObject
 from gettext import gettext as _
 import math, time
+import preferences
 
+# This file is not full of avatar references.
 NaviList = []
 
 class DragNavi:
@@ -237,9 +237,9 @@ class DragNavi:
 	Speed = -1.0
 	MagnifySpeed = False
 	ContinuousSpeed = 500
-	Margin = 32
-	Frequency = 0.033
+	Margin = 24
 	RequireClick = True
+	Frequency = 0.033
 	
 	@staticmethod
 	def create(imageview):
@@ -248,6 +248,10 @@ class DragNavi:
 	@staticmethod
 	def get_name():
 		return _("Drag")
+		
+	@staticmethod
+	def get_codename():
+		return "drag-navi"
 	
 	@staticmethod
 	def get_settings_widgets():
@@ -309,7 +313,7 @@ class DragNavi:
 		margin_label = Gtk.Label(_("Continuous dragging margin"))
 		margin_label.set_alignment(0, 0.5)
 		margin = Gtk.SpinButton()
-		margin.set_adjustment(Gtk.Adjustment(DragNavi.Margin, 0, 128, 1, 8, 0))
+		margin.set_adjustment(Gtk.Adjustment(DragNavi.Margin, 0, 500, 1, 8, 0))
 		widgets.attach(margin_label, 0, 4, 1, 1)
 		widgets.attach(margin, 1, 4, 1, 1)
 		widgets.margin = margin
@@ -319,7 +323,8 @@ class DragNavi:
 		cont_speed_label.set_alignment(0, 0.5)
 		cont_speed = Gtk.SpinButton()
 		cont_speed.set_adjustment(Gtk.Adjustment(DragNavi.ContinuousSpeed,
-		                                         0, 5000, 10, 50, 0))
+		                                         0.1, 5000, 10, 50, 0))
+		cont_speed.set_digits(1)
 		widgets.attach(cont_speed_label, 0, 5, 1, 1)
 		widgets.attach(cont_speed, 1, 5, 1, 1)
 		widgets.cont_speed = cont_speed
@@ -328,7 +333,7 @@ class DragNavi:
 		widgets.save_settings = DragNavi.apply_settings.__get__(widgets, None)
 		
 		return widgets
-
+		
 	@staticmethod
 	def apply_settings(widgets):
 		DragNavi.Margin = widgets.margin.get_value()
@@ -341,6 +346,31 @@ class DragNavi:
 			
 		DragNavi.ContinuousSpeed = widgets.cont_speed.get_value()
 		
+		set_boolean = preferences.Settings.set_boolean
+		set_double = preferences.Settings.set_double
+		set_int = preferences.Settings.set_int
+		
+		set_double("navi-drag-speed", abs(DragNavi.Speed))
+		set_boolean("navi-drag-invert", DragNavi.Speed > 0)
+		set_boolean("navi-drag-magnify-speed", DragNavi.MagnifySpeed)
+		set_boolean("navi-drag-require-click", DragNavi.RequireClick)
+		set_int("navi-drag-margin", DragNavi.Margin)
+		set_double("navi-drag-continuous-speed", DragNavi.ContinuousSpeed)
+		
+	@staticmethod
+	def load_settings():
+		get_boolean = preferences.Settings.get_boolean
+		get_double = preferences.Settings.get_double
+		get_int = preferences.Settings.get_int
+		
+		DragNavi.Speed = get_double("navi-drag-speed")
+		if not get_boolean("navi-drag-invert"):
+			DragNavi.Speed *= -1
+		DragNavi.MagnifySpeed = get_boolean("navi-drag-magnify-speed")
+		DragNavi.RequireClick = get_boolean("navi-drag-require-click")
+		DragNavi.Margin = get_int("navi-drag-margin")
+		DragNavi.ContinuousSpeed = get_double("navi-drag-continuous-speed")
+	
 class RollNavi:
 	''' This navigator is almost the same as the DragNavi,
 	    except without the dragging part '''
@@ -462,11 +492,11 @@ class RollNavi:
 			
 		return True
 	
+	Frequency = 0.033
 	Speed = 750
 	MagnifySpeed = False
-	Frequency = 0.033
-	Threshold = 32
-	Margin = 32
+	Threshold = 16
+	Margin = 64
 	
 	@staticmethod
 	def create(imageview):
@@ -475,7 +505,11 @@ class RollNavi:
 	@staticmethod
 	def get_name():
 		return _("Roll")
-	
+		
+	@staticmethod
+	def get_codename():
+		return "roll-navi"
+		
 	@staticmethod
 	def get_settings_widgets():
 		widgets = Gtk.Grid()
@@ -488,7 +522,7 @@ class RollNavi:
 		speed_label.set_hexpand(True)
 		speed = Gtk.SpinButton()
 		speed.set_adjustment(Gtk.Adjustment(RollNavi.Speed,
-		                                    10, 2000, 20, 200, 0))
+		                                    10, 10000, 20, 200, 0))
 		widgets.attach(speed_label, 0, 0, 1, 1)
 		widgets.attach(speed, 1, 0, 1, 1)
 		widgets.speed = speed
@@ -504,17 +538,17 @@ class RollNavi:
 		margin_label.set_alignment(0, 0.5)
 		margin = Gtk.SpinButton()
 		margin.set_adjustment(Gtk.Adjustment(RollNavi.Margin,
-		                                     0, 128, 1, 8, 0))
+		                                     0, 500, 1, 8, 0))
 		widgets.attach(margin_label, 0, 2, 1, 1)
 		widgets.attach(margin, 1, 2, 1, 1)
 		widgets.margin = margin
 		
 		# Sometimes you want to settle down, the middle
-		threshold_label = Gtk.Label(_("Activation distance"))
+		threshold_label = Gtk.Label(_("Inner radius"))
 		threshold_label.set_alignment(0, 0.5)
 		threshold = Gtk.SpinButton()
 		threshold.set_adjustment(Gtk.Adjustment(RollNavi.Threshold,
-		                                        0, 256, 4, 16, 0))
+		                                        0, 250, 4, 16, 0))
 		widgets.attach(threshold_label, 0, 3, 1, 1)
 		widgets.attach(threshold, 1, 3, 1, 1)
 		widgets.threshold = threshold
@@ -526,11 +560,31 @@ class RollNavi:
 		
 	@staticmethod
 	def apply_settings(widgets):
-		RollNavi.Threshold = widgets.threshold.get_value()
 		RollNavi.Speed = widgets.speed.get_value()
-		RollNavi.Margin = widgets.margin.get_value()
 		RollNavi.MagnifySpeed = widgets.magnify.get_active()
+		RollNavi.Threshold = widgets.threshold.get_value()
+		RollNavi.Margin = widgets.margin.get_value()
 		
+		set_boolean = preferences.Settings.set_boolean
+		set_double = preferences.Settings.set_double
+		set_int = preferences.Settings.set_int
+		
+		set_double("navi-roll-max-speed", RollNavi.Speed)
+		set_boolean("navi-roll-magnify-speed", RollNavi.MagnifySpeed)
+		set_int("navi-roll-threshold", RollNavi.Threshold)
+		set_int("navi-roll-margin", RollNavi.Margin)
+	
+	@staticmethod
+	def load_settings():
+		get_boolean = preferences.Settings.get_boolean
+		get_double = preferences.Settings.get_double
+		get_int = preferences.Settings.get_int
+		
+		RollNavi.Speed = get_double("navi-roll-max-speed")
+		RollNavi.MagnifySpeed = get_boolean("navi-roll-magnify-speed")
+		RollNavi.Threshold = get_int("navi-roll-threshold")
+		RollNavi.Margin = get_int("navi-roll-margin")
+				
 class MapNavi:
 	''' This navigator adjusts the view so that the adjustment of the image
 	    in the view is equal to the mouse position for the view
@@ -562,7 +616,7 @@ class MapNavi:
 			self.imageview.connect("button-release-event", self.button_release),
 			self.imageview.connect("motion-notify-event", self.mouse_motion),
 			self.imageview.connect("transform-change", self.refresh_adjustments)
-			]
+		]
 		
 		crosshair_cursor = Gdk.Cursor(Gdk.CursorType.CROSSHAIR)
 		self.imageview.get_window().set_cursor(crosshair_cursor)
@@ -573,11 +627,7 @@ class MapNavi:
 	def detach(self):		
 		for handler in self.view_handlers:
 			self.imageview.disconnect(handler)
-		
-		image = self.imageview.image
-		for handler in self.image_handlers:
-			image.disconnect(handler)
-			
+						
 		self.imageview.get_window().set_cursor(None)
 	
 	def button_press(self, widget=None, data=None):
@@ -697,6 +747,10 @@ class MapNavi:
 		return _("Map")
 	
 	@staticmethod
+	def get_codename():
+		return "map-navi"
+	
+	@staticmethod
 	def get_settings_widgets():
 		widgets = Gtk.Grid()
 		widgets.set_column_spacing(20)
@@ -764,12 +818,33 @@ class MapNavi:
 		MapNavi.Margin = widgets.margin.get_value()
 		MapNavi.RequireClick = widgets.require_click.get_active()
 		
+		set_boolean = preferences.Settings.set_boolean
+		set_string = preferences.Settings.set_string
+		set_int = preferences.Settings.set_int
+		
 		if widgets.stretched_mode.get_active():
 			MapNavi.MapMode = "stretched"
+			set_string("navi-map-mode", "Stretched")
 		elif widgets.square_mode.get_active():
 			MapNavi.MapMode = "square"
+			set_string("navi-map-mode", "Square")
 		else:
 			MapNavi.MapMode = "proportional"
+			set_string("navi-map-mode", "Proportional")
+			
+		set_int("navi-map-margin", MapNavi.Margin)
+		set_boolean("navi-map-require-click", MapNavi.RequireClick)
+		
+	@staticmethod
+	def load_settings():
+		get_boolean = preferences.Settings.get_boolean
+		get_string = preferences.Settings.get_string
+		get_int = preferences.Settings.get_int
+		
+		MapNavi.Margin = get_int("navi-map-margin")
+		MapNavi.RequireClick = get_boolean("navi-map-require-click")
+		map_mode_str = get_string("navi-map-mode")
+		MapNavi.MapMode = map_mode_str.lower()
 	
 NaviList.append(DragNavi)
 NaviList.append(RollNavi)
