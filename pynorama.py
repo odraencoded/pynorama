@@ -897,9 +897,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.insert_images(images)
 							
 		elif info == DND_IMAGE:
-			some_pixels = selection.data.get_pixbuf()
+			some_pixels = selection.get_pixbuf()
 			if some_pixels:
-				self.insert_images(self.app.view_pixels(some_pixels))
+				self.insert_images(self.app.load_pixels(some_pixels))
 								
 	def file_open(self, widget, data=None):
 		# Create image choosing dialog
