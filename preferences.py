@@ -248,7 +248,6 @@ def load_into_window(window):
 	window.set_auto_zoom(auto_zoom, auto_zoom_minify, auto_zoom_magnify)
 	
 def set_from_window(window):
-	get_active = lambda name: window.actions.get_action(name).get_active()
 	sort_auto = window.get_enable_auto_sort()
 	sort_reverse = window.get_reverse_sort()
 	sort_mode = window.get_sort_mode()
@@ -285,8 +284,8 @@ def set_from_window(window):
 	Settings.set_boolean("auto-zoom-minify", auto_zoom_minify)
 	Settings.set_boolean("auto-zoom-magnify", auto_zoom_magnify)
 	Settings.set_string("auto-zoom-mode", auto_zoom_mode_str)
-	Settings.set_boolean("interface-toolbar", get_active("view-toolbar"))
-	Settings.set_boolean("interface-statusbar", get_active("view-statusbar"))
+	Settings.set_boolean("interface-toolbar", toolbar)
+	Settings.set_boolean("interface-statusbar", statusbar)
 	Settings.set_string("interface-horizontal-scrollbar", hscrollbar_str)
 	Settings.set_string("interface-vertical-scrollbar", vscrollbar_str)
 	Settings.set_string("interpolation-minify", interp_min_str)

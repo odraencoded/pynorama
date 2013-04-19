@@ -7,18 +7,18 @@
 			<menu action="ordering">
 				<menuitem action="sort" />
 				<separator />
-				<menuitem action="auto-sort" />
-				<menuitem action="reverse-sort" />
+				<menuitem action="sort-auto" />
+				<menuitem action="sort-reverse" />
 				<separator />
-				<menuitem action="name-sort" />
-				<menuitem action="char-sort" />
+				<menuitem action="sort-name" />
+				<menuitem action="sort-char" />
 				<separator />
-				<menuitem action="file-date-sort" />
-				<menuitem action="file-size-sort" />
+				<menuitem action="sort-file-date" />
+				<menuitem action="sort-file-size" />
 				<separator />
-				<menuitem action="img-size-sort" />
-				<menuitem action="img-width-sort" />
-				<menuitem action="img-height-sort" />
+				<menuitem action="sort-img-size" />
+				<menuitem action="sort-img-width" />
+				<menuitem action="sort-img-height" />
 			</menu>
 			<separator />
 			<menuitem action="remove" />
@@ -27,52 +27,52 @@
 			<menuitem action="quit" />
 		</menu>
 		<menu action="go">
-			<menuitem action="next" />
-			<menuitem action="previous" />
+			<menuitem action="go-next" />
+			<menuitem action="go-previous" />
 			<separator />
-			<menuitem action="first" />
-			<menuitem action="last" />
+			<menuitem action="go-first" />
+			<menuitem action="go-last" />
 		</menu>
 		<menu action="view">
-			<menuitem action="in-zoom" />
-			<menuitem action="out-zoom" />
-			<menuitem action="no-zoom" />
+			<menuitem action="zoom-in" />
+			<menuitem action="zoom-out" />
+			<menuitem action="zoom-none" />
 			<menu action="auto-zoom" >
 				<menuitem action="auto-zoom-enable" />
 				<separator />
-				<menuitem action="auto-fit" />
-				<menuitem action="auto-fill" />
-				<menuitem action="auto-match-width" />
-				<menuitem action="auto-match-height" />
+				<menuitem action="auto-zoom-fit" />
+				<menuitem action="auto-zoom-fill" />
+				<menuitem action="auto-zoom-match-width" />
+				<menuitem action="auto-zoom-match-height" />
 				<separator />
-				<menuitem action="auto-magnify" />
-				<menuitem action="auto-minify" />
+				<menuitem action="auto-zoom-magnify" />
+				<menuitem action="auto-zoom-minify" />
 			</menu>
 			<separator />
 			<menu action="transform">
-				<menuitem action="ccw-rotate" />
-				<menuitem action="cw-rotate" />
+				<menuitem action="rotate-ccw" />
+				<menuitem action="rotate-cw" />
 				<separator />
-				<menuitem action="h-flip" />
-				<menuitem action="v-flip" />
+				<menuitem action="flip-h" />
+				<menuitem action="flip-v" />
 			</menu>
 			<menu action="interpolation">
-				<menuitem action="nearest-interp" />
-				<menuitem action="bilinear-interp" />
+				<menuitem action="interp-nearest" />
+				<menuitem action="interp-bilinear" />
 				<separator />
-				<menuitem action="fast-interp" />
-				<menuitem action="good-interp" />
-				<menuitem action="best-interp" />
+				<menuitem action="interp-fast" />
+				<menuitem action="interp-good" />
+				<menuitem action="interp-best" />
 			</menu>
 			<separator />
 			<menu action="interface">
-				<menuitem action="view-toolbar" />
-				<menuitem action="view-statusbar" />
+				<menuitem action="ui-toolbar" />
+				<menuitem action="ui-statusbar" />
 				<separator />
-				<menuitem action="top-scrollbar" />
-				<menuitem action="bottom-scrollbar" />
-				<menuitem action="left-scrollbar" />
-				<menuitem action="right-scrollbar" />
+				<menuitem action="ui-scrollbar-top" />
+				<menuitem action="ui-scrollbar-bottom" />
+				<menuitem action="ui-scrollbar-left" />
+				<menuitem action="ui-scrollbar-right" />
 			</menu>
 			<menuitem action="fullscreen" />
 			<separator />
@@ -83,11 +83,11 @@
 		<toolitem action="open" />
 		<toolitem action="paste" />
 		<separator />
-		<toolitem action="previous" />
-		<toolitem action="next" />
+		<toolitem action="go-previous" />
+		<toolitem action="go-next" />
 		<separator/>
-		<toolitem action="in-zoom" />
-		<toolitem action="out-zoom" />
+		<toolitem action="zoom-in" />
+		<toolitem action="zoom-out" />
 		<separator />
 		<toolitem action="preferences" />
 		<separator />
