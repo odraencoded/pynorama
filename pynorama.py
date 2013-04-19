@@ -3,7 +3,7 @@
  
 ''' Pynorama is an image viewer application. '''
 
-import gc, math, os, sys
+import gc, math, random, os, sys
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib
 import cairo
 from gettext import gettext as _
@@ -354,6 +354,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			 Gtk.STOCK_GOTO_FIRST),
 			("go-last", _("L_ast Image"), _("Open the last image"),
 			 Gtk.STOCK_GOTO_LAST),
+ 			("go-random", _("A_ny Image"), _("Open a random image"),
+			 Gtk.STOCK_GOTO_LAST),
 		# View menu
 		("view", _("_View"), None, None),
 			("zoom-in", _("Zoom _In"), _("Makes the image look larger"),
@@ -420,6 +422,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"go-next" : (self.go_next,),
 			"go-first" : (self.go_first,),
 			"go-last" : (self.go_last,),
+			"go-random" : (self.go_random,),
 			"zoom-in" : (self.handle_zoom_change, 1),
 			"zoom-out" : (self.handle_zoom_change, -1),
 			"zoom-none" : (self.reset_zoom,),
@@ -593,23 +596,31 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		images = self.image_list.images
 		if images:
 			can_remove = True
-			can_goto_extremity = True
+			can_goto_first = True
+			can_goto_last = True
 			
 			count = len(images)
-			count_w = len(str(count))
+			count_chr_count = len(str(count))
 			
 			if self.current_image in images:
-				index = images.index(self.current_image) + 1
-				index_text = str(index).zfill(count_w)
+				image_index = images.index(self.current_image)
+				can_goto_first = image_index != 0
+				can_goto_last = image_index != count - 1
 				
-				self.index_label.set_text(_("#%s/%d") % (index_text, count))
+				index_text = str(image_index + 1).zfill(count_chr_count)
+				
+				index_fmt = _("#{index}/{count:d}") 
+				label_text = index_fmt.format(index=index_text, count=count)
+				self.index_label.set_text(label_text)
 			else:
-				index_text = _("?") * count_w
-				self.index_label.set_text(_("%s/%d") % (index_text, count))
-								
+				question_marks = _("?") * count_chr_count
+				index_fmt = _("{question_marks}/{count:d}")
+				label_text = index_fmt.format(question_marks=question_marks, count=count)
+				self.index_label.set_text(label_text)
 		else:
 			can_remove = self.current_image is not None
-			can_goto_extremity = False
+			can_goto_first = False
+			can_goto_last = False
 			
 			self.index_label.set_text("∅")
 		
@@ -628,8 +639,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			("clear", len(images) > 0),
 			("go-next", can_next),
 			("go-previous", can_previous),
-			("go-first", can_goto_extremity),
-			("go-last", can_goto_extremity),
+			("go-first", can_goto_first),
+			("go-last", can_goto_last),
+			("go-random", len(images) > 1)
 		]
 		
 		for action_name, sensitivity in sensible_list:
@@ -830,30 +842,40 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.fullscreen()
 		else:
 			self.unfullscreen()
-	
-	def go_first(self, data=None):
+			
+	def go_next(self, *data):
+		if self.current_image and self.current_image.next:
+			self.set_image(self.current_image.next)
+		
+	def go_previous(self, *data):
+		if self.current_image and self.current_image.previous:
+			self.set_image(self.current_image.previous)
+			
+	def go_first(self, *data):
 		first_image = self.image_list.get_first()
 		if first_image:
 			self.set_image(first_image)
 	
-	def go_last(self, data=None):
+	def go_last(self, *data):
 		last_image = self.image_list.get_last()
 		if last_image:
 			self.set_image(last_image)
-	
-	
-	def go_next(self, data=None):
-		if self.current_image and self.current_image.next:
-			self.set_image(self.current_image.next)
-		
-	def go_previous(self, data=None):
-		if self.current_image and self.current_image.previous:
-			self.set_image(self.current_image.previous)
-	
-	def handle_clear(self, data=None):
+			
+	def go_random(self, *data):
+		image_count = len(self.image_list)
+		if image_count > 1:
+			# Gets a new random index that is not the current one
+			random_int = random.randint(0, image_count - 2)
+			image_index = self.image_list.images.index(self.current_image)
+			if random_int >= image_index:
+				random_int += 1
+			
+			self.set_image(self.image_list.images[random_int])
+			
+	def handle_clear(self, *data):
 		self.unlist(*self.image_list.images)
 		
-	def handle_remove(self, data=None):
+	def handle_remove(self, *data):
 		if self.current_image is not None:
 			self.unlist(self.current_image)
 	

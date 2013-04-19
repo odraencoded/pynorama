@@ -32,6 +32,8 @@
 			<separator />
 			<menuitem action="go-first" />
 			<menuitem action="go-last" />
+			<separator />
+			<menuitem action="go-random" />
 		</menu>
 		<menu action="view">
 			<menuitem action="zoom-in" />
