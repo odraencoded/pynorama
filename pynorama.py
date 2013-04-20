@@ -9,7 +9,7 @@ import cairo
 from gettext import gettext as _
 import organization, navigation, loading, preferences, viewing
 
-resource_dir = os.path.dirname(__file__)
+resource_dir = os.path.join(os.path.dirname(__file__), "resrc")
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
@@ -30,6 +30,8 @@ class ImageViewer(Gtk.Application):
 		for navi in navigation.NaviList:
 			navi.load_settings()
 			
+		Gtk.Window.set_default_icon_name("pynorama")
+		
 	def get_window(self):
 		windows = self.get_windows() # XP, Vista, 7, 8?
 		if windows:
