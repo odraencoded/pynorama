@@ -80,6 +80,9 @@
 			<separator />
 			<menuitem action="preferences" />
 		</menu>
+		<menu action="help">
+			<menuitem action="about" />
+		</menu>
 	</menubar>
 	<toolbar>
 		<toolitem action="open" />
@@ -94,5 +97,6 @@
 		<toolitem action="preferences" />
 		<separator />
 		<toolitem action="fullscreen" />
+		<toolitem action="about" />
 	</toolbar>
 </ui>

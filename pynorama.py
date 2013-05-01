@@ -45,6 +45,17 @@ class ImageViewer(Gtk.Application):
 			fillscreen = preferences.Settings.get_boolean("start-fullscreen")
 			a_window.set_fullscreen(fillscreen)
 			return a_window
+			
+	def show_about_dialog(self, *data):
+		dialog = Gtk.AboutDialog(parent=self.get_window(),
+		                         program_name="pynorama",
+		                         version="0.1",
+		                         comments="pynorama is an image viewer",
+		                         logo_icon_name="pynorama",
+		                         license_type=Gtk.License.GPL_3_0)
+		dialog.set_copyright("Copyrght © 2013 Leonardo Augusto Pereira")
+		dialog.connect("response", lambda a, b: a.destroy())
+		dialog.run()
 		
 	def do_activate(self):
 		some_window = self.get_window()
@@ -408,6 +419,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			 Gtk.STOCK_PREFERENCES),
 			("fullscreen", _("_Fullscreen"), _("Fill the entire screen"),
 			 Gtk.STOCK_FULLSCREEN),
+		("help", _("_Help"), None, None),
+			("about", _("_About"), _("Show the about dialog"), Gtk.STOCK_ABOUT),
 		]
 		
 		signaling_params = {
@@ -444,7 +457,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"ui-scrollbar-right" : (self.change_scrollbars,),
 			"ui-scrollbar-left" : (self.change_scrollbars,),
 			"preferences" : (self.show_preferences,),
-			"fullscreen" : (self.toggle_fullscreen,)
+			"fullscreen" : (self.toggle_fullscreen,),
+			"about" : (self.app.show_about_dialog,),
 		}
 		
 		sort_group, interp_group, zoom_mode_group = [], [], []
