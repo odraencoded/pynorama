@@ -428,6 +428,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				 _("Display the vertical scrollbar at the left side"), None),
 				("ui-scrollbar-right", _("Rig_ht Scroll Bar"),
 				 _("Display the vertical scrollbar at the right side"), None),
+				("ui-keep-above", _("Keep Ab_ove"),
+				 _("Keeps this window above other windows"), None),
+				("ui-keep-below", _("Keep Be_low"),
+				 _("Keeps this window below other windows"), None),
 			("preferences", _("_Preferences..."), _("Configure Pynorama"),
 			 Gtk.STOCK_PREFERENCES),
 			("fullscreen", _("_Fullscreen"), _("Fill the entire screen"),
@@ -469,6 +473,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"ui-scrollbar-bottom" : (self.change_scrollbars,),
 			"ui-scrollbar-right" : (self.change_scrollbars,),
 			"ui-scrollbar-left" : (self.change_scrollbars,),
+			"ui-keep-above" : (self.toggle_keep_above,),
+			"ui-keep-below" : (self.toggle_keep_below,),
 			"preferences" : (self.show_preferences,),
 			"fullscreen" : (self.toggle_fullscreen,),
 			"about" : (self.app.show_about_dialog,),
@@ -500,6 +506,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"interp-best" : (cairo.FILTER_BEST, interp_group),
 			"ui-statusbar" : None,
 			"ui-toolbar" :None,
+			"ui-keep-above" : None,
+			"ui-keep-below" : None,
 			# The values seem inverted because... reasons
 			"ui-scrollbar-top" : None,
 			"ui-scrollbar-bottom" : None,
@@ -819,6 +827,22 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.toolbar.set_visible(show_tools)		
 		self.statusbar.set_visible(show_status)		
 	
+	def toggle_keep_above(self, *data):
+		keep_above = self.actions.get_action("ui-keep-above")
+		keep_below = self.actions.get_action("ui-keep-below")
+		if keep_above.get_active() and keep_below.get_active():
+			keep_below.set_active(False)
+			
+		self.set_keep_above(keep_above.get_active())
+				
+	def toggle_keep_below(self, *data):
+		keep_above = self.actions.get_action("ui-keep-above")
+		keep_below = self.actions.get_action("ui-keep-below")
+		if keep_below.get_active() and keep_above.get_active():
+			keep_above.set_active(False)
+			
+		self.set_keep_below(keep_below.get_active())
+		
 	def change_scrollbars(self, *data):
 		get_active = lambda name: self.actions.get_action(name).get_active()
 		current_placement = self.image_scroller.get_placement()
@@ -1281,6 +1305,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				<menuitem action="ui-scrollbar-bottom" />
 				<menuitem action="ui-scrollbar-left" />
 				<menuitem action="ui-scrollbar-right" />
+				<separator />
+				<menuitem action="ui-keep-above" />
+				<menuitem action="ui-keep-below" />
 			</menu>
 			<menuitem action="fullscreen" />
 			<separator />
