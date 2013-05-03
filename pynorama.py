@@ -23,8 +23,6 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib
 import cairo
 from gettext import gettext as _
 import organization, navigation, loading, preferences, viewing
-
-resource_dir = os.path.join(os.path.dirname(__file__), "resrc")
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
@@ -258,7 +256,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Setup actions
 		self.setup_actions()
 		
-		self.manager.add_ui_from_file(os.path.join(resource_dir, "viewer.xml"))
+		self.manager.add_ui_from_string(ViewerWindow.ui_description)
 		self.menubar = self.manager.get_widget("/menubar")
 		self.toolbar = self.manager.get_widget("/toolbar")
 		# Make the toolbar look primary
@@ -1205,6 +1203,109 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def set_fullscreen(self, value):
 		self.actions.get_action("fullscreen").set_active(value)
+	
+	ui_description = '''<ui>
+	<menubar>
+		<menu action="file">
+			<menuitem action="open" />
+			<menuitem action="paste" />
+			<separator />
+			<menu action="ordering">
+				<menuitem action="sort" />
+				<separator />
+				<menuitem action="sort-auto" />
+				<menuitem action="sort-reverse" />
+				<separator />
+				<menuitem action="sort-name" />
+				<menuitem action="sort-char" />
+				<separator />
+				<menuitem action="sort-file-date" />
+				<menuitem action="sort-file-size" />
+				<separator />
+				<menuitem action="sort-img-size" />
+				<menuitem action="sort-img-width" />
+				<menuitem action="sort-img-height" />
+			</menu>
+			<separator />
+			<menuitem action="remove" />
+			<menuitem action="clear" />
+			<separator />
+			<menuitem action="quit" />
+		</menu>
+		<menu action="go">
+			<menuitem action="go-next" />
+			<menuitem action="go-previous" />
+			<separator />
+			<menuitem action="go-first" />
+			<menuitem action="go-last" />
+			<separator />
+			<menuitem action="go-random" />
+		</menu>
+		<menu action="view">
+			<menuitem action="zoom-in" />
+			<menuitem action="zoom-out" />
+			<menuitem action="zoom-none" />
+			<menu action="auto-zoom" >
+				<menuitem action="auto-zoom-enable" />
+				<separator />
+				<menuitem action="auto-zoom-fit" />
+				<menuitem action="auto-zoom-fill" />
+				<menuitem action="auto-zoom-match-width" />
+				<menuitem action="auto-zoom-match-height" />
+				<separator />
+				<menuitem action="auto-zoom-magnify" />
+				<menuitem action="auto-zoom-minify" />
+			</menu>
+			<separator />
+			<menu action="transform">
+				<menuitem action="rotate-ccw" />
+				<menuitem action="rotate-cw" />
+				<separator />
+				<menuitem action="flip-h" />
+				<menuitem action="flip-v" />
+			</menu>
+			<menu action="interpolation">
+				<menuitem action="interp-nearest" />
+				<menuitem action="interp-bilinear" />
+				<separator />
+				<menuitem action="interp-fast" />
+				<menuitem action="interp-good" />
+				<menuitem action="interp-best" />
+			</menu>
+			<separator />
+			<menu action="interface">
+				<menuitem action="ui-toolbar" />
+				<menuitem action="ui-statusbar" />
+				<separator />
+				<menuitem action="ui-scrollbar-top" />
+				<menuitem action="ui-scrollbar-bottom" />
+				<menuitem action="ui-scrollbar-left" />
+				<menuitem action="ui-scrollbar-right" />
+			</menu>
+			<menuitem action="fullscreen" />
+			<separator />
+			<menuitem action="preferences" />
+		</menu>
+		<menu action="help">
+			<menuitem action="about" />
+		</menu>
+	</menubar>
+	<toolbar>
+		<toolitem action="open" />
+		<toolitem action="paste" />
+		<separator />
+		<toolitem action="go-previous" />
+		<toolitem action="go-next" />
+		<separator/>
+		<toolitem action="zoom-in" />
+		<toolitem action="zoom-out" />
+		<separator />
+		<toolitem action="preferences" />
+		<separator />
+		<toolitem action="fullscreen" />
+		<toolitem action="about" />
+	</toolbar>
+</ui>'''
 	
 if __name__ == "__main__":
 	# Run the program
