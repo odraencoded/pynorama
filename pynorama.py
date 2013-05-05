@@ -62,7 +62,7 @@ class ImageViewer(Gtk.Application):
 	def show_about_dialog(self, *data):
 		dialog = Gtk.AboutDialog(parent=self.get_window(),
 		                         program_name="pynorama",
-		                         version="0.1",
+		                         version="0.1.1",
 		                         comments="pynorama is an image viewer",
 		                         logo_icon_name="pynorama",
 		                         license_type=Gtk.License.GPL_3_0)
