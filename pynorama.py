@@ -63,7 +63,7 @@ class ImageViewer(Gtk.Application):
 		dialog = Gtk.AboutDialog(parent=self.get_window(),
 		                         program_name="pynorama",
 		                         version="0.1.1",
-		                         comments="pynorama is an image viewer",
+		                         comments=_("pynorama is an image viewer"),
 		                         logo_icon_name="pynorama",
 		                         license_type=Gtk.License.GPL_3_0)
 		dialog.set_copyright("Copyrght © 2013 Leonardo Augusto Pereira")
