@@ -68,6 +68,10 @@
          style="stop-color:#f48d27;stop-opacity:1"
          offset="0" />
       <stop
+         id="stop3048"
+         style="stop-color:#f9bf4b;stop-opacity:1"
+         offset="0.42328808" />
+      <stop
          id="stop3952"
          style="stop-color:#fff26f;stop-opacity:1"
          offset="1" />
@@ -148,15 +152,15 @@
        gradientUnits="userSpaceOnUse"
        gradientTransform="matrix(1.3762553,0.79458139,-0.79458139,1.3762553,-512.60605,-156.69956)" />
     <radialGradient
-       cx="401"
-       cy="744.375"
+       cx="400.23291"
+       cy="754.38342"
        r="72"
-       fx="401"
-       fy="744.375"
+       fx="401.32306"
+       fy="792.58282"
        id="radialGradient3956"
        xlink:href="#linearGradient3948"
        gradientUnits="userSpaceOnUse"
-       gradientTransform="matrix(1.3762553,0.79458141,-1.500876,2.5995935,635.95287,-1241.9438)" />
+       gradientTransform="matrix(1.401283,0.80903149,-0.61795365,1.0703265,9.4524155,-177.48364)" />
     <radialGradient
        cx="401"
        cy="744.375"
@@ -179,15 +183,15 @@
          offset="1" />
     </linearGradient>
     <radialGradient
-       cx="372.7533"
-       cy="637.08636"
+       cx="408.63486"
+       cy="648.87329"
        r="68.011353"
-       fx="372.7533"
-       fy="637.08636"
+       fx="352.4032"
+       fy="631.99408"
        id="radialGradient4000"
        xlink:href="#linearGradient3992"
        gradientUnits="userSpaceOnUse"
-       gradientTransform="matrix(0.67223061,0.7328277,-1.4525148,1.3324072,772.3317,-269.9638)" />
+       gradientTransform="matrix(0.60878386,0.79741279,-1.1292089,0.86209328,588.47368,8.8186687)" />
     <radialGradient
        cx="381.90811"
        cy="643.84808"
@@ -296,15 +300,15 @@
          offset="1" />
     </linearGradient>
     <radialGradient
-       cx="446.81036"
-       cy="619.64801"
+       cx="459.30084"
+       cy="640.37823"
        r="68.011353"
-       fx="446.81036"
-       fy="619.64801"
+       fx="450.09415"
+       fy="591.74048"
        id="radialGradient4302"
        xlink:href="#linearGradient3992-7"
        gradientUnits="userSpaceOnUse"
-       gradientTransform="matrix(0.44949765,0.24598934,-0.57053931,1.0425495,324.2238,147.13435)" />
+       gradientTransform="matrix(0.55207455,0.30687628,-0.60722068,1.0923981,301.31305,87.562164)" />
     <filter
        color-interpolation-filters="sRGB"
        id="filter4451">
