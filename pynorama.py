@@ -217,7 +217,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.set_default_size(600, 600)
 		# Setup variables
 		self.current_image = None
-		self.current_frame = viewing.PictureFrame()
+		self.current_frame = viewing.ImageFrame()
 		# Animation stuff
 		self.anim_handle = None
 		self.anim_iter = None
@@ -244,7 +244,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			organization.Ordering.ByImageHeight
 		]
 		self.active_ordering = organization.Ordering.ByName
-		self.image_list = organization.ImageList()
+		self.image_list = organization.Album()
 		# Set clipboard
 		self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
 		
@@ -270,15 +270,16 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Create a scrollwindow and a imagev--, galleryview,
 		# and then set the VIEW style to the scrolled window,
 		# NOT the galleryview, the scrolled window.
-		self.image_scroller = Gtk.ScrolledWindow()
-		scroller_style = self.image_scroller.get_style_context()
+		self.view_scroller = Gtk.ScrolledWindow()
+		scroller_style = self.view_scroller.get_style_context()
 		scroller_style.add_class(Gtk.STYLE_CLASS_VIEW)
 		# TODO: There ought to be a better way
 		# to drop the default key behaviour
-		self.image_scroller.connect("key-press-event", lambda x, y: True)
-		self.image_scroller.connect("key-release-event", lambda x, y: True)
-		self.image_scroller.connect("scroll-event", lambda x, y: True)
-		self.imageview = viewing.GalleryView()
+		self.view_scroller.connect("key-press-event", lambda x, y: True)
+		self.view_scroller.connect("key-release-event", lambda x, y: True)
+		self.view_scroller.connect("scroll-event", lambda x, y: True)
+		
+		self.imageview = viewing.ImageView()
 		self.imageview.add_frame(self.current_frame)
 		# Setup a bunch of reactions to all sorts of things
 		self.imageview.connect("notify::magnification", self.magnification_changed)
@@ -288,10 +289,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.connect("notify::rotation", self.view_changed)
 		self.imageview.connect("notify::flip", self.view_changed)
 		
-		self.image_scroller.add(self.imageview)
-		self.image_scroller.show_all()
+		self.view_scroller.add(self.imageview)
+		self.view_scroller.show_all()
 		
-		vlayout.pack_start(self.image_scroller, True, True, 0)
+		vlayout.pack_start(self.view_scroller, True, True, 0)
 						
 		# Add a status bar
 		self.statusbar = Gtk.Statusbar()
@@ -845,7 +846,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def change_scrollbars(self, *data):
 		get_active = lambda name: self.actions.get_action(name).get_active()
-		current_placement = self.image_scroller.get_placement()
+		current_placement = self.view_scroller.get_placement()
 		
 		top_active = get_active("ui-scrollbar-top")
 		bottom_active = get_active("ui-scrollbar-bottom")
@@ -884,8 +885,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			placement = Gtk.CornerType.TOP_RIGHT if left_active \
 			            else Gtk.CornerType.TOP_LEFT
 		        
-		self.image_scroller.set_policy(hpolicy, vpolicy)
-		self.image_scroller.set_placement(placement)
+		self.view_scroller.set_policy(hpolicy, vpolicy)
+		self.view_scroller.set_placement(placement)
 			
 	def toggle_fullscreen(self, data=None):
 		# This simply tries to fullscreen / unfullscreen

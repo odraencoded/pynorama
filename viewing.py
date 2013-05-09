@@ -1,4 +1,4 @@
-''' viewing.py contains widgets and etc. viewing images. '''
+''' viewing.py contains widgets for drawing, displaying images and etc. '''
 
 ''' ...and this file is part of Pynorama.
     
@@ -19,7 +19,7 @@ import math
 from gi.repository import Gtk, Gdk, GdkPixbuf, GObject
 import cairo
 
-class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
+class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	''' This widget can display PictureFrames.
 	    It can also zoom in, out, rotate, adjust and etc. '''
 	
@@ -424,8 +424,8 @@ class GalleryView(Gtk.DrawingArea, Gtk.Scrollable):
 	minify_interpolation = GObject.property(type=GObject.TYPE_INT)
 	magnify_interpolation = GObject.property(type=GObject.TYPE_INT)
     
-class PictureFrame(GObject.Object):
-	''' Contains picture '''
+class ImageFrame(GObject.Object):
+	''' Contains a image '''
 	# TODO: Implement rotation and scale
 	def __init__(self, surface=None):
 		GObject.Object.__init__(self)

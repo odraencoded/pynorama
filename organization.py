@@ -1,4 +1,4 @@
-''' organization.py contains code for organizing and sorting images. '''
+''' organization.py contains code about collections of images. '''
 
 ''' ...and this file is part of Pynorama.
     
@@ -21,7 +21,7 @@ import os
 from functools import cmp_to_key
 from gi.repository import GLib
 
-class ImageList:
+class Album:
 	''' It organizes images '''
 	
 	def __init__(self):
@@ -49,7 +49,7 @@ class ImageList:
 			
 			self.images.remove(an_image)	
 	
-	# Adds images to the list	and tries to sort them
+	# Adds images to the album and tries to sort them
 	def add(self, *images):
 		for an_image in images:
 			index = len(self.images)
@@ -86,7 +86,7 @@ class ImageList:
 		if len(self.images) <= 1:
 			return
 			
-		# Sorts list
+		# Sorts album
 		self.images = sorted(self.images, key=cmp_to_key(comparer), reverse=reverse)
 		
 		# Refreshes next/previous links
