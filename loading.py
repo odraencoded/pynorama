@@ -18,10 +18,10 @@
 
 import os, re, datetime, time
 
-from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GObject
+from gi.repository import Gdk, GdkPixbuf, Gio, GObject, GLib, Gtk
 from gettext import gettext as _
 import cairo
-
+import sys
 Filters = []
 Mimes = []
 Extensions = set()
@@ -71,7 +71,94 @@ for a_format in _formats:
 	format_filter.set_name(filter_name)
 	
 	Filters.append(format_filter)
+	
+class Status:
+	''' Statuses for loadable objects '''
+	Bad = -1 # Something went wrong
+	Good = 0 # Everything is amazing and nobody is happy
+	Caching = 1 # Something is going into the disk
+	Loading = 2 # Something is going into the memory
 
+class Location:
+	''' Locations for loadable data to be. '''
+	Nowhere = 0 # The data source is gone, 5ever
+	Distant = 1 # The data is in a far away place, should be cached
+	Disk = 2 # The data is on disk, easy to load
+	Memory = 4 # The data is on memory, already loaded
+	
+class Loadable(GObject.GObject):
+	__gsignals__ = {
+		"finished-loading": (GObject.SIGNAL_RUN_FIRST, None, [object])
+	}
+	
+	def __init__(self):
+		GObject.GObject.__init__(self)
+		
+		self.location = Location.Nowhere
+		self.status = Status.Bad
+		self.uses = 0
+		self.lists = 0
+		
+	def load(self):
+		raise NotImplemented
+		
+	def unload(self):
+		raise NotImplemented
+		
+class Memory(GObject.GObject):
+	''' A very basic memory management thing '''
+	__gsignals__ = {
+		"thing-enlisted": (GObject.SIGNAL_RUN_FIRST, None, (Loadable,)),
+		"thing-requested": (GObject.SIGNAL_RUN_FIRST, None, (Loadable,)),
+		"thing-unused": (GObject.SIGNAL_RUN_FIRST, None, (Loadable,)),
+		"thing-unlisted": (GObject.SIGNAL_RUN_FIRST, None, (Loadable,)),
+	}
+	
+	def __init__(self):
+		GObject.GObject.__init__(self)
+		
+		self.requested_stuff = set()
+		self.unused_stuff = set()
+		self.enlisted_stuff = set()
+		self.unlisted_stuff = set()
+		
+	def request(self, thing):
+		thing.uses += 1
+		if thing.uses == 1:
+			if thing in self.unused_stuff:
+				self.unused_stuff.remove(thing)
+			else:
+				self.requested_stuff.add(thing)
+				self.emit("thing-requested", thing)
+		
+	def free(self, thing):
+		thing.uses -= 1
+		if thing.uses == 0:
+			if thing in self.requested_stuff:
+				self.requested_stuff.remove(thing)
+			else:
+				self.unused_stuff.add(thing)
+				self.emit("thing-unused", thing)
+	
+	def enlist(self, thing):
+		thing.lists += 1
+		
+		if thing.lists == 1:
+			if thing in self.unlisted_stuff:
+				self.unlisted_stuff.remove(thing)
+			else:
+				self.enlisted_stuff.add(thing)
+				self.emit("thing-enlisted", thing)
+	
+	def unlist(self, thing):
+		thing.lists -= 1
+		if thing.lists == 0:
+			if thing in self.enlisted_stuff:
+				self.enlisted_stuff.remove(thing)
+			else:
+				self.unlisted_stuff.add(thing)
+				self.emit("thing-unlisted", thing)
+		
 class ImageMeta():
 	''' Contains some assorted metadata of an image
 	    This should be used in sorting functions '''
@@ -85,29 +172,20 @@ class ImageMeta():
 	def get_area(self):
 		return self.width * self.height
 	
-class ImageNode():
+class ImageNode(Loadable):
 	def __init__(self):
+		Loadable.__init__(self)
+		
 		self.pixbuf = None
 		self.animation = None
 		self.metadata = None
 		
 		self.fullname, self.name = "", ""
 		self.next = self.previous = None
+		
+	def __str__(self):
+		return self.fullname
 	
-	def reload(self):
-		if self.is_loaded():
-			self.do_unload()
-			
-		self.do_load()
-	
-	def load(self):
-		if not self.is_loaded():
-			self.do_load()
-	
-	def unload(self):
-		if self.is_loaded():
-			self.do_unload()
-			
 	def get_metadata(self):
 		if not self.metadata:
 			self.load_metadata()
@@ -155,9 +233,69 @@ class ImageGFileNode(ImageNode):
 		self.name = info.get_attribute_as_string("standard::display-name")
 		self.fullname = self.gfile.get_parse_name()
 		
-	def is_loaded(self):
-		return not(self.pixbuf is None and self.animation is None)
+		self.location = Location.Disk if gfile.is_native() else Location.Distant
+		self.status = Status.Good
 		
+		self.cancellable = None
+		
+	def load(self):
+		if self.status == Status.Loading:
+			raise Exception
+			
+		self.cancellable = Gio.Cancellable()
+		
+		stream = self.gfile.read(None)
+		parsename = self.gfile.get_parse_name()
+		
+		self.status = Status.Loading
+		if parsename.endswith(".gif"):
+			load_async = GdkPixbuf.PixbufAnimation.new_from_stream_async
+			self.animation = load_async(stream, self.cancellable,
+			                            self._loaded, True)
+			                            
+		else:
+			load_async = GdkPixbuf.Pixbuf.new_from_stream_async
+			self.pixbuf = load_async(stream, self.cancellable,
+			                         self._loaded, False)
+	def _loaded(self, me, result, is_gif):
+		e = None
+		try:
+			if is_gif:
+				async_finish = GdkPixbuf.PixbufAnimation.new_from_stream_finish
+				self.animation = async_finish(result)
+				
+				if self.animation.is_static_image():
+					self.pixbuf = self.animation.get_static_image()
+					self.animation = None
+			else:
+				async_finish = GdkPixbuf.Pixbuf.new_from_stream_finish
+				self.pixbuf = async_finish(result)
+
+		except GLib.GError as gerror:
+			#TODO: G_IO_ERROR_CANCELLED should not set status to bad but I have
+			# absolutely no idea how to check the type of GError
+			self.location &= ~Location.Memory
+			self.status = Status.Bad
+			
+			e = gerror
+		else:
+			self.location |= Location.Memory
+			self.status = Status.Good
+			self.load_metadata()
+		finally:
+			self.emit("finished-loading", e)
+			
+	def unload(self):
+		if self.cancellable:
+			self.cancellable.cancel()
+			self.cancellable = None
+			
+		self.pixbuf = None
+		self.animation = None
+		self.location &= ~Location.Memory
+		self.status = Status.Good
+		
+	'''
 	def do_load(self):		
 		stream = self.gfile.read(None)
 		
@@ -170,7 +308,7 @@ class ImageGFileNode(ImageNode):
 		else:
 			self.pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)
 			
-		self.load_metadata()
+		self.load_metadata()'''
 	
 	def load_metadata(self):
 		if self.metadata is None:
@@ -214,10 +352,6 @@ class ImageGFileNode(ImageNode):
 			
 		# TODO: Add support for non-native files
 		
-	def do_unload(self):
-		self.pixbuf = None
-		self.animation = None
-		
 class ImageDataNode(ImageNode):
 	''' An ImageNode created from a pixbuf
 	    This ImageNode can not be loaded or unloaded
@@ -230,13 +364,10 @@ class ImageDataNode(ImageNode):
 		self.pixbuf = pixbuf
 		
 		self.load_metadata()
-				
-	def is_loaded(self):
-		return True # Data nodes are always loaded
 		
-	def do_load(self):
-		pass # Can't load data nodes
-	
+		self.location = Location.Memory
+		self.status = Status.Good
+		
 	def load_metadata(self):
 		if self.metadata is None:
 			self.metadata = ImageMeta()
@@ -245,9 +376,10 @@ class ImageDataNode(ImageNode):
 		self.metadata.modification_date = datetime.datetime.now()
 		self.metadata.data_size = 0
 		
-	def do_unload(self):
-		pass # Can't unload data nodes
-				
+	def unload(self):			
+		self.pixbuf = None
+		self.location &= ~Location.Memory
+		
 def IsAlbumFile(possibly_album_file):
 	file_type = possibly_album_file.query_file_type(0, None)
 	return file_type == Gio.FileType.DIRECTORY

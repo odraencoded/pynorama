@@ -19,7 +19,7 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
 import gc, math, random, os, sys
-from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib
+from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
 import organization, navigation, loading, preferences, viewing
@@ -35,11 +35,18 @@ class ImageViewer(Gtk.Application):
 		self.spin_effect = 90
 		self.default_position = .5, .5
 		self.navi_factory = navigation.DragNavi
-		self.loaded_imagery = set()
+		self.memory_check_queued = False
 		
 	def do_startup(self):
 		Gtk.Application.do_startup(self)
+		
 		preferences.load_into_app(self)
+		
+		self.memory = loading.Memory()
+		self.memory.connect("thing-requested", self.queue_memory_check)
+		self.memory.connect("thing-unused", self.queue_memory_check)
+		self.memory.connect("thing-unlisted", self.queue_memory_check)
+		
 		for navi in navigation.NaviList:
 			navi.load_settings()
 			
@@ -82,13 +89,49 @@ class ImageViewer(Gtk.Application):
 			some_window.set_image(images[0])
 			
 		some_window.present()
+		
+	def queue_memory_check(self, *data):
+		if not self.memory_check_queued:
+			self.memory_check_queued = True
+			GObject.idle_add(self.memory_check)
 			
+	def memory_check(self):
+		self.memory_check_queued = False
+		
+		while self.memory.enlisted_stuff:
+			enlisted_thing = self.memory.enlisted_stuff.pop()
+				
+		if self.memory.unlisted_stuff or self.memory.unused_stuff:
+			while self.memory.unlisted_stuff:
+				unlisted_thing = self.memory.unlisted_stuff.pop()
+				if unlisted_thing.status == loading.Status.Loading \
+				   or unlisted_thing.location & loading.Location.Memory:
+					unlisted_thing.unload()
+					
+			while self.memory.unused_stuff:
+				unused_thing = self.memory.unused_stuff.pop()
+				# Do not unload things that are not on disk (like pastes)
+				if unused_thing.location & loading.Location.Disk:
+					if unused_thing.status == loading.Status.Loading \
+					   or unused_thing.location & loading.Location.Memory:
+						unused_thing.unload()
+						
+			gc.collect()
+			
+		while self.memory.requested_stuff:
+			requested_thing = self.memory.requested_stuff.pop()
+			if not requested_thing.location & loading.Location.Memory \
+			   and requested_thing.status != loading.Status.Loading:
+				requested_thing.load()
+				
+		return False
+		
 	def load_files(self, files):
 		recent_manager = Gtk.RecentManager.get_default()
 		for a_file in files:
 			an_uri = a_file.get_uri()
 			recent_manager.add_item(an_uri)
-						
+			
 		loaded_images = []
 		front_image = None
 		if len(files) == 1:
@@ -137,64 +180,15 @@ class ImageViewer(Gtk.Application):
 	def load_pixels(self, pixels):
 		pixelated_image = loading.ImageDataNode(pixels, "Pixels")
 		return [pixelated_image]
-			
-	''' These methods control loading, unloading and the
-	    caching of images. Basically, the loading module
-	    defines what can be loaded and how, but instead
-	    of calling those image loading methods directly,
-	    the images are passed to the application so
-	    they can be calculated into memory usage. '''
-    # TODO: Add the above mentioned caching support.
-	def flag_listed(self, window, *images):
-		''' Marks images as being listed by something,
-		    that means it could be cached or something '''
 		
-		pass
-		
-	def flag_unlisted(self, window, *images):
-		''' Marks images as not being listed by something,
-		    that means it no longer requires caching '''
-		
-		gc.collect()
-	    
-	def flag_unrequired(self, window, *images):
-		''' Marks images as not being used right now,
-		    that means it can be unloaded anytime '''
-		    
-		# TODO: Add preloading support
-		for an_image in images:
-			an_image.unload()
-			self.loaded_imagery.discard(an_image)
-		
-		gc.collect()
-		
-	def flag_required(self, window, *images):
-		''' Marks images as required by a window,
-		    that means we need it loaded.
-		    Like, right now. '''
-		    
-		loading_fmt = _("Loading “{filename}”")
-		loaded_fmt = _("“{filename}” is loaded")
-		for an_image in images:
-			if not an_image.is_loaded():
-				filename = an_image.fullname
-				try:
-					loading_msg = loading_fmt.format(filename=filename)
-					self.tell_info(loading_msg, window)
-					an_image.load()
-					self.loaded_imagery.add(an_image)
-				except:
-					self.tell_exception(window)
-				else:
-					loaded_msg = loaded_fmt.format(filename=filename)
-					self.tell_info(loaded_msg, window)
-	
 	''' These methods tell things
 	    And stuff '''	
 	def tell_info(self, message, window=None):
 		print(message)
-		if window:
-			window.statusbar.push(0, message)
+		if not window:
+			window = self.get_window()
+			
+		window.statusbar.push(0, message)
 	
 	def tell_exception(self, window=None):
 		info = sys.exc_info()
@@ -218,6 +212,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Setup variables
 		self.current_image = None
 		self.current_frame = viewing.ImageFrame()
+		self.load_handle = None
 		# Animation stuff
 		self.anim_handle = None
 		self.anim_iter = None
@@ -687,15 +682,15 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def refresh_transform(self):
 		if self.current_image:
-			if self.current_image.is_loaded():
+			if self.current_image.status == loading.Status.Bad:
+				# This just may happen
+				pic = _("Error")
+			else:
 				metadata = self.current_image.metadata
 				# The width and height are from the source
 				pic = "{width}x{height}".format(width=metadata.width,
 				                                height=metadata.height)
-			else:
-				# This just may happen
-				pic = _("Error")
-			
+				                                
 			# Cache magnification because it is kind of a long variable
 			mag = self.imageview.get_magnification()
 			if mag != 1:			
@@ -935,7 +930,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	
 	def pasted_data(self, data=None):
 		some_uris = self.clipboard.wait_for_uris()
-			
+		
 		if some_uris:
 			images = self.app.load_uris(some_uris)
 			self.insert_images(images)
@@ -1018,10 +1013,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			
 		previous_image = self.current_image
 		self.current_image = image
-		
 		if previous_image is not None:
-			# Flags the previous image as unrequired
-			self.app.flag_unrequired(self, previous_image)
+			self.app.memory.free(previous_image)
+			if self.load_handle:
+				previous_image.disconnect(self.load_handle)
+				self.load_handle = None
+				
+			#previous_image.unload()
 			if self.anim_handle is not None:
 				GLib.source_remove(self.anim_handle)
 				self.anim_handle = None
@@ -1031,37 +1029,20 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			# Current image being none means nothing is displayed.
 			self.current_frame.set_surface(None)
 			self.set_title(_("Pynorama"))
-			
+	
 		else:
-			# Flags this new current image as a required image,
-			# because we require it. Like, right now.
-			self.app.flag_required(self, self.current_image)
-			if self.current_image.is_loaded():
-				# Since we just required it, it should be loaded
-				if self.current_image.animation:
-					animation = self.current_image.animation
-					self.anim_iter = animation.get_iter(None)
-					delay = self.anim_iter.get_delay_time()
-					if delay != -1:
-						self.anim_handle = GLib.timeout_add(
-						                        delay,
-						                        self.refresh_animation)
-						                        
-					
-					pixbuf = self.anim_iter.get_pixbuf()
-					
-				else:
-					pixbuf = self.current_image.pixbuf
+			self.app.memory.request(self.current_image)
+			if self.current_image.location & loading.Location.Memory:
+				self.refresh_frame()
 				
 			else:
-				# Case it's not that means the loading has failed terribly.
-				pixbuf = self.render_icon(Gtk.STOCK_MISSING_IMAGE,
-				                          Gtk.IconSize.DIALOG)
-			
-			self.current_frame.set_pixbuf(pixbuf)
-			if self.auto_zoom_enabled:
-				self.auto_zoom()
-			self.imageview.adjust_to_boundaries(*self.app.default_position)
+				loading_fmt = _("Loading “{something}”")
+				self.app.tell_info(loading_fmt.format(
+				                   something=self.current_image))
+				self.load_handle = self.current_image.connect(
+				                                      "finished-loading",
+				                                      self._image_loaded)
+				                                      
 			# Sets the window title
 			img_name = self.current_image.name
 			img_fullname = self.current_image.fullname
@@ -1074,8 +1055,52 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.set_title(new_title)
 			
 		self.refresh_index()
-		self.refresh_transform()
 		
+	def _image_loaded(self, image, error):
+		# Check if the image loaded is the current image, just in case
+		if image == self.current_image:
+			if image.location & loading.Location.Memory:
+				loaded_fmt = _("“{something}” has been loaded")
+				self.app.tell_info(loaded_fmt.format(something=image))
+			elif error:
+				error_fmt = _("Error: “{error}”")
+				self.app.tell_info(error_fmt.format(error=error))
+				
+			self.refresh_frame()
+			
+	def refresh_frame(self):
+		if self.current_image:
+			if self.anim_handle is not None:
+				GLib.source_remove(self.anim_handle)
+				self.anim_handle = None
+				self.anim_iter = None
+				
+			if self.current_image.location & loading.Location.Memory:
+				# If the image is on the memory, then hurray!
+				if self.current_image.animation:
+					animation = self.current_image.animation
+					self.anim_iter = animation.get_iter(None)
+					delay = self.anim_iter.get_delay_time()
+					if delay != -1:
+						self.anim_handle = GLib.timeout_add(
+							                    delay,
+							                    self.refresh_animation)
+							                    
+					pixbuf = self.anim_iter.get_pixbuf()
+					
+				else:
+					pixbuf = self.current_image.pixbuf
+			else:
+				# Else just use a missing image as it. Works great.
+				pixbuf = self.render_icon(Gtk.STOCK_MISSING_IMAGE,
+				                          Gtk.IconSize.DIALOG)
+				                          
+			self.current_frame.set_pixbuf(pixbuf)
+			if self.auto_zoom_enabled:
+				self.auto_zoom()
+			self.imageview.adjust_to_boundaries(*self.app.default_position)
+			self.refresh_transform()
+			
 	def refresh_animation(self):
 		self.anim_iter.advance(None)
 		delay = self.anim_iter.get_delay_time()
@@ -1093,7 +1118,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def enlist(self, *images):
 		if images:
 			self.image_list.add(*images)
-			self.app.flag_listed(self, *images)
+			
+			for image in images:
+				self.app.memory.enlist(image)
+			
 			if self.autosort:
 				self.sort_images()
 		
@@ -1112,10 +1140,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 						new_current_image = None
 					
 				self.image_list.remove(removed_image)
+				self.app.memory.unlist(removed_image)
 				
 			self.set_image(new_current_image)
-			self.app.flag_unlisted(self, *images)
-	
+			
 	def insert_images(self, images):
 		if images:
 			self.enlist(*images)
