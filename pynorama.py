@@ -108,7 +108,7 @@ class ImageViewer(Gtk.Application):
 				unlisted_thing = self.memory.unlisted_stuff.pop()
 				if unlisted_thing.is_loading or unlisted_thing.on_memory:
 					unlisted_thing.unload()
-					dialog.log(unlisted.Lines.Unloaded(requested_thing))
+					dialog.log(dialog.Lines.Unloaded(unlisted_thing))
 					
 			while self.memory.unused_stuff:
 				unused_thing = self.memory.unused_stuff.pop()
