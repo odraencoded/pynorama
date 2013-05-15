@@ -128,7 +128,7 @@ class ImageViewer(Gtk.Application):
 		return False
 	
 	# TODO: Redesign this entire loading process.
-	def load_files(self, files):
+	def load_files(self, files, search_directory = False):
 		recent_manager = Gtk.RecentManager.get_default()
 		for a_file in files:
 			an_uri = a_file.get_uri()
@@ -136,7 +136,7 @@ class ImageViewer(Gtk.Application):
 			
 		loaded_images = []
 		front_image = None
-		if len(files) == 1:
+		if search_directory and len(files) == 1:
 			single_file = files[0]
 			if not loading.IsAlbumFile(single_file) \
 			   and single_file.has_parent(None) \
@@ -182,13 +182,9 @@ class ImageViewer(Gtk.Application):
 		
 		return loaded_images
 		
-	def load_paths(self, paths):
-		gfiles = [Gio.File.new_for_path(a_path) for a_path in paths]
-		return self.load_files(gfiles)
-	
-	def load_uris(self, uris):
+	def load_uris(self, uris, search_directory):
 		gfiles = [Gio.File.new_for_uri(an_uri) for an_uri in uris]
-		return self.load_files(gfiles)
+		return self.load_files(gfiles, search_directory)
 		
 	def load_pixels(self, pixels):
 		pixelated_image = loading.ImageDataNode(pixels, "Pixels")
@@ -959,30 +955,39 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		                                      (Gtk.STOCK_CANCEL,
 		                                       Gtk.ResponseType.CANCEL,
 		                                       Gtk.STOCK_ADD,
-		                                       Gtk.ResponseType.APPLY,
+		                                       1,
 		                                       Gtk.STOCK_OPEN,
 		                                       Gtk.ResponseType.OK))
 			
 		image_chooser.set_default_response(Gtk.ResponseType.OK)
 		image_chooser.set_select_multiple(True)
-		
+		image_chooser.set_local_only(False)
 		# Add filters of supported formats from "loading" module
 		for fileFilter in loading.Filters:
 			image_chooser.add_filter(fileFilter)
+		
+		clear_list = False
+		search_directory = False
+		choosen_uris = None
+		
+		response = image_chooser.run()
+		
+		if response in [Gtk.ResponseType.OK, 1]:
+			choosen_uris = image_chooser.get_uris()
+		
+		if response == Gtk.ResponseType.OK:
+			clear_list = True
+			if len(choosen_uris) == 1:
+				search_directory = True
 			
-		try:
-			response = image_chooser.run()
-			if response == Gtk.ResponseType.OK:
-				self.unlist(*self.image_list.images)
-				
-			if response in [Gtk.ResponseType.APPLY, Gtk.ResponseType.OK]:
-				filenames = image_chooser.get_filenames()
-				images = self.app.load_paths(filenames)
-				self.insert_images(images)
-				
-		finally:
-			# Destroy the dialog anyway
-			image_chooser.destroy()
+		image_chooser.destroy()
+		
+		if clear_list:
+			self.unlist(*self.image_list.images)
+			
+		if choosen_uris:
+			images = self.app.load_uris(choosen_uris, search_directory)
+			self.insert_images(images)
 			
 	def imageview_scrolling(self, widget, data=None):
 		anchor = self.imageview.get_pointer()
