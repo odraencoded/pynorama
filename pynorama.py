@@ -22,7 +22,7 @@ import gc, math, random, os, sys
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
-import organization, navigation, loading, preferences, viewing
+import organization, navigation, loading, preferences, viewing, dialog
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
@@ -73,6 +73,7 @@ class ImageViewer(Gtk.Application):
 		                         comments=_("pynorama is an image viewer"),
 		                         logo_icon_name="pynorama",
 		                         license_type=Gtk.License.GPL_3_0)
+		                         
 		dialog.set_copyright("Copyrght © 2013 Leonardo Augusto Pereira")
 		dialog.connect("response", lambda a, b: a.destroy())
 		dialog.run()
@@ -125,7 +126,8 @@ class ImageViewer(Gtk.Application):
 				requested_thing.load()
 				
 		return False
-		
+	
+	# TODO: Redesign this entire loading process.
 	def load_files(self, files):
 		recent_manager = Gtk.RecentManager.get_default()
 		for a_file in files:
@@ -156,6 +158,7 @@ class ImageViewer(Gtk.Application):
 					files.insert(0, single_file)
 										
 		# Load images from files!
+		file_problems = []
 		for a_file in files:
 			try:
 				if loading.IsAlbumFile(a_file):
@@ -164,9 +167,19 @@ class ImageViewer(Gtk.Application):
 				else:
 					an_image = loading.ImageGFileNode(a_file)
 					loaded_images.append(an_image)
-			except:
-				self.tell_exception()
-								
+					
+			except Exception as a_problem:
+				file_problems.append((a_file, a_problem))
+				
+		if file_problems:
+			problem_list = []
+			for a_file, a_problem in file_problems:
+				problem_list.append((a_file.get_parse_name(), str(a_problem)))
+				
+			dialog.alert_list(_("There were errors handling" +
+			                    " the following files"),
+			                  problem_list, ["File", "Error"])
+		
 		return loaded_images
 		
 	def load_paths(self, paths):
@@ -180,21 +193,6 @@ class ImageViewer(Gtk.Application):
 	def load_pixels(self, pixels):
 		pixelated_image = loading.ImageDataNode(pixels, "Pixels")
 		return [pixelated_image]
-		
-	''' These methods tell things
-	    And stuff '''	
-	def tell_info(self, message, window=None):
-		print(message)
-		if not window:
-			window = self.get_window()
-			
-		window.statusbar.push(0, message)
-	
-	def tell_exception(self, window=None):
-		info = sys.exc_info()
-		print(info[1])
-		if window:
-			window.statusbar.push(0, _("Error: %s" % info[1]))
 		
 	def set_navi_factory(self, navi_factory):
 		self.navi_factory = navi_factory
@@ -568,6 +566,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			else:
 				self.actions.add_action_with_accel(an_action, an_accel)
 				
+	def state(self, message):
+		dialog.log(message)
+		self.statusbar.push(0, message)
+		
 	# Events		
 	def show_preferences(self, data=None):
 		prefs_dialog = preferences.Dialog(self.app)
@@ -998,12 +1000,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	    Do not rename them. '''
 	
 	def do_destroy(self, *data):
-		try:
-			preferences.set_from_window(self)
-		except:
-			self.app.tell_exception()
-		finally:
-			return Gtk.Window.do_destroy(self)
+		preferences.set_from_window(self)
+		return Gtk.Window.do_destroy(self)
 	
 	def set_image(self, image):
 		''' Sets the image to be displayed in the window.
@@ -1036,9 +1034,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.refresh_frame()
 				
 			else:
-				loading_fmt = _("Loading “{something}”")
-				self.app.tell_info(loading_fmt.format(
-				                   something=self.current_image))
+				self.state(dialog.Lines.Loading(self.current_image))
 				self.load_handle = self.current_image.connect(
 				                                      "finished-loading",
 				                                      self._image_loaded)
@@ -1060,12 +1056,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Check if the image loaded is the current image, just in case
 		if image == self.current_image:
 			if image.location & loading.Location.Memory:
-				loaded_fmt = _("“{something}” has been loaded")
-				self.app.tell_info(loaded_fmt.format(something=image))
-			elif error:
-				error_fmt = _("Error: “{error}”")
-				self.app.tell_info(error_fmt.format(error=error))
+				self.state(dialog.Lines.Loaded(image))
 				
+			if error:
+				self.state(dialog.Lines.Error(error))
+								
 			self.refresh_frame()
 			
 	def refresh_frame(self):
