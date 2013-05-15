@@ -105,6 +105,18 @@ class Loadable(GObject.GObject):
 	def unload(self):
 		raise NotImplemented
 		
+	@property
+	def on_memory(self):
+		return self.location & Location.Memory == Location.Memory
+	
+	@property
+	def on_disk(self):
+		return self.location & Location.Disk == Location.Disk
+			
+	@property
+	def is_loading(self):
+		return self.status == Status.Loading
+		
 class Memory(GObject.GObject):
 	''' A very basic memory management thing '''
 	__gsignals__ = {
@@ -239,7 +251,7 @@ class ImageGFileNode(ImageNode):
 		self.cancellable = None
 		
 	def load(self):
-		if self.status == Status.Loading:
+		if self.is_loading:
 			raise Exception
 			
 		self.cancellable = Gio.Cancellable()

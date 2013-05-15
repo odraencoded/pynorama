@@ -80,7 +80,11 @@ class Lines:
 	@staticmethod
 	def Loaded(something):
 		return _("Loaded “{something}”").format(something=something)
-		
+	
+	@staticmethod
+	def Unloaded(something):
+		return _("Unloaded “{something}”").format(something=something)
+				
 	@staticmethod
 	def Error(summary):
 		return _("Error: {summary}").format(summary=summary)

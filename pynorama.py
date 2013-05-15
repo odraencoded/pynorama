@@ -101,31 +101,39 @@ class ImageViewer(Gtk.Application):
 		
 		while self.memory.enlisted_stuff:
 			enlisted_thing = self.memory.enlisted_stuff.pop()
+			enlisted_thing.connect("finished-loading", self.log_loading_finish)
 				
 		if self.memory.unlisted_stuff or self.memory.unused_stuff:
 			while self.memory.unlisted_stuff:
 				unlisted_thing = self.memory.unlisted_stuff.pop()
-				if unlisted_thing.status == loading.Status.Loading \
-				   or unlisted_thing.location & loading.Location.Memory:
+				if unlisted_thing.is_loading or unlisted_thing.on_memory:
 					unlisted_thing.unload()
+					dialog.log(unlisted.Lines.Unloaded(requested_thing))
 					
 			while self.memory.unused_stuff:
 				unused_thing = self.memory.unused_stuff.pop()
 				# Do not unload things that are not on disk (like pastes)
-				if unused_thing.location & loading.Location.Disk:
-					if unused_thing.status == loading.Status.Loading \
-					   or unused_thing.location & loading.Location.Memory:
+				if unused_thing.on_disk:
+					if unused_thing.is_loading or unused_thing.on_memory:
 						unused_thing.unload()
+						dialog.log(dialog.Lines.Unloaded(unused_thing))
 						
 			gc.collect()
 			
 		while self.memory.requested_stuff:
 			requested_thing = self.memory.requested_stuff.pop()
-			if not requested_thing.location & loading.Location.Memory \
-			   and requested_thing.status != loading.Status.Loading:
+			if not (requested_thing.is_loading or requested_thing.on_memory):
 				requested_thing.load()
+				dialog.log(dialog.Lines.Loading(requested_thing))
 				
 		return False
+		
+	def log_loading_finish(self, thing, error):
+		if error:
+			dialog.log(dialog.Lines.Error(error))
+			
+		elif thing.on_memory:
+			dialog.log(dialog.Lines.Loaded(thing))
 	
 	# TODO: Redesign this entire loading process.
 	def load_files(self, files, search_directory = False):
@@ -204,6 +212,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.app = app
 		self.set_default_size(600, 600)
 		# Setup variables
+		self.preused_images = set()
 		self.current_image = None
 		self.current_frame = viewing.ImageFrame()
 		self.load_handle = None
@@ -563,7 +572,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.actions.add_action_with_accel(an_action, an_accel)
 				
 	def state(self, message):
-		dialog.log(message)
 		self.statusbar.push(0, message)
 		
 	# Events		
@@ -1035,8 +1043,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	
 		else:
 			self.app.memory.request(self.current_image)
-			if self.current_image.location & loading.Location.Memory:
+			if self.current_image.on_memory:
 				self.refresh_frame()
+				self.refresh_preuse()
 				
 			else:
 				self.state(dialog.Lines.Loading(self.current_image))
@@ -1060,14 +1069,29 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def _image_loaded(self, image, error):
 		# Check if the image loaded is the current image, just in case
 		if image == self.current_image:
-			if image.location & loading.Location.Memory:
+			if image.on_memory:
 				self.state(dialog.Lines.Loaded(image))
 				
 			if error:
 				self.state(dialog.Lines.Error(error))
-								
+				
 			self.refresh_frame()
+			self.refresh_preuse()
 			
+	# TODO: Replace this by a decent preloading system
+	def refresh_preuse(self):
+		for preused_image in self.preused_images:
+			self.app.memory.free(preused_image)
+			
+		self.preused_images.clear()
+		
+		if self.current_image:
+			self.preused_images.add(self.current_image)
+			self.preused_images.add(self.current_image.next)
+			self.preused_images.add(self.current_image.previous)
+			for preused_image in self.preused_images:
+				self.app.memory.request(preused_image)
+		
 	def refresh_frame(self):
 		if self.current_image:
 			if self.anim_handle is not None:
@@ -1075,7 +1099,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.anim_handle = None
 				self.anim_iter = None
 				
-			if self.current_image.location & loading.Location.Memory:
+			if self.current_image.on_memory:
 				# If the image is on the memory, then hurray!
 				if self.current_image.animation:
 					animation = self.current_image.animation
