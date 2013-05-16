@@ -26,6 +26,8 @@ import organization, navigation, loading, preferences, viewing, dialog
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
+	Version = "0.1.2"
+	
 	def __init__(self):
 		Gtk.Application.__init__(self)
 		self.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
@@ -69,7 +71,7 @@ class ImageViewer(Gtk.Application):
 	def show_about_dialog(self, *data):
 		dialog = Gtk.AboutDialog(parent=self.get_window(),
 		                         program_name="pynorama",
-		                         version="0.1.1",
+		                         version=ImageViewer.Version,
 		                         comments=_("pynorama is an image viewer"),
 		                         logo_icon_name="pynorama",
 		                         license_type=Gtk.License.GPL_3_0)
@@ -965,7 +967,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		some_uris = self.clipboard.wait_for_uris()
 		
 		if some_uris:
-			images = self.app.load_uris(some_uris)
+			images = self.app.load_uris(some_uris, False)
 			self.insert_images(images)
 				
 		some_pixels = self.clipboard.wait_for_image()
@@ -975,9 +977,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def dragged_data(self, widget, context, x, y, selection, info, timestamp):
 		if info == DND_URI_LIST:
 			some_uris = selection.get_uris()
-			images = self.app.load_uris(some_uris)
-			self.insert_images(images)
-							
+			if some_uris:
+				self.unlist(*self.image_list.images)
+				images = self.app.load_uris(some_uris, True)
+				self.insert_images(images)
+				
 		elif info == DND_IMAGE:
 			some_pixels = selection.get_pixbuf()
 			if some_pixels:
