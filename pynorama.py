@@ -454,17 +454,17 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"go-first" : (self.go_first,),
 			"go-last" : (self.go_last,),
 			"go-random" : (self.go_random,),
-			"zoom-in" : (self.handle_zoom_change, 1),
-			"zoom-out" : (self.handle_zoom_change, -1),
-			"zoom-none" : (self.reset_zoom,),
+			"zoom-in" : (lambda data: self.zoom_view(1),),
+			"zoom-out" : (lambda data: self.zoom_view(-1),),
+			"zoom-none" : (lambda data: self.set_view_zoom(1),),
 			"auto-zoom-enable" : (self.change_auto_zoom,),
 			"auto-zoom-fit" : (self.change_auto_zoom,),
 			"auto-zoom-magnify" : (self.change_auto_zoom,),
 			"auto-zoom-minify" : (self.change_auto_zoom,),
-			"rotate-cw" : (self.handle_rotate, 1),
-			"rotate-ccw" : (self.handle_rotate, -1),
-			"flip-h" : (self.handle_flip, False),
-			"flip-v" : (self.handle_flip, True),
+			"rotate-cw" : (lambda data: self.rotate_view(1),),
+			"rotate-ccw" : (lambda data: self.rotate_view(-1),),
+			"flip-h" : (lambda data: self.flip_view(False),),
+			"flip-v" : (lambda data: self.flip_view(True),),
 			"interp-nearest" : (self.change_interp,), # For group
 			"ui-toolbar" : (self.change_interface,),
 			"ui-statusbar" : (self.change_interface,),
@@ -746,43 +746,70 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			''' Sets the transform label to nothing.
 			    Because there is nothing to transform. '''
 			self.transform_label.set_text(_("Nothing"))
-							
-	def handle_flip(self, data=None, vertical=False):
+	
+	def set_view_rotation(self, angle):
+		anchor = self.imageview.get_widget_point()
+		pin = self.imageview.get_pin(anchor)
+		self.imageview.set_rotation(angle)
+		self.imageview.adjust_to_pin(pin)
+	
+	def set_view_zoom(self, magnification):
+		anchor = self.imageview.get_widget_point()
+		pin = self.imageview.get_pin(anchor)
+		self.imageview.set_magnification(magnification)
+		self.imageview.adjust_to_pin(pin)
+		
+	def set_view_flip(self, horizontal, vertical):
+		hflip, vflip = self.imageview.get_flip()
+		
+		if hflip != horizontal or vflip != vertical:
+			# ih8triGNOMEtricks
+			rot = self.imageview.get_rotation()
+			angle_change = (45 - ((rot + 45) % 180)) * 2
+		
+			# If the image if flipped both horizontally and vertically
+			# Then it is rotated 180 degrees
+			if horizontal and vertical:
+				horizontal = vertical = False
+				angle_change += 180
+		
+			anchor = self.imageview.get_widget_point()
+			pin = self.imageview.get_pin(anchor)
+			if angle_change:
+				self.imageview.set_rotation((rot + angle_change) % 360)
+			
+			self.imageview.set_flip((horizontal, vertical))
+			self.imageview.adjust_to_pin(pin)
+		
+	def zoom_view(self, power):
+		''' Zooms the viewport '''		
+		zoom_effect = self.app.zoom_effect
+		if zoom_effect and power:
+			old_zoom = self.imageview.get_magnification()
+			new_zoom = self.app.zoom_effect ** power * old_zoom
+			self.set_view_zoom(new_zoom)
+			
+	def flip_view(self, vertically):
+		''' Flips the viewport '''
 		# Horizontal mirroring depends on the rotation of the image
 		hflip, vflip = self.imageview.get_flip()
-		if vertical:
+		if vertically:
 			vflip = not vflip
 		else:
 			hflip = not hflip
 		
-		# ih8triGNOMEtricks
-		rot = self.imageview.get_rotation()
-		angle_change = (45 - ((rot + 45) % 180)) * 2
+		self.set_view_flip(hflip, vflip)
 		
-		# If the image if flipped both horizontally and vertically
-		# Then it is rotated 180 degrees
-		if vflip and hflip:
-			vflip = hflip = False
-			angle_change += 180
 		
-		if angle_change:
-			self.imageview.set_rotation((rot + angle_change) % 360)
-			
-		self.imageview.set_flip((hflip, vflip))
-			
-	def handle_rotate(self, data=None, power=0):
-		change = self.app.spin_effect * power
+	def rotate_view(self, effect):
+		''' Rotates the viewport '''
+		change = self.app.spin_effect * effect
 		if change < 0:
 			change += (change // 360) * -360
-		
-		altered_rotation = self.imageview.get_rotation() + change
-		self.imageview.set_rotation(altered_rotation % 360)
-	
-	def handle_zoom_change(self, data, change):
-		self.change_zoom(change)
-		
-	def reset_zoom(self, data=None):
-		self.imageview.set_magnification(1)
+			
+		if change:
+			new_rotation = self.imageview.get_rotation() + change
+			self.set_view_rotation(new_rotation % 360)
 	
 	def auto_zoom(self):
 		''' Zooms automatically!
@@ -1001,10 +1028,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		anchor = self.imageview.get_pointer()
 		
 		if data.direction == Gdk.ScrollDirection.UP:
-			self.change_zoom(1, anchor)
+			self.zoom_view(1)
+			#self.change_zoom(1, anchor)
 			
 		elif data.direction == Gdk.ScrollDirection.DOWN:
-			self.change_zoom(-1, anchor)
+			self.zoom_view(-1)
+			#self.change_zoom(-1, anchor)
 					
 		# Makes the scrolled window not scroll, I hope
 		return True
@@ -1186,11 +1215,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.navigator = navi_factory.create(self.imageview)
 		else:
 			self.navigator = None
-			
-	def change_zoom(self, power, anchor=None):
-		zoom_effect = self.app.zoom_effect
-		if zoom_effect and power:
-			self.imageview.props.magnification *= zoom_effect ** power
 	
 	def get_enable_auto_sort(self):
 		return self.actions.get_action("sort-auto").get_active()

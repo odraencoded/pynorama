@@ -19,6 +19,7 @@ import math
 from gi.repository import Gtk, Gdk, GdkPixbuf, GObject
 import cairo
 
+# Quite possibly the least badly designed class in the whole program.
 class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	''' This widget can display PictureFrames.
 	    It can also zoom in, out, rotate, adjust and etc. '''
@@ -130,6 +131,82 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			
 		self.need_computing = True
 		self.queue_draw()
+	
+	def get_widget_point(self):
+		''' Utility method, returns the mouse position if the mouse is over 
+		    the widget, otherwise returns the point corresponding to the center
+		    of the widget '''
+		
+		x, y = self.get_pointer()
+		w, h = self.get_allocated_width(), self.get_allocated_height()
+		if 0 <= x < w and 0 <= y < h:
+			return x, y
+		else:
+			return w / 2, h / 2
+		
+	def get_absolute_point(self, widget_point):
+		''' Returns a point with the view transformations of a point in the
+		    widget reverted '''
+		x, y = self.offset
+		
+		px, py = widget_point
+		px /= self.get_allocated_width()
+		py /= self.get_allocated_height()
+		
+		magw = self.get_magnified_width()
+		magh = self.get_magnified_height()
+		
+		x, y = x + px * magw, y + py * magh
+		
+		rotation = self.get_rotation()
+		if rotation:
+			x, y = spin_point(x, y, rotation / 180 * math.pi * -1)
+		
+		hflip, vflip = self.get_flip()
+		if hflip:
+			x *= -1
+		if vflip:
+			y *= -1
+			
+		return (x, y)
+	
+	def get_pin(self, widget_point=None):
+		''' Gets a pin for readjusting the view to a point in the widget
+		    after any transformations '''
+		w, h = self.get_allocated_width(), self.get_allocated_height()
+		if not widget_point:
+			widget_point = w / 2, h / 2
+			         		
+		absolute_point = self.get_absolute_point(widget_point)
+		
+		px, py = widget_point
+		px /= w; py /= h
+		scalar_point = px, py
+		
+		return absolute_point, scalar_point
+		
+	def adjust_to_pin(self, pin):
+		''' Adjusts the view so that the same widget point in the pin can be
+		    converted to the same absolute point in the pin '''
+		(x, y), (px, py) = pin
+		
+		hflip, vflip = self.get_flip()
+		if hflip:
+			x *= -1
+		if vflip:
+			y *= -1
+		
+		rotation = self.get_rotation()
+		if rotation:
+			x, y = spin_point(x, y, rotation / 180 * math.pi)
+		
+		magw = self.get_magnified_width()
+		magh = self.get_magnified_height()
+		
+		x -= px * magw
+		y -= py * magh
+		
+		self.adjust_to(x, y)
 		
 	def compute_side_scale(self, mode):
 		''' Calculates the ratio between the combined frames size
