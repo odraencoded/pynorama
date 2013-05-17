@@ -449,14 +449,24 @@ class SpinHandler(MouseHandler):
 	SpinThreshold = 5
 	SoftRadius = 25
 	
-	def __init__(self, frequency=2):
+	def __init__(self, frequency=1, fixed_pivot=None):
 		MouseHandler.__init__(self)
-		self.frequency = frequency
 		self.buttons = [3]
 		self.events = MouseEvents.Dragging
+		# Number of complete turns in the view per revolution around the pivot
+		self.frequency = frequency 
+		# Use a fixed pivot instead of the dragging start point
+		self.fixed_pivot = fixed_pivot
 		
 	def start_dragging(self, view, point, data):
-		return point, view.get_pin(point)
+		if self.fixed_pivot:
+			w, h = view.get_allocated_width(), view.get_allocated_height()
+			sx, sy = self.fixed_pivot
+			pivot = sx * w, sy * h
+		else:
+			pivot = point
+			
+		return pivot, view.get_pin(pivot)
 	
 	def drag(self, view, to_point, from_point, data):
 		pivot, pin = data
@@ -499,17 +509,20 @@ class ScaleHandler(MouseHandler):
 	
 	MinDistance = 10
 	
-	def __init__(self):
+	def __init__(self, pivot=(.5, .5)):
 		MouseHandler.__init__(self)
 		self.buttons = [2]
 		self.events = MouseEvents.Dragging
+		self.pivot = pivot
 		
 	def start_dragging(self, view, point, data):
 		w, h = view.get_allocated_width(), view.get_allocated_height()
-		pivot = w / 2, h / 2
 		x, y = point
+		sx, sy = self.pivot
+		px, py = sx * w, sy * h
+		pivot = px, py
 		
-		xd, yd = x - w / 2, y - h / 2
+		xd, yd = x - px, y - py
 		distance = max(ScaleHandler.MinDistance, (xd ** 2 + yd ** 2) ** .5)
 		zoom = view.get_magnification()
 		zoom_ratio = zoom / distance
