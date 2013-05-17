@@ -37,22 +37,26 @@ class MouseAdapter(GObject.GObject):
 		"drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, object, int]),
 		"pression" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
 		"click" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
-		"start-drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
-		"stop-drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
+		"start-dragging" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
+		"stop-dragging" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
 	}
 	
 	def __init__(self, widget=None):
 		GObject.GObject.__init__(self)
 		
-		self.__widget = None
-		self.__widget_handler_ids = None
+		self.__from_point = None
 		self.__pressure = dict()
+		self.__widget = None
+		
+		self.__delayed_motion_id = None
+		self.__widget_handler_ids = None
 		self.__ice_cubes = 0
+		
 		if widget:
 			self.set_widget(widget)
 			
-	def get_widget(self, widget):
-		return self.widget
+	def get_widget(self):
+		return self.__widget
 		
 	def set_widget(self, widget):
 		if self.__widget != widget:
@@ -69,7 +73,7 @@ class MouseAdapter(GObject.GObject):
 				
 			self.__widget = widget
 			if widget:			
-				widget.add_events(MouseInterface.EventMask)
+				widget.add_events(MouseAdapter.EventMask)
 				self.__widget_handler_ids = [
 					widget.connect("button-press-event", self._button_press),
 					widget.connect("button-release-event", self._button_release),
@@ -99,15 +103,15 @@ class MouseAdapter(GObject.GObject):
 		
 	def _button_release(self, widget, data):
 		if not self.is_frozen:
-			btn_presure = self.__pressure.get(data.button, 0)
-			if btn_pressure:
+			button_pressure = self.__pressure.get(data.button, 0)
+			if button_pressure:
 				point = widget.get_pointer()
-				if btn_pressure == 2:
-					self.emit("stop-drag", point, data.button)
+				if button_pressure == 2:
+					self.emit("stop-dragging", point, data.button)
 					
 				self.emit("click", point, data.button)
-			
-		self.__pressure.discard(data.button)
+				
+		del self.__pressure[data.button]
 		
 	def _mouse_motion(self, widget, data):
 		# Motion events are handled idly
@@ -115,8 +119,9 @@ class MouseAdapter(GObject.GObject):
 			if not self.__from_point:
 				self.__from_point = widget.get_pointer()
 				
-			self.__delayed_motion_id = GObject.idle_add_full(
-			     MouseAdapter.IdlePriority, self.__delayed_motion, widget, None)
+			self.__delayed_motion_id = GLib.idle_add(
+			                                self.__delayed_motion, widget,
+			                                priority=MouseAdapter.IdlePriority)
 			     
 	def __delayed_motion(self, widget):
 		self.__delayed_motion_id = None
@@ -124,18 +129,157 @@ class MouseAdapter(GObject.GObject):
 		if not self.is_frozen:
 			point = widget.get_pointer()
 			if self.__from_point != point:
-				for button, pressure in self.__pressure:
+				for button, pressure in self.__pressure.items():
 					if pressure == 1:
 						self.__pressure[button] = 2
-						self.emit("start-drag",
-						          point, self.__from_point, button)
+						self.emit("start-dragging", point, button)
 				
 				self.emit("motion", point, self.__from_point)
-				for button, pressure in self.__pressure:
+				for button, pressure in self.__pressure.items():
 					if pressure == 2:
 						self.emit("drag", point, self.__from_point, button)
-						
+				
+		self.__from_point = point
 		return False
+		
+class MouseEvents:
+	Nothing  =  0 #0000
+	Sliding  =  1 #0001
+	Dragging = 10 #1010
+	Moving   =  3 #0011
+	Pressing =  6 #0110
+	Clicking =  8 #1000
+	
+class MetaMouseHandler:
+	''' Handles mouse events from mouse adapters for mouse handlers '''
+	# It's So Meta Even This Acronym
+	def __init__(self):
+		self.__adapters = dict()
+		self.__handlers = dict()
+		self.__dragging_handlers = set()
+		self.__button_handlers = dict()
+		
+	def add(self, handler):
+		if not handler in self.__handlers:
+			self.__handlers[handler] = dict()
+			if handler.handles_dragging:
+				self.__dragging_handlers.add(handler)
+			
+			button_set = self.__button_handlers.get(1, set())
+			button_set.add(handler)
+			self.__button_handlers[1] = button_set
+			
+	def remove(self, handler):
+		if handler in self.__handlers:
+			del self.__handlers[handler]
+			if handler.handles_dragging:
+				self.__dragging_handlers.discard(handler)
+				
+			self.__button_handlers[1].discard(handler)
+		
+	def attach(self, adapter):
+		if not adapter in self.__adapters:
+			signals = [
+				adapter.connect("start-dragging", self._start_dragging),
+				adapter.connect("drag", self._drag),
+				adapter.connect("stop-dragging", self._stop_dragging),
+			]
+			self.__adapters[adapter] = signals
+			
+	def detach(self, adapter):
+		signals = self.__adapters.get(adapter, [])
+		for a_signal in signals:
+			adapter.disconnect(a_signal)
+			
+		del self.__adapters[adapter]
+	
+	
+	def __basic_event_dispatch(self, adapter, event_handlers,
+	                           function_name, *params):
+	                           
+		widget = adapter.get_widget()
+		
+		for a_handler in event_handlers:
+			data = self.__handlers[a_handler].get(adapter, None)
+			function = getattr(a_handler, function_name)
+			data = function(widget, *(params + (data,)))
+			if data:
+				self.__handlers[a_handler][adapter] = data
+	
+	def _start_dragging(self, adapter, point, button):
+		active_handlers = self.__dragging_handlers
+		button_handlers = self.__button_handlers.get(button, None)
+		if button_handlers:
+			active_handlers &= button_handlers
+			
+		self.__basic_event_dispatch(adapter, active_handlers, 
+		                            "start_dragging", point)
+		
+	def _drag(self, adapter, to_point, from_point, button):		
+		active_handlers = self.__dragging_handlers
+		button_handlers = self.__button_handlers.get(button, None)
+		if button_handlers:
+			active_handlers &= button_handlers
+			
+		self.__basic_event_dispatch(adapter, active_handlers, 
+		                            "drag", to_point, from_point)
+			
+	def _stop_dragging(self, adapter, point, button):
+		active_handlers = self.__dragging_handlers
+		button_handlers = self.__button_handlers.get(button, None)
+		if button_handlers:
+			active_handlers &= button_handlers
+			
+		self.__basic_event_dispatch(adapter, active_handlers, 
+		                            "stop_dragging", point)
+		
+class MouseHandler:
+	''' Handles mouse events '''
+	# The base of the totem pole
+	
+	def __init__(self):
+		self.events = MouseEvents.Nothing
+	
+	@property
+	def handles_dragging(self):
+		return self.events & MouseEvents.Dragging == MouseEvents.Dragging
+	
+	def start_dragging(self, widget, point, data):
+		pass
+	
+	def drag(self, widget, to_point, from_point, data):
+		pass
+		
+	def stop_dragging(self, widget, point, data):
+		pass
+	
+class DragHandler(MouseHandler):
+	''' Pans a view when it is dragged '''
+	def __init__(self, speed=1.0, magnify=False):
+		MouseHandler.__init__(self)
+		self.speed = speed
+		self.magnify_speed = magnify
+		self.events = MouseEvents.Dragging
+	
+	def start_dragging(self, view, *etc):
+		fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
+		view.get_window().set_cursor(fleur_cursor)
+	
+	def drag(self, view, to_point, from_point, data):
+		(tx, ty), (fx, fy) = to_point, from_point
+		dx, dy = tx - fx, ty - fy
+		
+		scale = -self.speed
+		if not self.magnify_speed:
+			scale /= view.get_magnification()
+		sx, sy = dx * scale, dy * scale
+		
+		ax = view.get_hadjustment().get_value()
+		ay = view.get_vadjustment().get_value()
+		view.adjust_to(ax + sx, ay + sy)
+	
+	def stop_dragging(self, view, *etc):
+		view.get_window().set_cursor(None)
 		
 # This file is not full of avatar references.
 NaviList = []
