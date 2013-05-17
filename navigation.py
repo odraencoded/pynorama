@@ -20,6 +20,123 @@ from gettext import gettext as _
 import math, time
 import preferences
 
+class MouseAdapter(GObject.GObject):
+	''' Adapts a widget mouse events '''
+	EventMask = (Gdk.EventMask.BUTTON_PRESS_MASK |
+	             Gdk.EventMask.BUTTON_RELEASE_MASK |
+	             Gdk.EventMask.POINTER_MOTION_MASK |
+	             Gdk.EventMask.POINTER_MOTION_HINT_MASK)
+	
+	# According to the docs, Gtk uses +10 for resizing and +20 for redrawing
+	# +15 should dispatch events after resizing and before redrawing
+	# TODO: Figure out whether that is a good idea
+	IdlePriority = GLib.PRIORITY_HIGH_IDLE + 15
+	            
+	__gsignals__ = {
+		"motion" : (GObject.SIGNAL_RUN_FIRST, None, [object, object]),
+		"drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, object, int]),
+		"pression" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
+		"click" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
+		"start-drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
+		"stop-drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
+	}
+	
+	def __init__(self, widget=None):
+		GObject.GObject.__init__(self)
+		
+		self.__widget = None
+		self.__widget_handler_ids = None
+		self.__pressure = dict()
+		self.__ice_cubes = 0
+		if widget:
+			self.set_widget(widget)
+			
+	def get_widget(self, widget):
+		return self.widget
+		
+	def set_widget(self, widget):
+		if self.__widget != widget:
+			if self.__widget:
+				self.__pressure.clear()
+				
+				for a_handler_id in self.__widget_handler_ids:
+					self.__widget.disconnect(a_handler_id)
+				self.__widget_handler_ids = None
+				
+				if self.__delayed_motion_id:
+					GLib.source_remove(self.__delayed_motion_id)
+					self.__delayed_motion_id = None
+				
+			self.__widget = widget
+			if widget:			
+				widget.add_events(MouseInterface.EventMask)
+				self.__widget_handler_ids = [
+					widget.connect("button-press-event", self._button_press),
+					widget.connect("button-release-event", self._button_release),
+					widget.connect("motion-notify-event", self._mouse_motion),
+				]
+				
+	widget = GObject.property(get_widget, set_widget, type=Gtk.Widget)
+	
+	# icy-wut-i-did-thaw
+	@property
+	def is_frozen(self):
+		return self.__ice_cubes > 0
+		
+	def freeze(self):
+		self.__ice_cubes += 1
+		
+	def thaw(self):
+		self.__ice_cubes -= 1
+	
+	def is_pressed(self, button=None):
+		return bool(self.__pressure) if button is None \
+		       else button in self.__pressure
+	
+	# begins here the somewhat private functions
+	def _button_press(self, widget, data):
+		self.__pressure.setdefault(data.button, 1)
+		
+	def _button_release(self, widget, data):
+		if not self.is_frozen:
+			btn_presure = self.__pressure.get(data.button, 0)
+			if btn_pressure:
+				point = widget.get_pointer()
+				if btn_pressure == 2:
+					self.emit("stop-drag", point, data.button)
+					
+				self.emit("click", point, data.button)
+			
+		self.__pressure.discard(data.button)
+		
+	def _mouse_motion(self, widget, data):
+		# Motion events are handled idly
+		if not self.__delayed_motion_id:
+			if not self.__from_point:
+				self.__from_point = widget.get_pointer()
+				
+			self.__delayed_motion_id = GObject.idle_add_full(
+			     MouseAdapter.IdlePriority, self.__delayed_motion, widget, None)
+			     
+	def __delayed_motion(self, widget):
+		self.__delayed_motion_id = None
+		
+		if not self.is_frozen:
+			point = widget.get_pointer()
+			if self.__from_point != point:
+				for button, pressure in self.__pressure:
+					if pressure == 1:
+						self.__pressure[button] = 2
+						self.emit("start-drag",
+						          point, self.__from_point, button)
+				
+				self.emit("motion", point, self.__from_point)
+				for button, pressure in self.__pressure:
+					if pressure == 2:
+						self.emit("drag", point, self.__from_point, button)
+						
+		return False
+		
 # This file is not full of avatar references.
 NaviList = []
 
