@@ -452,7 +452,7 @@ class SpinHandler(MouseHandler):
 	def __init__(self, frequency=2):
 		MouseHandler.__init__(self)
 		self.frequency = frequency
-		self.buttons = [1]
+		self.buttons = [3]
 		self.events = MouseEvents.Dragging
 		
 	def start_dragging(self, view, point, data):
@@ -493,7 +493,45 @@ class SpinHandler(MouseHandler):
 			view.adjust_to_pin(pin)
 			
 		return data
+
+class ScaleHandler(MouseHandler):
+	''' Zooms a view '''
+	
+	MinDistance = 10
+	
+	def __init__(self):
+		MouseHandler.__init__(self)
+		self.buttons = [2]
+		self.events = MouseEvents.Dragging
 		
+	def start_dragging(self, view, point, data):
+		w, h = view.get_allocated_width(), view.get_allocated_height()
+		pivot = w / 2, h / 2
+		x, y = point
+		
+		xd, yd = x - w / 2, y - h / 2
+		distance = max(ScaleHandler.MinDistance, (xd ** 2 + yd ** 2) ** .5)
+		zoom = view.get_magnification()
+		zoom_ratio = zoom / distance
+		
+		return zoom_ratio, pivot, view.get_pin(pivot)
+	
+	def drag(self, view, to_point, from_point, data):
+		zoom_ratio, pivot, pin = data
+		
+		# Get vectors from the pivot
+		(x, y), (px, py) = to_point, pivot
+		xd, yd = x - px, y - py
+		
+		# Get pivot distance, multiply it by zoom ratio
+		pd = max(ScaleHandler.MinDistance, (xd ** 2 + yd ** 2) ** .5)
+		new_zoom = pd * zoom_ratio
+		
+		view.set_magnification(new_zoom)
+		view.adjust_to_pin(pin)
+		
+		return data
+
 # This file is not full of avatar references.
 NaviList = []
 
