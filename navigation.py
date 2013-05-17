@@ -94,24 +94,25 @@ class MouseAdapter(GObject.GObject):
 		self.__ice_cubes -= 1
 	
 	def is_pressed(self, button=None):
-		return bool(self.__pressure) if button is None \
-		       else button in self.__pressure
+		return bool(self.__pressure if button is None \
+		            else self.__pressure.get(button, 0))
 	
 	# begins here the somewhat private functions
 	def _button_press(self, widget, data):
 		self.__pressure.setdefault(data.button, 1)
 		
 	def _button_release(self, widget, data):
-		if not self.is_frozen:
-			button_pressure = self.__pressure.get(data.button, 0)
-			if button_pressure:
-				point = widget.get_pointer()
-				if button_pressure == 2:
-					self.emit("stop-dragging", point, data.button)
+		if data.button in self.__pressure:
+			if not self.is_frozen:
+				button_pressure = self.__pressure.get(data.button, 0)
+				if button_pressure:
+					point = widget.get_pointer()
+					if button_pressure == 2:
+						self.emit("stop-dragging", point, data.button)
 					
-				self.emit("click", point, data.button)
+					self.emit("click", point, data.button)
 				
-		del self.__pressure[data.button]
+			del self.__pressure[data.button]
 		
 	def _mouse_motion(self, widget, data):
 		# Motion events are handled idly
@@ -144,7 +145,7 @@ class MouseAdapter(GObject.GObject):
 		
 class MouseEvents:
 	Nothing  =  0 #0000
-	Sliding  =  1 #0001
+	Hovering =  1 #0001
 	Dragging = 10 #1010
 	Moving   =  3 #0011
 	Pressing =  6 #0110
@@ -156,30 +157,41 @@ class MetaMouseHandler:
 	def __init__(self):
 		self.__adapters = dict()
 		self.__handlers = dict()
+		self.__hovering_handlers = set()
 		self.__dragging_handlers = set()
 		self.__button_handlers = dict()
 		
 	def add(self, handler):
 		if not handler in self.__handlers:
 			self.__handlers[handler] = dict()
-			if handler.handles_dragging:
-				self.__dragging_handlers.add(handler)
+			for handler_set in self.__get_handler_sets(handler):
+				handler_set.add(handler)
 			
-			button_set = self.__button_handlers.get(1, set())
-			button_set.add(handler)
-			self.__button_handlers[1] = button_set
+			for button in handler.buttons:
+				button_set = self.__button_handlers.get(button, set())
+				button_set.add(handler)
+				self.__button_handlers[button] = button_set
 			
 	def remove(self, handler):
 		if handler in self.__handlers:
 			del self.__handlers[handler]
-			if handler.handles_dragging:
-				self.__dragging_handlers.discard(handler)
+			for handler_set in self.__get_handler_sets(handler):
+				handler_set.discard(handler)
+			
+			for button in handler.buttons:
+				self.__button_handlers[button].discard(handler)
+	
+	def __get_handler_sets(self, handler):
+		if handler.handles_hovering:
+			yield self.__hovering_handlers
+			
+		if handler.handles_dragging:
+			yield self.__dragging_handlers
 				
-			self.__button_handlers[1].discard(handler)
-		
 	def attach(self, adapter):
 		if not adapter in self.__adapters:
 			signals = [
+				adapter.connect("motion", self._motion),
 				adapter.connect("start-dragging", self._start_dragging),
 				adapter.connect("drag", self._drag),
 				adapter.connect("stop-dragging", self._stop_dragging),
@@ -192,7 +204,14 @@ class MetaMouseHandler:
 			adapter.disconnect(a_signal)
 			
 		del self.__adapters[adapter]
-	
+		
+	def __overlap_button_set(self, handler_set, button):
+		button_handlers = self.__button_handlers.get(button, set())
+		
+		if button_handlers:
+			return handler_set & button_handlers
+		else:
+			return button_handlers
 	
 	def __basic_event_dispatch(self, adapter, event_handlers,
 	                           function_name, *params):
@@ -206,43 +225,61 @@ class MetaMouseHandler:
 			if data:
 				self.__handlers[a_handler][adapter] = data
 	
-	def _start_dragging(self, adapter, point, button):
-		active_handlers = self.__dragging_handlers
-		button_handlers = self.__button_handlers.get(button, None)
-		if button_handlers:
-			active_handlers &= button_handlers
+	def _motion(self, adapter, to_point, from_point):
+		if adapter.is_pressed():
+			hovering = not any((adapter.is_pressed(a_button) \
+			                      for a_button, a_button_handlers \
+			                      in self.__button_handlers.items() \
+			                      if a_button_handlers))
+		else:
+			hovering = True
 			
-		self.__basic_event_dispatch(adapter, active_handlers, 
-		                            "start_dragging", point)
+		if hovering:
+			self.__basic_event_dispatch(adapter, self.__hovering_handlers,
+			                            "hover", to_point, from_point)
+		
+	def _start_dragging(self, adapter, point, button):
+		active_handlers = self.__overlap_button_set(
+		                       self.__dragging_handlers, button)
+		                       
+		if active_handlers:
+			self.__basic_event_dispatch(adapter, active_handlers, 
+			                            "start_dragging", point)
 		
 	def _drag(self, adapter, to_point, from_point, button):		
-		active_handlers = self.__dragging_handlers
-		button_handlers = self.__button_handlers.get(button, None)
-		if button_handlers:
-			active_handlers &= button_handlers
-			
-		self.__basic_event_dispatch(adapter, active_handlers, 
-		                            "drag", to_point, from_point)
+		active_handlers = self.__overlap_button_set(
+		                       self.__dragging_handlers, button)
+		                       
+		if active_handlers:
+			self.__basic_event_dispatch(adapter, active_handlers, 
+					                    "drag", to_point, from_point)
 			
 	def _stop_dragging(self, adapter, point, button):
-		active_handlers = self.__dragging_handlers
-		button_handlers = self.__button_handlers.get(button, None)
-		if button_handlers:
-			active_handlers &= button_handlers
-			
-		self.__basic_event_dispatch(adapter, active_handlers, 
-		                            "stop_dragging", point)
-		
+		active_handlers = self.__overlap_button_set(
+                       self.__dragging_handlers, button)
+                       
+		if active_handlers:
+			self.__basic_event_dispatch(adapter, active_handlers, 
+				                        "stop_dragging", point)
+		                            
 class MouseHandler:
 	''' Handles mouse events '''
 	# The base of the totem pole
 	
 	def __init__(self):
 		self.events = MouseEvents.Nothing
+		self.buttons = []
+		
+	@property
+	def handles_hovering(self):
+		return self.events & MouseEvents.Hovering == MouseEvents.Hovering
 	
 	@property
 	def handles_dragging(self):
 		return self.events & MouseEvents.Dragging == MouseEvents.Dragging
+		
+	def hover(self, widget, to_point, from_point, data):
+		pass
 	
 	def start_dragging(self, widget, point, data):
 		pass
@@ -252,24 +289,20 @@ class MouseHandler:
 		
 	def stop_dragging(self, widget, point, data):
 		pass
-	
-class DragHandler(MouseHandler):
-	''' Pans a view when it is dragged '''
+		
+class SlideHandler(MouseHandler):
+	''' Pans a view on mouse hovering '''
 	def __init__(self, speed=1.0, magnify=False):
 		MouseHandler.__init__(self)
 		self.speed = speed
 		self.magnify_speed = magnify
-		self.events = MouseEvents.Dragging
+		self.events = MouseEvents.Hovering
 	
-	def start_dragging(self, view, *etc):
-		fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
-		view.get_window().set_cursor(fleur_cursor)
-	
-	def drag(self, view, to_point, from_point, data):
+	def hover(self, view, to_point, from_point, data):
 		(tx, ty), (fx, fy) = to_point, from_point
 		dx, dy = tx - fx, ty - fy
 		
-		scale = -self.speed
+		scale = self.speed
 		if not self.magnify_speed:
 			scale /= view.get_magnification()
 		sx, sy = dx * scale, dy * scale
@@ -277,6 +310,19 @@ class DragHandler(MouseHandler):
 		ax = view.get_hadjustment().get_value()
 		ay = view.get_vadjustment().get_value()
 		view.adjust_to(ax + sx, ay + sy)
+
+class DragHandler(SlideHandler):
+	''' Pans a view on mouse dragging '''
+	def __init__(self, speed=-1.0, magnify=False):
+		SlideHandler.__init__(self, speed, magnify)
+		self.events = MouseEvents.Dragging
+		self.buttons = [1]
+		
+	def start_dragging(self, view, *etc):
+		fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
+		view.get_window().set_cursor(fleur_cursor)
+	
+	drag = SlideHandler.hover # lol.
 	
 	def stop_dragging(self, view, *etc):
 		view.get_window().set_cursor(None)
