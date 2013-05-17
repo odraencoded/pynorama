@@ -443,6 +443,57 @@ class MapHandler(MouseHandler):
 			return (allocation.x, allocation.y,
 			        allocation.width, allocation.height)
 			        
+class SpinHandler(MouseHandler):
+	''' Spins a view '''
+	
+	SpinThreshold = 5
+	SoftRadius = 25
+	
+	def __init__(self, frequency=2):
+		MouseHandler.__init__(self)
+		self.frequency = frequency
+		self.buttons = [1]
+		self.events = MouseEvents.Dragging
+		
+	def start_dragging(self, view, point, data):
+		return point, view.get_pin(point)
+	
+	def drag(self, view, to_point, from_point, data):
+		pivot, pin = data
+		
+		# Get vectors from the pivot
+		(tx, ty), (fx, fy), (px, py) = to_point, from_point, pivot
+		tdx, tdy = tx - px, ty - py
+		fdx, fdy = fx - px, fy - py
+		
+		# Get rotational delta, multiply it by frequency
+		ta = math.atan2(tdy, tdx) / math.pi * 180
+		fa = math.atan2(fdy, fdx) / math.pi * 180
+		rotation_effect = (ta - fa) * self.frequency
+		
+		# Modulate degrees
+		rotation_effect %= 360 if rotation_effect >= 0 else -360
+		if rotation_effect > 180:
+			rotation_effect -= 360
+		if rotation_effect < -180:
+			rotation_effect += 360 
+			
+		# Thresholding stuff
+		square_distance = tdx ** 2 + tdy ** 2
+		if square_distance > SpinHandler.SpinThreshold ** 2:
+			# Falling out stuff
+			square_soft_radius = SpinHandler.SoftRadius ** 2
+			if square_distance < square_soft_radius:
+				fallout_effect = square_distance / square_soft_radius
+				rotation_effect *= fallout_effect
+			
+			# Changing the rotation(finally)
+			view.set_rotation(view.get_rotation() + rotation_effect)
+			# Anchoring!!!
+			view.adjust_to_pin(pin)
+			
+		return data
+		
 # This file is not full of avatar references.
 NaviList = []
 
