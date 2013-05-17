@@ -100,6 +100,9 @@ class MouseAdapter(GObject.GObject):
 	# begins here the somewhat private functions
 	def _button_press(self, widget, data):
 		self.__pressure.setdefault(data.button, 1)
+		if not self.is_frozen:
+			point = widget.get_pointer()
+			self.emit("pression", point, data.button)
 		
 	def _button_release(self, widget, data):
 		if data.button in self.__pressure:
@@ -134,6 +137,9 @@ class MouseAdapter(GObject.GObject):
 					if pressure == 1:
 						self.__pressure[button] = 2
 						self.emit("start-dragging", point, button)
+						
+					if pressure:
+						self.emit("pression", point, button)
 				
 				self.emit("motion", point, self.__from_point)
 				for button, pressure in self.__pressure.items():
@@ -157,6 +163,7 @@ class MetaMouseHandler:
 	def __init__(self):
 		self.__adapters = dict()
 		self.__handlers = dict()
+		self.__pression_handlers = set()
 		self.__hovering_handlers = set()
 		self.__dragging_handlers = set()
 		self.__button_handlers = dict()
@@ -182,6 +189,9 @@ class MetaMouseHandler:
 				self.__button_handlers[button].discard(handler)
 	
 	def __get_handler_sets(self, handler):
+		if handler.handles_pressing:
+			yield self.__pression_handlers
+			
 		if handler.handles_hovering:
 			yield self.__hovering_handlers
 			
@@ -192,6 +202,7 @@ class MetaMouseHandler:
 		if not adapter in self.__adapters:
 			signals = [
 				adapter.connect("motion", self._motion),
+				adapter.connect("pression", self._pression),
 				adapter.connect("start-dragging", self._start_dragging),
 				adapter.connect("drag", self._drag),
 				adapter.connect("stop-dragging", self._stop_dragging),
@@ -237,6 +248,14 @@ class MetaMouseHandler:
 		if hovering:
 			self.__basic_event_dispatch(adapter, self.__hovering_handlers,
 			                            "hover", to_point, from_point)
+	
+	def _pression(self, adapter, point, button):
+		active_handlers = self.__overlap_button_set(
+		                       self.__pression_handlers, button)
+		                       
+		if active_handlers:
+			self.__basic_event_dispatch(adapter, active_handlers, 
+			                            "press", point)
 		
 	def _start_dragging(self, adapter, point, button):
 		active_handlers = self.__overlap_button_set(
@@ -271,13 +290,20 @@ class MouseHandler:
 		self.buttons = []
 		
 	@property
+	def handles_pressing(self):
+		return self.events & MouseEvents.Pressing == MouseEvents.Pressing
+		
+	@property
 	def handles_hovering(self):
 		return self.events & MouseEvents.Hovering == MouseEvents.Hovering
 	
 	@property
 	def handles_dragging(self):
 		return self.events & MouseEvents.Dragging == MouseEvents.Dragging
-		
+	
+	def press(self, widget, point, data):
+		pass
+	
 	def hover(self, widget, to_point, from_point, data):
 		pass
 	
@@ -290,7 +316,7 @@ class MouseHandler:
 	def stop_dragging(self, widget, point, data):
 		pass
 		
-class SlideHandler(MouseHandler):
+class HoverHandler(MouseHandler):
 	''' Pans a view on mouse hovering '''
 	def __init__(self, speed=1.0, magnify=False):
 		MouseHandler.__init__(self)
@@ -311,10 +337,10 @@ class SlideHandler(MouseHandler):
 		ay = view.get_vadjustment().get_value()
 		view.adjust_to(ax + sx, ay + sy)
 
-class DragHandler(SlideHandler):
+class DragHandler(HoverHandler):
 	''' Pans a view on mouse dragging '''
 	def __init__(self, speed=-1.0, magnify=False):
-		SlideHandler.__init__(self, speed, magnify)
+		HoverHandler.__init__(self, speed, magnify)
 		self.events = MouseEvents.Dragging
 		self.buttons = [1]
 		
@@ -322,11 +348,101 @@ class DragHandler(SlideHandler):
 		fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
 		view.get_window().set_cursor(fleur_cursor)
 	
-	drag = SlideHandler.hover # lol.
+	drag = HoverHandler.hover # lol.
 	
 	def stop_dragging(self, view, *etc):
 		view.get_window().set_cursor(None)
+
+class MapHandler(MouseHandler):
+	''' Adjusts a view to match a point inside.
+	    In it's most basic way for "H" being a point in the widget,
+	    "C" being the resulting adjustment, "B" being the widget size and
+	    "S" being the boundaries of the viewing widget model: C = H / B * S '''
+	def __init__(self, margin=32, mapping_mode="proportional"):
+		MouseHandler.__init__(self)
+		self.buttons = [1]
+		self.events = MouseEvents.Pressing
+		self.mapping_mode = mapping_mode
+		self.margin = margin
 		
+	def press(self, view, point, data):
+		# Clamp mouse pointer to map
+		rx, ry, rw, rh = self.get_map_rectangle(view)
+		mx, my = point
+		x = max(0, min(rw, mx - rx))
+		y = max(0, min(rh, my - ry))
+		# The adjustments
+		hadjust = view.get_hadjustment()
+		vadjust = view.get_vadjustment()
+		# Get content bounding box
+		full_width = hadjust.get_upper() - hadjust.get_lower()
+		full_height = vadjust.get_upper() - vadjust.get_lower()
+		full_width -= hadjust.get_page_size()
+		full_height -= vadjust.get_page_size()
+		# Transform x and y to picture "adjustment" coordinates
+		tx = x / rw * full_width + hadjust.get_lower()
+		ty = y / rh * full_height + vadjust.get_lower()
+		view.adjust_to(tx, ty)
+		
+	def get_map_rectangle(self, view):
+		allocation = view.get_allocation()
+		
+		allocation.x = allocation.y = self.margin
+		allocation.width -= self.margin * 2
+		allocation.height -= self.margin * 2
+		
+		if allocation.width <= 0:
+			diff = 1 - allocation.width
+			allocation.width += diff
+			allocation.x -= diff / 2
+			
+		if allocation.height <= 0:
+			diff = 1 - allocation.height
+			allocation.height += diff
+			allocation.y -= diff / 2
+		
+		if self.mapping_mode == "square":
+			if allocation.width > allocation.height:
+				smallest_side = allocation.height
+			else:
+				smallest_side = allocation.width
+			
+			half_width_diff = (allocation.width - smallest_side) / 2
+			half_height_diff = (allocation.height - smallest_side) / 2
+			
+			return (allocation.x + half_width_diff,
+				    allocation.y + half_height_diff,
+				    allocation.width - half_width_diff * 2,
+				    allocation.height - half_height_diff * 2)
+			
+		elif self.mapping_mode == "proportional":
+			hadjust = view.get_hadjustment()
+			vadjust = view.get_vadjustment()
+			full_width = hadjust.get_upper() - hadjust.get_lower()
+			full_height = vadjust.get_upper() - vadjust.get_lower()
+			fw_ratio = allocation.width / full_width
+			fh_ratio = allocation.height / full_height
+						
+			if fw_ratio > fh_ratio:
+				smallest_ratio = fh_ratio
+			else:
+				smallest_ratio = fw_ratio
+			
+			transformed_width = smallest_ratio * full_width
+			transformed_height = smallest_ratio * full_height
+			
+			half_width_diff = (allocation.width - transformed_width) / 2
+			half_height_diff = (allocation.height - transformed_height) / 2
+			
+			return (allocation.x + half_width_diff,
+				    allocation.y + half_height_diff,
+				    allocation.width - half_width_diff * 2,
+				    allocation.height - half_height_diff * 2)
+			
+		else:
+			return (allocation.x, allocation.y,
+			        allocation.width, allocation.height)
+			        
 # This file is not full of avatar references.
 NaviList = []
 
