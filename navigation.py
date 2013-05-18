@@ -370,6 +370,7 @@ class HoverHandler(MouseHandler):
 
 class DragHandler(HoverHandler):
 	''' Pans a view on mouse dragging '''
+	
 	def __init__(self, speed=-1.0, magnify=False):
 		HoverHandler.__init__(self, speed, magnify)
 		self.events = MouseEvents.Dragging
@@ -535,8 +536,8 @@ class SpinHandler(MouseHandler):
 			
 		return data
 
-class ScaleHandler(MouseHandler):
-	''' Zooms a view '''
+class StretchHandler(MouseHandler):
+	''' Stretches/shrinks a view '''
 	
 	MinDistance = 10
 	
@@ -554,7 +555,7 @@ class ScaleHandler(MouseHandler):
 		pivot = px, py
 		
 		xd, yd = x - px, y - py
-		distance = max(ScaleHandler.MinDistance, (xd ** 2 + yd ** 2) ** .5)
+		distance = max(StretchHandler.MinDistance, (xd ** 2 + yd ** 2) ** .5)
 		zoom = view.get_magnification()
 		zoom_ratio = zoom / distance
 		
@@ -568,7 +569,7 @@ class ScaleHandler(MouseHandler):
 		xd, yd = x - px, y - py
 		
 		# Get pivot distance, multiply it by zoom ratio
-		pd = max(ScaleHandler.MinDistance, (xd ** 2 + yd ** 2) ** .5)
+		pd = max(StretchHandler.MinDistance, (xd ** 2 + yd ** 2) ** .5)
 		new_zoom = pd * zoom_ratio
 		
 		view.set_magnification(new_zoom)
@@ -578,12 +579,12 @@ class ScaleHandler(MouseHandler):
 
 class ScrollModes:
 	Normal   = 0 # Your garden variety scrolling
-	Wide     = 1 # Vertical axis scrolls along the largest side
-	Reverse  = 2 # Swtich vertical/horizontal scrolling
-	Thin     = 3 # Vertical axis scrolls along the smallest side
-	InverseH = 4 # Invert H axis value
-	InverseV = 8 # Invert V axis value
-	Inverse  = 12 # Invert axis' values
+	InverseH = 1 # Invert H axis value
+	InverseV = 2 # Invert V axis value
+	Inverse  = 3 # Invert axis' values
+	Swap     = 4 # Swaps vertical/horizontal scrolling
+	Wide     = 8 # Vertical axis scrolls along the largest side
+	Thin     = 12 # Vertical axis scrolls along the smallest side
 	
 class ScrollHandler(MouseHandler):
 	''' Scrolls a view '''
@@ -608,7 +609,7 @@ class ScrollHandler(MouseHandler):
 			if rw > rh:
 				dx, dy = dy, dx
 			
-		if self.mode & ScrollModes.Reverse:
+		if self.mode & ScrollModes.Swap:
 			dx, dy = dy, dx
 		
 		if self.mode & ScrollModes.InverseH:
@@ -638,7 +639,7 @@ class ZoomHandler(MouseHandler):
 		
 	def scroll(self, view, point, direction, data):
 		dx, dy = direction
-		delta = dx if self.mode & ScrollModes.Reverse else dy
+		delta = dx if self.mode & ScrollModes.Swap else dy
 		
 		if not self.mode & ScrollModes.Inverse:
 			delta *= -1
