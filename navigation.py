@@ -24,6 +24,7 @@ class MouseAdapter(GObject.GObject):
 	''' Adapts a widget mouse events '''
 	EventMask = (Gdk.EventMask.BUTTON_PRESS_MASK |
 	             Gdk.EventMask.BUTTON_RELEASE_MASK |
+	             Gdk.EventMask.SCROLL_MASK |
 	             Gdk.EventMask.POINTER_MOTION_MASK |
 	             Gdk.EventMask.POINTER_MOTION_HINT_MASK)
 	
@@ -37,6 +38,7 @@ class MouseAdapter(GObject.GObject):
 		"drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, object, int]),
 		"pression" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
 		"click" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
+		"scroll" : (GObject.SIGNAL_RUN_FIRST, None, [object, object]),
 		"start-dragging" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
 		"stop-dragging" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
 	}
@@ -77,6 +79,7 @@ class MouseAdapter(GObject.GObject):
 				self.__widget_handler_ids = [
 					widget.connect("button-press-event", self._button_press),
 					widget.connect("button-release-event", self._button_release),
+					widget.connect("scroll-event", self._mouse_scroll),
 					widget.connect("motion-notify-event", self._mouse_motion),
 				]
 				
@@ -103,6 +106,7 @@ class MouseAdapter(GObject.GObject):
 		if not self.is_frozen:
 			point = widget.get_pointer()
 			self.emit("pression", point, data.button)
+			print(data.button)
 		
 	def _button_release(self, widget, data):
 		if data.button in self.__pressure:
@@ -116,7 +120,16 @@ class MouseAdapter(GObject.GObject):
 					self.emit("click", point, data.button)
 				
 			del self.__pressure[data.button]
-		
+			
+	def _mouse_scroll(self, widget, data):
+		if not self.is_frozen:
+			point = widget.get_pointer()
+			direction = [
+				(0, -1), (0, 1),
+				(-1, 0), (1, 0)
+			][int(data.direction)]
+			self.emit("scroll", point, direction)
+								
 	def _mouse_motion(self, widget, data):
 		# Motion events are handled idly
 		if not self.__delayed_motion_id:
@@ -150,12 +163,13 @@ class MouseAdapter(GObject.GObject):
 		return False
 		
 class MouseEvents:
-	Nothing  =  0 #0000
-	Hovering =  1 #0001
-	Dragging = 10 #1010
-	Moving   =  3 #0011
-	Pressing =  6 #0110
-	Clicking =  8 #1000
+	Nothing   =  0 #00000
+	Hovering  =  1 #00001
+	Dragging  = 10 #01010
+	Moving    =  3 #00011
+	Pressing  =  6 #00110
+	Clicking  =  8 #01000
+	Scrolling = 16 #10000
 	
 class MetaMouseHandler:
 	''' Handles mouse events from mouse adapters for mouse handlers '''
@@ -166,6 +180,7 @@ class MetaMouseHandler:
 		self.__pression_handlers = set()
 		self.__hovering_handlers = set()
 		self.__dragging_handlers = set()
+		self.__scrolling_handlers = set()
 		self.__button_handlers = dict()
 		
 	def add(self, handler):
@@ -189,6 +204,9 @@ class MetaMouseHandler:
 				self.__button_handlers[button].discard(handler)
 	
 	def __get_handler_sets(self, handler):
+		if handler.handles_scrolling:
+			yield self.__scrolling_handlers
+			
 		if handler.handles_pressing:
 			yield self.__pression_handlers
 			
@@ -203,6 +221,7 @@ class MetaMouseHandler:
 			signals = [
 				adapter.connect("motion", self._motion),
 				adapter.connect("pression", self._pression),
+				adapter.connect("scroll", self._scroll),
 				adapter.connect("start-dragging", self._start_dragging),
 				adapter.connect("drag", self._drag),
 				adapter.connect("stop-dragging", self._stop_dragging),
@@ -235,6 +254,11 @@ class MetaMouseHandler:
 			data = function(widget, *(params + (data,)))
 			if data:
 				self.__handlers[a_handler][adapter] = data
+	
+	def _scroll(self, adapter, point, direction):
+		if self.__scrolling_handlers:
+			self.__basic_event_dispatch(adapter, self.__scrolling_handlers,
+			                            "scroll", point, direction)
 	
 	def _motion(self, adapter, to_point, from_point):
 		if adapter.is_pressed():
@@ -290,6 +314,10 @@ class MouseHandler:
 		self.buttons = []
 		
 	@property
+	def handles_scrolling(self):
+		return self.events & MouseEvents.Scrolling == MouseEvents.Scrolling
+		
+	@property
 	def handles_pressing(self):
 		return self.events & MouseEvents.Pressing == MouseEvents.Pressing
 		
@@ -301,6 +329,9 @@ class MouseHandler:
 	def handles_dragging(self):
 		return self.events & MouseEvents.Dragging == MouseEvents.Dragging
 	
+	def scroll(self, widget, point, direction, data):
+		pass
+		
 	def press(self, widget, point, data):
 		pass
 	
@@ -545,6 +576,54 @@ class ScaleHandler(MouseHandler):
 		
 		return data
 
+class ScrollModes:
+	Normal   = 0 # Your garden variety scrolling
+	Wide     = 1 # Vertical axis scrolls along the largest side
+	Reverse  = 2 # Swtich vertical/horizontal scrolling
+	Thin     = 3 # Vertical axis scrolls along the smallest side
+	InverseH = 4 # Invert H axis value
+	InverseV = 8 # Invert V axis value
+	Inverse  = 12 # Invert axis' values
+	
+class ScrollHandler(MouseHandler):
+	''' Scrolls a view '''
+	
+	def __init__(self, mode=ScrollModes.Normal, factor=0.3):
+		MouseHandler.__init__(self)
+		self.events = MouseEvents.Scrolling
+		self.factor = factor
+		self.mode = mode
+		
+	def scroll(self, view, point, direction, data):
+		w, h = view.get_allocated_width(), view.get_allocated_height()
+		dx, dy = direction
+		
+		hadjust, vadjust = view.get_hadjustment(), view.get_vadjustment()
+		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
+		if (self.mode & ScrollModes.Wide):
+			bw = hadjust.get_upper() - hadjust.get_lower()
+			bh = vadjust.get_upper() - vadjust.get_lower()
+		
+			rw, rh = bw / vw, bh / vh
+			if rw > rh:
+				dx, dy = dy, dx
+			
+		if self.mode & ScrollModes.Reverse:
+			dx, dy = dy, dx
+		
+		if self.mode & ScrollModes.InverseH:
+			dx = -dx
+			
+		if self.mode & ScrollModes.InverseV:
+			dy = -dy
+		
+		sx, sy = dx * vw * self.factor, dy * vh * self.factor
+				
+		x = hadjust.get_value()
+		y = vadjust.get_value()
+		
+		view.adjust_to(x + sx, y + sy)
+		
 # This file is not full of avatar references.
 NaviList = []
 
