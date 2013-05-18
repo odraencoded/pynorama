@@ -623,7 +623,42 @@ class ScrollHandler(MouseHandler):
 		y = vadjust.get_value()
 		
 		view.adjust_to(x + sx, y + sy)
+
+class ZoomHandler(MouseHandler):
+	''' Zooms a view '''
+	
+	def __init__(self, minify_anchor=None, magnify_anchor=None,
+	             mode=ScrollModes.Normal, power=2):
+	             
+		MouseHandler.__init__(self)
+		self.events = MouseEvents.Scrolling
+		self.power = power
+		self.mode = mode
+		self.anchors = minify_anchor, magnify_anchor
 		
+	def scroll(self, view, point, direction, data):
+		dx, dy = direction
+		delta = dx if self.mode & ScrollModes.Reverse else dy
+		
+		if not self.mode & ScrollModes.Inverse:
+			delta *= -1
+		
+		if self.power and delta:
+			anchor = self.anchors[0 if delta < 0 else 1]
+			if anchor:
+				w, h = view.get_allocated_width(), view.get_allocated_height()
+				anchor_point = anchor[0] * w, anchor[1] * h
+			else:
+				anchor_point = point
+			
+			pin = view.get_pin(anchor_point)
+			
+			zoom = view.get_magnification()
+			zoom *= self.power ** delta
+			view.set_magnification(zoom)
+			
+			view.adjust_to_pin(pin)
+
 # This file is not full of avatar references.
 NaviList = []
 
