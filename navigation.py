@@ -106,7 +106,6 @@ class MouseAdapter(GObject.GObject):
 		if not self.is_frozen:
 			point = widget.get_pointer()
 			self.emit("pression", point, data.button)
-			print(data.button)
 		
 	def _button_release(self, widget, data):
 		if data.button in self.__pressure:
@@ -660,6 +659,38 @@ class ZoomHandler(MouseHandler):
 			
 			view.adjust_to_pin(pin)
 
+class GearHandler(MouseHandler):
+	''' Spins a view with each scroll tick '''
+	
+	def __init__(self, anchor=None, mode=ScrollModes.Normal, effect=45):
+	             
+		MouseHandler.__init__(self)
+		self.events = MouseEvents.Scrolling
+		self.anchor = anchor
+		self.mode = mode
+		self.effect = effect
+		
+	def scroll(self, view, point, direction, data):
+		dx, dy = direction
+		delta = dx if self.mode & ScrollModes.Swap else dy
+		
+		if not self.mode & ScrollModes.Inverse:
+			delta *= -1
+			
+		if self.anchor:
+			w, h = view.get_allocated_width(), view.get_allocated_height()
+			anchor_point = self.anchor[0] * w, self.anchor[1] * h
+		else:
+			anchor_point = point
+			
+		pin = view.get_pin(anchor_point)
+		
+		angle = view.get_rotation()
+		angle += self.effect * delta
+		view.set_rotation(angle)
+		
+		view.adjust_to_pin(pin)
+		
 # This file is not full of avatar references.
 NaviList = []
 
