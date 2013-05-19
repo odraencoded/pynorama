@@ -41,7 +41,7 @@ class Dialog(Gtk.Dialog):
 		tabs_align.show_all()
 		
 		# Create tabs
-		tab_labels = [_("Panning"), _("View")]
+		tab_labels = [_("View")]
 		tab_grids = []
 		for a_tab_label in tab_labels:
 			a_tab_align = Gtk.Alignment()
@@ -53,47 +53,7 @@ class Dialog(Gtk.Dialog):
 			tabs.append_page(a_tab_align, Gtk.Label(a_tab_label))
 			tab_grids.append(a_tab_grid)
 		
-		pan_grid, view_grid = tab_grids
-		
-		# Setup navigator tab				
-		self.nav_book = Gtk.Notebook()
-		self.nav_book.set_show_tabs(False)
-		self.nav_book.set_show_border(False)
-		self.nav_selection = Gtk.ComboBoxText()
-		self.nav_selection.set_hexpand(True)
-		self.navi_widgets = []
-		self.navigators = []
-		
-		# Load navi widgets and names
-		for navi in navigation.NaviList:
-			name = navi.get_name()
-			label = Gtk.Label(name)
-			widgets = navi.get_settings_widgets()
-			
-			self.nav_book.append_page(widgets, label)
-			self.nav_selection.append_text(name)
-			self.navigators.append(navi)
-		
-		# Add navi selection widgets
-		self.nav_selection.connect("changed", self.refresh_nav_book)	
-		self.nav_enabler = Gtk.CheckButton(_("Enable mouse panning"))
-		
-		# If the navi_factory is none, then navi aided panning is disabled.
-		current_navi = self.app.navi_factory		
-		if current_navi is None:
-			self.nav_enabler.set_active(False)
-			self.nav_selection.set_active(0)
-		else:
-			self.nav_enabler.set_active(True)
-			self.nav_selection.set_active(self.navigators.index(current_navi))
-			
-		nav_mode_label = Gtk.Label(_("Mouse panning mode"))
-		pan_grid.attach(nav_mode_label, 0, 0, 1, 1)
-		pan_grid.attach(self.nav_selection, 1, 0, 1, 1)
-		pan_grid.attach(self.nav_enabler, 2, 0, 1, 1)
-		pan_grid.attach(Gtk.Separator.new(Gtk.Orientation.HORIZONTAL),
-		                0, 1, 3, 1)
-		pan_grid.attach(self.nav_book, 0, 2, 3, 1)
+		view_grid = tab_grids[0]
 		
 		# Setup view tab		
 		point_label = Gtk.Label(_("Default scrollbar adjustment"))
@@ -153,7 +113,6 @@ class Dialog(Gtk.Dialog):
 		self.zoom_effect.set_digits(2)
 		
 		tabs.show_all()
-		self.refresh_nav_book()
 		
 	def create_widget_group(self, *widgets):
 		alignment = Gtk.Alignment()
@@ -166,24 +125,8 @@ class Dialog(Gtk.Dialog):
 			box.pack_start(a_widget, False, False, 3)
 			
 		return alignment
-		
-	def refresh_nav_book(self, data=None):
-		active_page = self.nav_selection.get_active()
-		if active_page >= 0:
-			self.nav_book.set_current_page(active_page)
 			
-	def save_prefs(self):
-		# Go through all pages to get the "widgets" and tell them to save themselves
-		for the_n in range(self.nav_book.get_n_pages()):
-			self.nav_book.get_nth_page(the_n).save_settings()
-			
-		if self.nav_enabler.get_active():
-			selected_navi = self.navigators[self.nav_selection.get_active()]
-		else:
-			selected_navi = None
-		# Maybe I should reattach the same navigator, maybe not
-		self.app.set_navi_factory(selected_navi)
-		
+	def save_prefs(self):		
 		rotation_effect = self.spin_effect.get_value()
 		zoom_effect = self.zoom_effect.get_value()
 		default_h, default_v =  [adjust.get_value() for adjust \
@@ -198,28 +141,12 @@ class Dialog(Gtk.Dialog):
 		Settings.set_double("zoom-effect", zoom_effect)
 		Settings.set_int("rotation-effect", rotation_effect)
 		
-		if selected_navi is None:
-			Settings.set_boolean("navi-aided-panning", False)
-		else:
-			Settings.set_boolean("navi-aided-panning", True)
-			Settings.set_string("navi-codename", selected_navi.get_codename())
-		
 def load_into_app(app):
 	default_h = Settings.get_double("start-horizontal-position")
 	default_v = Settings.get_double("start-vertical-position")
 	app.default_position = default_h, default_v
 	app.zoom_effect = Settings.get_double("zoom-effect")
 	app.spin_effect = Settings.get_int("rotation-effect")
-	
-	preferred_navi = None
-	use_navi = Settings.get_boolean("navi-aided-panning")
-	if use_navi:
-		preferred_codename = Settings.get_string("navi-codename")
-		for navi in navigation.NaviList:
-			if navi.get_codename() == preferred_codename:
-				preferred_navi = navi
-				             
-	app.set_navi_factory(preferred_navi)
 	
 def load_into_window(window):
 	sort_auto = Settings.get_boolean("sort-auto")
