@@ -36,21 +36,30 @@ class ImageViewer(Gtk.Application):
 		self.zoom_effect = 2
 		self.spin_effect = 90
 		self.default_position = .5, .5
-		self.navi_factory = navigation.DragNavi
 		self.memory_check_queued = False
+		self.meta_mouse_handler = navigation.MetaMouseHandler()
 		
 	def do_startup(self):
 		Gtk.Application.do_startup(self)
 		
 		preferences.load_into_app(self)
 		
+		drag_handler = navigation.DragHandler(-1)
+		hover_handler = navigation.HoverHandler(0.2)
+		scroll_handler = navigation.ScrollHandler(navigation.ScrollModes.Wide)
+		spin_handler = navigation.SpinHandler()
+		stretch_handler = navigation.StretchHandler((.5, .5))
+		
+		self.meta_mouse_handler.add(scroll_handler)
+		self.meta_mouse_handler.add(hover_handler)
+		self.meta_mouse_handler.add(drag_handler, Gdk.BUTTON_PRIMARY)
+		self.meta_mouse_handler.add(spin_handler, Gdk.BUTTON_SECONDARY)
+		self.meta_mouse_handler.add(stretch_handler, Gdk.BUTTON_MIDDLE)
+		
 		self.memory = loading.Memory()
 		self.memory.connect("thing-requested", self.queue_memory_check)
 		self.memory.connect("thing-unused", self.queue_memory_check)
 		self.memory.connect("thing-unlisted", self.queue_memory_check)
-		
-		for navi in navigation.NaviList:
-			navi.load_settings()
 			
 		Gtk.Window.set_default_icon_name("pynorama")
 		
@@ -63,7 +72,10 @@ class ImageViewer(Gtk.Application):
 			# Create a window and return it
 			a_window = ViewerWindow(self)
 			a_window.show()
-			a_window.set_navigator(self.navi_factory)
+			image_view = a_window.imageview
+			image_view.mouse_adapter = navigation.MouseAdapter(image_view)
+			self.meta_mouse_handler.attach(image_view.mouse_adapter)
+			
 			fillscreen = preferences.Settings.get_boolean("start-fullscreen")
 			a_window.set_fullscreen(fillscreen)
 			return a_window
@@ -199,13 +211,7 @@ class ImageViewer(Gtk.Application):
 	def load_pixels(self, pixels):
 		pixelated_image = loading.ImageDataNode(pixels, "Pixels")
 		return [pixelated_image]
-		
-	def set_navi_factory(self, navi_factory):
-		self.navi_factory = navi_factory
-		for a_window in self.get_windows():
-			if a_window.navi_mode != navi_factory:
-				a_window.set_navigator(navi_factory)
-	
+			
 class ViewerWindow(Gtk.ApplicationWindow):
 	def __init__(self, app):
 		Gtk.ApplicationWindow.__init__(self,
@@ -232,8 +238,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.auto_zoom_zoom_modified = False
 		self.autosort = True
 		self.reverse_sort = False
-		self.navigator = None
-		self.navi_mode = None
 		self.ordering_modes = [
 			organization.Ordering.ByName,
 			organization.Ordering.ByCharacters,
@@ -325,8 +329,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		target_list.add_uri_targets(DND_URI_LIST)
 		
 		self.imageview.drag_dest_set_target_list(target_list)
-		self.imageview.add_events(Gdk.EventMask.SCROLL_MASK)
-		self.imageview.connect("scroll-event", self.imageview_scrolling)
+		'''self.imageview.add_events(Gdk.EventMask.SCROLL_MASK)
+		self.imageview.connect("scroll-event", self.imageview_scrolling)'''
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
 		preferences.load_into_window(self)
@@ -1209,17 +1213,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def sort_images(self):
 		self.image_list.sort(self.active_ordering)
 		self.refresh_index()
-	
-	def set_navigator(self, navi_factory):
-		if self.navigator is not None:
-			self.navigator.detach()
-		
-		self.navi_mode = navi_factory
-		if navi_factory:
-			self.navigator = navi_factory.create(self.imageview)
-		else:
-			self.navigator = None
-	
+			
 	def get_enable_auto_sort(self):
 		return self.actions.get_action("sort-auto").get_active()
 	def set_enable_auto_sort(self, value):
