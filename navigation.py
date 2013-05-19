@@ -178,13 +178,13 @@ class MouseAdapter(GObject.GObject):
 		return False
 		
 class MouseEvents:
-	Nothing   =  0 #00000
-	Hovering  =  1 #00001
-	Dragging  = 10 #01010
-	Moving    =  3 #00011
-	Pressing  =  6 #00110
-	Clicking  =  8 #01000
-	Scrolling = 16 #10000
+	Nothing   =  0 #000000
+	Moving    =  3 #000011
+	Hovering  =  1 #000001
+	Pressing  = 22 #010110
+	Dragging  = 14 #001110
+	Clicking  = 20 #010100
+	Scrolling = 32 #100000
 	
 class MetaMouseHandler:
 	''' Handles mouse events from mouse adapters for mouse handlers '''
@@ -198,37 +198,44 @@ class MetaMouseHandler:
 		self.__scrolling_handlers = set()
 		self.__button_handlers = dict()
 		
-	def add(self, handler):
+	def add(self, handler, button=None):
 		if not handler in self.__handlers:
+			if handler.needs_button:
+				if button:
+					button_set = self.__button_handlers.get(button, set())
+					button_set.add(handler)
+					self.__button_handlers[button] = button_set
+					
+				else:
+					raise ValueError
+					
+			elif button:
+				raise ValueError
+				
 			self.__handlers[handler] = dict()
 			for handler_set in self.__get_handler_sets(handler):
 				handler_set.add(handler)
-			
-			for button in handler.buttons:
-				button_set = self.__button_handlers.get(button, set())
-				button_set.add(handler)
-				self.__button_handlers[button] = button_set
-			
+				
 	def remove(self, handler):
 		if handler in self.__handlers:
 			del self.__handlers[handler]
 			for handler_set in self.__get_handler_sets(handler):
 				handler_set.discard(handler)
 			
-			for button in handler.buttons:
-				self.__button_handlers[button].discard(handler)
+			for a_button_set in self.__button_handlers.values():
+				a_button_set.discard(handler)
 	
 	def __get_handler_sets(self, handler):
-		if handler.handles_scrolling:
+		if handler.handles(MouseEvents.Scrolling):
 			yield self.__scrolling_handlers
 			
-		if handler.handles_pressing:
+		if handler.handles(MouseEvents.Pressing):
 			yield self.__pression_handlers
 			
-		if handler.handles_hovering:
+		if handler.handles(MouseEvents.Hovering):
 			yield self.__hovering_handlers
 			
-		if handler.handles_dragging:
+		if handler.handles(MouseEvents.Dragging):
 			yield self.__dragging_handlers
 				
 	def attach(self, adapter):
@@ -326,24 +333,16 @@ class MouseHandler:
 	
 	def __init__(self):
 		self.events = MouseEvents.Nothing
-		self.buttons = []
 		
+	def handles(self, event_type):
+		return self.events & event_type == event_type \
+		       if event_type != MouseEvents.Nothing \
+		       else not bool(self.events)
+		       
 	@property
-	def handles_scrolling(self):
-		return self.events & MouseEvents.Scrolling == MouseEvents.Scrolling
+	def needs_button(self):
+		return bool(self.events & MouseEvents.Pressing)
 		
-	@property
-	def handles_pressing(self):
-		return self.events & MouseEvents.Pressing == MouseEvents.Pressing
-		
-	@property
-	def handles_hovering(self):
-		return self.events & MouseEvents.Hovering == MouseEvents.Hovering
-	
-	@property
-	def handles_dragging(self):
-		return self.events & MouseEvents.Dragging == MouseEvents.Dragging
-	
 	def scroll(self, widget, point, direction, data):
 		pass
 		
@@ -389,7 +388,6 @@ class DragHandler(HoverHandler):
 	def __init__(self, speed=-1.0, magnify=False):
 		HoverHandler.__init__(self, speed, magnify)
 		self.events = MouseEvents.Dragging
-		self.buttons = [1]
 		
 	def start_dragging(self, view, *etc):
 		fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
@@ -407,7 +405,6 @@ class MapHandler(MouseHandler):
 	    "S" being the boundaries of the viewing widget model: C = H / B * S '''
 	def __init__(self, margin=32, mapping_mode="proportional"):
 		MouseHandler.__init__(self)
-		self.buttons = [1]
 		self.events = MouseEvents.Pressing
 		self.mapping_mode = mapping_mode
 		self.margin = margin
@@ -498,7 +495,6 @@ class SpinHandler(MouseHandler):
 	
 	def __init__(self, frequency=1, fixed_pivot=None):
 		MouseHandler.__init__(self)
-		self.buttons = [3]
 		self.events = MouseEvents.Dragging
 		# Number of complete turns in the view per revolution around the pivot
 		self.frequency = frequency 
@@ -558,7 +554,6 @@ class StretchHandler(MouseHandler):
 	
 	def __init__(self, pivot=(.5, .5)):
 		MouseHandler.__init__(self)
-		self.buttons = [2]
 		self.events = MouseEvents.Dragging
 		self.pivot = pivot
 		
