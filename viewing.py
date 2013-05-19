@@ -456,7 +456,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def get_rotation(self):
 		return self.rotation
 	def set_rotation(self, value):
-		self.rotation = value
+		self.rotation = value % 360
 		
 	def get_flip(self):
 		return self.flip
