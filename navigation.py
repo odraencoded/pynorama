@@ -25,6 +25,9 @@ class MouseAdapter(GObject.GObject):
 	EventMask = (Gdk.EventMask.BUTTON_PRESS_MASK |
 	             Gdk.EventMask.BUTTON_RELEASE_MASK |
 	             Gdk.EventMask.SCROLL_MASK |
+	             Gdk.EventMask.SMOOTH_SCROLL_MASK |
+	             Gdk.EventMask.PROXIMITY_IN_MASK |
+	             Gdk.EventMask.PROXIMITY_OUT_MASK |
 	             Gdk.EventMask.POINTER_MOTION_MASK |
 	             Gdk.EventMask.POINTER_MOTION_HINT_MASK)
 	
@@ -32,7 +35,7 @@ class MouseAdapter(GObject.GObject):
 	# +15 should dispatch events after resizing and before redrawing
 	# TODO: Figure out whether that is a good idea
 	IdlePriority = GLib.PRIORITY_HIGH_IDLE + 15
-	            
+	
 	__gsignals__ = {
 		"motion" : (GObject.SIGNAL_RUN_FIRST, None, [object, object]),
 		"drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, object, int]),
@@ -104,7 +107,7 @@ class MouseAdapter(GObject.GObject):
 	def _button_press(self, widget, data):
 		self.__pressure.setdefault(data.button, 1)
 		if not self.is_frozen:
-			point = widget.get_pointer()
+			point = data.x, data.y
 			self.emit("pression", point, data.button)
 		
 	def _button_release(self, widget, data):
@@ -112,7 +115,7 @@ class MouseAdapter(GObject.GObject):
 			if not self.is_frozen:
 				button_pressure = self.__pressure.get(data.button, 0)
 				if button_pressure:
-					point = widget.get_pointer()
+					point = data.x, data.y
 					if button_pressure == 2:
 						self.emit("stop-dragging", point, data.button)
 					
@@ -122,18 +125,28 @@ class MouseAdapter(GObject.GObject):
 			
 	def _mouse_scroll(self, widget, data):
 		if not self.is_frozen:
-			point = widget.get_pointer()
-			direction = [
-				(0, -1), (0, 1),
-				(-1, 0), (1, 0)
-			][int(data.direction)]
-			self.emit("scroll", point, direction)
+			point = data.x, data.y
+			# I don't have one of those cool mice with smooth scrolling
+			got_delta, xd, yd = data.get_scroll_deltas()
+			if not got_delta:
+				# So I'm not sure this is how it maps
+				got_direction, direction = data.get_scroll_direction()
+				if got_direction:
+					xd, yd = [
+						(0, -1), (0, 1),
+						(-1, 0), (1, 0)
+					][int(data.direction)] # it is [Up, right, down, left]
+					got_delta = True
+			
+			if got_delta:
+				self.emit("scroll", point, (xd, yd))
 								
 	def _mouse_motion(self, widget, data):
 		# Motion events are handled idly
+		self.__current_point = data.x, data.y
 		if not self.__delayed_motion_id:
 			if not self.__from_point:
-				self.__from_point = widget.get_pointer()
+				self.__from_point = self.__current_point
 				
 			self.__delayed_motion_id = GLib.idle_add(
 			                                self.__delayed_motion, widget,
@@ -143,22 +156,25 @@ class MouseAdapter(GObject.GObject):
 		self.__delayed_motion_id = None
 		
 		if not self.is_frozen:
-			point = widget.get_pointer()
-			if self.__from_point != point:
+			# You got to love tuple comparation
+			if self.__from_point != self.__current_point:
 				for button, pressure in self.__pressure.items():
 					if pressure == 1:
 						self.__pressure[button] = 2
-						self.emit("start-dragging", point, button)
+						self.emit("start-dragging",
+						          self.__current_point, button)
 						
 					if pressure:
-						self.emit("pression", point, button)
+						self.emit("pression", self.__current_point, button)
 				
-				self.emit("motion", point, self.__from_point)
+				self.emit("motion", self.__current_point, self.__from_point)
 				for button, pressure in self.__pressure.items():
 					if pressure == 2:
-						self.emit("drag", point, self.__from_point, button)
+						self.emit("drag",
+						          self.__current_point, self.__from_point,
+						          button)
 				
-		self.__from_point = point
+		self.__from_point = self.__current_point
 		return False
 		
 class MouseEvents:
