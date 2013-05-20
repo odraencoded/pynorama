@@ -43,7 +43,13 @@ def spin(point, r):
 	rx = x * math.cos(r) - y * math.sin(r)
 	ry = x * math.sin(r) + y * math.cos(r)
 	return rx, ry
+
+def is_tall(point):
+	return point[0] < point[1]
 	
+def is_wide(point):
+	return point[0] > point[1]
+
 class Rectangle:
 	def __init__(self, left=0, top=0, width=0, height=0):
 		self.left = left
