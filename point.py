@@ -50,6 +50,9 @@ def is_tall(point):
 def is_wide(point):
 	return point[0] > point[1]
 
+def length(point):
+	return (point[0] ** 2 + point[1] ** 2) ** .5
+
 class Rectangle:
 	def __init__(self, left=0, top=0, width=0, height=0):
 		self.left = left
