@@ -65,6 +65,9 @@ class Rectangle:
 	def bottom(self):
 		return self.top + self.height
 	
+	def to_tuple(self):
+		return self.left, self.top, self.width, self.height
+	
 	def copy(self):
 		return Rectangle(self.left, self.top, self.width, self.height)
 		
