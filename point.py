@@ -28,6 +28,9 @@ def subtract(a, b):
 	
 def multiply(a, b):
 	return a[0] * b[0], a[1] * b[1]
+		
+def divide(a, b):
+	return a[0] / b[0], a[1] / b[1]
 
 def flip(point, h, v):
 	return point[0] * (-1 if h else 1), point[1] * (-1 if v else 1)
