@@ -416,6 +416,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				 _("Inverts the left and right sides of the image"), None),
 				("flip-v", _("Flip _Vertically"),
 				 _("Inverts the top and bottom sides of the image"), None),
+				("transform-reset", _("Re_set"),
+				 _("Resets rotation and flip"), None),
 			# Interpolation submenu
 			("interpolation", _("Inter_polation"), None, None),
 				("interp-nearest", _("_Nearest Neighbour Filter"), _(""), None),
@@ -475,6 +477,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"rotate-ccw" : (lambda data: self.rotate_view(-1),),
 			"flip-h" : (lambda data: self.flip_view(False),),
 			"flip-v" : (lambda data: self.flip_view(True),),
+			"transform-reset" : (lambda data: self.reset_view_transform(),),
 			"interp-nearest" : (self.change_interp,), # For group
 			"ui-toolbar" : (self.change_interface,),
 			"ui-statusbar" : (self.change_interface,),
@@ -811,7 +814,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		self.set_view_flip(hflip, vflip)
 		
-		
 	def rotate_view(self, effect):
 		''' Rotates the viewport '''
 		change = self.app.spin_effect * effect
@@ -821,6 +823,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if change:
 			new_rotation = self.imageview.get_rotation() + change
 			self.set_view_rotation(new_rotation % 360)
+	
+	def reset_view_transform(self):
+		self.set_view_flip(False, False)
+		self.set_view_rotation(0)
 	
 	def auto_zoom(self):
 		''' Zooms automatically!
@@ -1368,6 +1374,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				<separator />
 				<menuitem action="flip-h" />
 				<menuitem action="flip-v" />
+				<separator />
+				<menuitem action="transform-reset" />
 			</menu>
 			<menu action="interpolation">
 				<menuitem action="interp-nearest" />
