@@ -18,7 +18,7 @@
 from gi.repository import Gtk, Gdk, GLib, GObject
 from gettext import gettext as _
 import math, time
-import preferences
+import point
 
 class MouseAdapter(GObject.GObject):
 	''' Adapts a widget mouse events '''
@@ -368,17 +368,14 @@ class HoverHandler(MouseHandler):
 		self.events = MouseEvents.Hovering
 	
 	def hover(self, view, to_point, from_point, data):
-		(tx, ty), (fx, fy) = to_point, from_point
-		dx, dy = tx - fx, ty - fy
+		shift = point.subtract(to_point, from_point)
 		
 		scale = self.speed
 		if not self.magnify_speed:
 			scale /= view.get_magnification()
-		sx, sy = dx * scale, dy * scale
 		
-		ax = view.get_hadjustment().get_value()
-		ay = view.get_vadjustment().get_value()
-		view.adjust_to(ax + sx, ay + sy)
+		scaled_shift = point.scale(shift, scale)
+		view.pan(scaled_shift)
 
 class DragHandler(HoverHandler):
 	''' Pans a view on mouse dragging '''
@@ -555,30 +552,26 @@ class StretchHandler(MouseHandler):
 		self.events = MouseEvents.Dragging
 		self.pivot = pivot
 		
-	def start_dragging(self, view, point, data):
-		w, h = view.get_allocated_width(), view.get_allocated_height()
-		x, y = point
-		sx, sy = self.pivot
-		px, py = sx * w, sy * h
-		pivot = px, py
+	def start_dragging(self, view, start_point, data):
+		widget_size = view.get_widget_size()
+		widget_pivot = point.multiply(self.pivot, widget_size)
 		
-		xd, yd = x - px, y - py
-		distance = max(StretchHandler.MinDistance, (xd ** 2 + yd ** 2) ** .5)
+		start_diff = point.subtract(start_point, widget_pivot)
+		distance = max(StretchHandler.MinDistance, point.length(start_diff))
+		
 		zoom = view.get_magnification()
 		zoom_ratio = zoom / distance
 		
-		return zoom_ratio, pivot, view.get_pin(pivot)
+		return zoom_ratio, widget_pivot, view.get_pin(widget_pivot)
 	
 	def drag(self, view, to_point, from_point, data):
-		zoom_ratio, pivot, pin = data
+		zoom_ratio, widget_pivot, pin = data
 		
 		# Get vectors from the pivot
-		(x, y), (px, py) = to_point, pivot
-		xd, yd = x - px, y - py
+		point_diff = point.subtract(to_point, widget_pivot)
+		distance = max(StretchHandler.MinDistance, point.length(point_diff))
 		
-		# Get pivot distance, multiply it by zoom ratio
-		pd = max(StretchHandler.MinDistance, (xd ** 2 + yd ** 2) ** .5)
-		new_zoom = pd * zoom_ratio
+		new_zoom = distance * zoom_ratio
 		
 		view.set_magnification(new_zoom)
 		view.adjust_to_pin(pin)
@@ -597,42 +590,44 @@ class ScrollModes:
 class ScrollHandler(MouseHandler):
 	''' Scrolls a view '''
 	
-	def __init__(self, mode=ScrollModes.Normal, factor=0.3):
+	def __init__(self, mode=ScrollModes.Normal, factor=0.3, rotate=False):
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
 		self.factor = factor
 		self.mode = mode
+		self.rotate = rotate
 		
-	def scroll(self, view, point, direction, data):
-		w, h = view.get_allocated_width(), view.get_allocated_height()
-		dx, dy = direction
+	def scroll(self, view, position, direction, data):
+		xd, yd = direction
 		
-		hadjust, vadjust = view.get_hadjustment(), view.get_vadjustment()
-		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
-		if (self.mode & ScrollModes.Wide):
-			bw = hadjust.get_upper() - hadjust.get_lower()
-			bh = vadjust.get_upper() - vadjust.get_lower()
+		view_size = view.get_view()[2:]
 		
-			rw, rh = bw / vw, bh / vh
-			if rw > rh:
-				dx, dy = dy, dx
+		if self.rotate:
+			xd, yd = point.spin((xd, yd), view.get_rotation_radians())
+			scroll_along_size = view.get_frames_outline()[2:]
+			
+		else:
+			scroll_along_size = view.get_boundary()[2:]
+				
+		if self.mode & ScrollModes.Wide:
+			unviewed_ratio = point.divide(scroll_along_size, view_size)
+			
+			if point.is_wide(unviewed_ratio):
+				xd, yd = yd, xd
 			
 		if self.mode & ScrollModes.Swap:
-			dx, dy = dy, dx
+			xd, yd = yd, xd
 		
 		if self.mode & ScrollModes.InverseH:
-			dx = -dx
+			xd = -xd
 			
 		if self.mode & ScrollModes.InverseV:
-			dy = -dy
+			yd = -yd
 		
-		sx, sy = dx * vw * self.factor, dy * vh * self.factor
-				
-		x = hadjust.get_value()
-		y = vadjust.get_value()
+		scaled_view_size = point.scale(view_size, self.factor)
+		scaled_shift = point.multiply((xd, yd), scaled_view_size)
+		view.pan(scaled_shift)
 		
-		view.adjust_to(x + sx, y + sy)
-
 class ZoomHandler(MouseHandler):
 	''' Zooms a view '''
 	

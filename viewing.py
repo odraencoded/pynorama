@@ -88,6 +88,22 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			self.queue_draw()
 									
 	# --- view manipulation down this line --- #
+	def pan(self, direction):
+		self.adjust_to(*point.add(self.get_adjustment(), direction))
+	
+	def rotate(self, degrees):
+		self.set_rotation(self.get_rotation() + degrees)
+	
+	def magnify(self, scale):
+		self.set_magnification(self.get_magnification() * magnification)
+		
+	def flip(self, vertical):
+		hflip, vflip = self.get_flip()
+		if vertical:
+			self.set_flip((hflip, not vflip))
+		else:
+			self.set_flip((not hflip, vflip))
+	
 	def adjust_to_pin(self, pin):
 		''' Adjusts the view so that the same widget point in the pin can be
 		    converted to the same absolute point in the pin '''
@@ -157,19 +173,12 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		self.__obsolete_offset = True
 		self.queue_draw()
 		
-	def flip(self, vertical):
-		hflip, vflip = self.get_flip()
-		if vertical:
-			self.set_flip((hflip, not vflip))
-		else:
-			self.set_flip((not hflip, vflip))
-			
 	# --- getter/setters down this line --- #
 	def get_pin(self, widget_point=None):
 		''' Gets a pin for readjusting the view to a point in the widget
 		    after any transformations '''
 		    
-		size = self.get_size()
+		size = self.get_widget_size()
 		if not widget_point:
 			widget_point = point.multiply(point.center, size)
 			         		
@@ -184,7 +193,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		    of the widget '''
 		
 		x, y = self.get_pointer()
-		w, h = self.get_size()
+		w, h = self.get_widget_size()
 		if 0 <= x < w and 0 <= y < h:
 			return x, y
 		else:
@@ -215,10 +224,34 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			y *= -1
 			
 		return (x, y)
+				         
+	def get_view(self):
+		hadjust, vadjust = self.get_hadjustment(), self.get_vadjustment()
+		return (hadjust.get_value() if hadjust else 0,
+		        vadjust.get_value() if vadjust else 0,
+		        hadjust.get_page_size() if hadjust else 1,
+		        vadjust.get_page_size() if vadjust else 1)
 	
-	def get_size(self):
+	def get_boundary(self):
+		hadjust, vadjust = self.get_hadjustment(), self.get_vadjustment()
+		return (hadjust.get_lower() if hadjust else 0,
+		        vadjust.get_lower() if vadjust else 0,
+		        hadjust.get_upper() - hadjust.get_lower() if hadjust else 1,
+		        vadjust.get_upper() - hadjust.get_lower() if vadjust else 1)
+		        
+	def get_frames_outline(self):
+		return self.outline.to_tuple()
+		
+	def get_widget_size(self):
 		return self.get_allocated_width(), self.get_allocated_height()
 	
+	def get_adjustment(self):
+		hadjust, vadjust = self.get_hadjustment(), self.get_vadjustment()
+		return (hadjust.get_value() if hadjust else 0,
+		        vadjust.get_value() if vadjust else 0)
+	def get_rotation_radians(self):
+		return self.get_rotation() / 180 * math.pi * -1
+		
 	def get_magnified_width(self):
 		return self.get_allocated_width() / self.get_magnification()
 		
