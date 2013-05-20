@@ -16,6 +16,10 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
     
 import math
+zero = 0, 0
+center = .5, .5
+one = 1, 1
+
 def add(a, b):
 	return a[0] + b[0], a[1] + b[1]
 	
