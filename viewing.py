@@ -17,6 +17,7 @@
 
 import math
 from gi.repository import Gtk, Gdk, GdkPixbuf, GObject
+import point
 import cairo
 
 # Quite possibly the least badly designed class in the whole program.
@@ -32,7 +33,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		Gtk.DrawingArea.__init__(self)
 		
 		self.__frames = set()
-		self.the_big_frame = Rectangle()
+		self.the_big_frame = point.Rectangle()
 		self.need_computing = False
 		
 		self.offset = 0, 0
@@ -95,7 +96,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		fl, ft = fx - fw / 2, fy - fh / 2
 		
 		x, y = rx * fw + fl, ry * fh + ft
-		x, y = spin_point(x, y, self.get_rotation() / 180 * math.pi)
+		x, y = point.spin((x, y), self.get_rotation() / 180 * math.pi)
 		
 		self.adjust_to(x - vw * rx, y - vh * ry)
 	
@@ -160,7 +161,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		
 		rotation = self.get_rotation()
 		if rotation:
-			x, y = spin_point(x, y, rotation / 180 * math.pi * -1)
+			x, y = point.spin((x, y), rotation / 180 * math.pi * -1)
 		
 		hflip, vflip = self.get_flip()
 		if hflip:
@@ -198,7 +199,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		
 		rotation = self.get_rotation()
 		if rotation:
-			x, y = spin_point(x, y, rotation / 180 * math.pi)
+			x, y = point.spin((x, y), rotation / 180 * math.pi)
 		
 		magw = self.get_magnified_width()
 		magh = self.get_magnified_height()
@@ -263,10 +264,10 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			cx, cy = a_frame.get_center()
 			w, h = a_frame.get_size()
 			
-			a_rect = Rectangle(cx - w / 2.0, cy - h / 2.0, w, h)
+			a_rect = point.Rectangle(cx - w / 2.0, cy - h / 2.0, w, h)
 			rectangles.append(a_rect)
 			
-		big_frame = Rectangle.Union(*rectangles)
+		big_frame = point.Rectangle.Union(*rectangles)
 		
 		if self.the_big_frame != big_frame:
 			self.the_big_frame = big_frame
@@ -277,9 +278,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		    Also clamp them. Clamping is important. '''
 		    
 		# Name's Bounds, James Bounds
-		bounds = Rectangle.Spin(self.the_big_frame,
-		                        self.get_rotation() / 180 * math.pi)
-		bounds = Rectangle.Flip(bounds, *self.get_flip())
+		bounds = self.the_big_frame.spin(self.get_rotation() / 180 * math.pi)
+		bounds = bounds.flip(*self.get_flip())
 		hadjust, vadjust = self.get_hadjustment(), self.get_vadjustment()
 		if hadjust:
 			hadjust.set_lower(bounds.left)
@@ -543,97 +543,3 @@ class ImageFrame(GObject.Object):
 	
 	center = GObject.property(type=GObject.TYPE_PYOBJECT)
 	surface = GObject.property(type=GObject.TYPE_PYOBJECT)
-		
-class Rectangle:
-	def __init__(self, left=0, top=0, width=0, height=0):
-		self.left = left
-		self.top = top
-		self.width = width
-		self.height = height
-		
-	@property
-	def right(self):
-		return self.left + self.width
-		
-	@property
-	def bottom(self):
-		return self.top + self.height
-	
-	def copy(self):
-		return Rectangle(self.left, self.top, self.width, self.height)
-		
-	@staticmethod
-	def Spin(rect, angle):
-		''' Basic trigonometrics '''
-		result = rect.copy()
-		if angle:
-			a = spin_point(rect.left, rect.top, angle)
-			b = spin_point(rect.right, rect.top, angle)
-			c = spin_point(rect.right, rect.bottom, angle)
-			d = spin_point(rect.left, rect.bottom, angle)
-		
-			(left, top), (right, bottom) = a, a
-			for (x, y) in [b, c, d]:
-				left = min(left, x)
-				top = min(top, y)
-				right = max(right, x)
-				bottom = max(bottom, y)
-			
-			result.top, result.left = top, left
-			result.width = right - left
-			result.height = bottom - top
-		
-		return result
-	
-	@staticmethod
-	def Flip(rect, horizontal, vertical):
-		''' Basic conditions '''
-		result = rect.copy()
-		if horizontal:
-			result.left = -rect.right
-	
-		if vertical:
-			result.top = -rect.bottom
-				
-		return result
-	
-	@staticmethod
-	def Scale(rect, scale):
-		''' Basic mathematics '''
-		result = rect.copy()
-		result.left *= scale
-		result.top *= scale
-		result.width *= scale
-		result.height *= scale
-		return result
-	
-	@staticmethod
-	def Union(*rectangles):
-		''' Rectangles! UNITE!!! '''
-		if rectangles:
-			first = True
-			t, l, r, b = 0,0,0,0
-			for a_rectangle in rectangles:
-				if a_rectangle:
-					if first:
-						t = a_rectangle.top
-						l = a_rectangle.left
-						b = a_rectangle.bottom
-						r = a_rectangle.right
-						first = False
-					else:
-						t = min(t, a_rectangle.top)
-						l = min(l, a_rectangle.left)
-						b = max(b, a_rectangle.bottom)
-						r = max(r, a_rectangle.right)
-					
-			return Rectangle(l, t, r - l, b - t)
-		
-		else:
-			return Rectangle()
-		
-def spin_point(x, y, r):
-	rx = x * math.cos(r) - y * math.sin(r)
-	ry = x * math.sin(r) + y * math.cos(r)
-	return rx, ry
-	
