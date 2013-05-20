@@ -286,7 +286,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview = viewing.ImageView()
 		self.imageview.add_frame(self.current_frame)
 		# Setup a bunch of reactions to all sorts of things
-		self.imageview.connect("notify::magnification", self.magnification_changed)
+		self.imageview.connect("notify::magnification",
+		                       self.magnification_changed)
 		self.imageview.connect("notify::rotation", self.reapply_auto_zoom)
 		self.imageview.connect("size-allocate", self.reapply_auto_zoom)
 		self.imageview.connect("notify::magnification", self.view_changed)
@@ -345,7 +346,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		action_params = [
 		# File Menu
 		("file", _("_File"), None, None),
-			("open", _("_Open..."), _("Open an image in the viewer"), Gtk.STOCK_OPEN),
+			("open", _("_Open..."), _("Open an image in the viewer"),
+			 Gtk.STOCK_OPEN),
 			("paste", _("_Paste"), _("Show an image from the clipboard"),
 			 Gtk.STOCK_PASTE),
 			# Ordering submenu
@@ -393,8 +395,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			 Gtk.STOCK_ZOOM_IN),
 			("zoom-out", _("Zoom _Out"), _("Makes the image look smaller"),
 			 Gtk.STOCK_ZOOM_OUT),
-			("zoom-none", _("No _Zoom"), _("Shows the image at it's normal size"),
-			 Gtk.STOCK_ZOOM_100),
+			("zoom-none", _("No _Zoom"),
+			 _("Shows the image at it's normal size"), Gtk.STOCK_ZOOM_100),
 			# Auto-zoom submenu
 			("auto-zoom", _("_Automatic Zoom"), None, None),
 				("auto-zoom-enable", _("Enable _Auto Zoom"), None, None),
@@ -423,8 +425,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				("interp-best", _("St_ronger Filte_r"), _(""), None),
 			# Interface submenu
 			("interface", _("_Interface"), None, None),
-				("ui-toolbar", _("T_oolbar"), _("Display a toolbar with the tools"), None),
-				("ui-statusbar", _("Stat_usbar"), _("Display a statusbar with the status"), None),
+				("ui-toolbar", _("T_oolbar"),
+				 _("Display a toolbar with the tools"), None),
+				("ui-statusbar", _("Stat_usbar"),
+				 _("Display a statusbar with the status"), None),
 				("ui-scrollbar-top", _("_Top Scroll Bar"),
 				 _("Display the horizontal scrollbar at the top side"), None),
 				("ui-scrollbar-bottom", _("_Bottom Scroll Bar"),
@@ -660,7 +664,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			else:
 				question_marks = _("?") * count_chr_count
 				index_fmt = _("{question_marks}/{count:d}")
-				label_text = index_fmt.format(question_marks=question_marks, count=count)
+				label_text = index_fmt.format(question_marks=question_marks,
+				                              count=count)
 				self.index_label.set_text(label_text)
 		else:
 			can_remove = self.current_image is not None
@@ -826,7 +831,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			  "height" = magnify based on height '''
 			  
 		if self.auto_zoom_magnify or self.auto_zoom_minify:
-			side_name = ["smallest", "width", "height", "largest"][self.auto_zoom_mode]
+			side_name = ["smallest", "width",
+			             "height", "largest"][self.auto_zoom_mode]
 			scale = self.imageview.compute_side_scale(side_name)
 		
 			if scale > 1 and self.auto_zoom_magnify or \
