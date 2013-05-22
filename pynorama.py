@@ -262,6 +262,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Setup actions
 		self.setup_actions()
 		
+		self.image_list.bind_property(
+		     "reverse", self.actions.get_action("sort-reverse"),
+		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		self.image_list.bind_property(
+		     "autosort", self.actions.get_action("sort-auto"),
+		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		
 		self.manager.add_ui_from_string(ViewerWindow.ui_description)
 		self.menubar = self.manager.get_widget("/menubar")
 		self.toolbar = self.manager.get_widget("/toolbar")
@@ -455,8 +462,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"open" : (self.file_open,),
 			"paste" : (self.pasted_data,),
 			"sort" : (lambda data: self.image_list.sort(),),
-			"sort-auto" : (self.toggle_autosort,),
-			"sort-reverse" : (self.toggle_reverse_sort,),
+			"sort-reverse" : (self.__sort_changed,),
 			"sort-name" : (self.change_ordering,), # For group
 			"remove" : (self.handle_remove,),
 			"clear" : (self.handle_clear,),
@@ -605,14 +611,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	
 		self.image_list.comparer = self.active_ordering
 		
-	def toggle_reverse_sort(self, data=None):
-		reverse = self.actions.get_action("sort-reverse").get_active()
-		self.image_list.reverse = reverse
-		
-	def toggle_autosort(self, data=None):
-		autosort = self.actions.get_action("sort-auto").get_active()
-		self.image_list.autosort = autosort
-	
+	def __sort_changed(self, *data):
+		if not self.image_list.autosort:
+			self.image_list.sort()
+			
 	def magnification_changed(self, widget, data=None):
 		self.refresh_interp()
 		self.auto_zoom_zoom_modified = True
