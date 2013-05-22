@@ -705,15 +705,19 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			if self.current_image.status == loading.Status.Bad:
 				# This just may happen
 				pic = _("Error")
-			else:
+				
+			elif self.current_image.on_memory:
 				metadata = self.current_image.metadata
 				# The width and height are from the source
 				pic = "{width}x{height}".format(width=metadata.width,
 				                                height=metadata.height)
 				                                
+			else:
+				pic = _("Loading")
+				
 			# Cache magnification because it is kind of a long variable
 			mag = self.imageview.get_magnification()
-			if mag != 1:			
+			if mag != 1:
 				if mag > 1 and mag == int(mag):
 					zoom_fmt = " " + _("x{zoom_in:d}")
 					zoom = zoom_fmt.format(zoom_in=int(mag))
