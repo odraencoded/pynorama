@@ -237,15 +237,15 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# the imageview
 		self.auto_zoom_zoom_modified = False
 		self.ordering_modes = [
-			organization.Ordering.ByName,
-			organization.Ordering.ByCharacters,
-			organization.Ordering.ByFileDate,
-			organization.Ordering.ByFileSize,
-			organization.Ordering.ByImageSize,
-			organization.Ordering.ByImageWidth,
-			organization.Ordering.ByImageHeight
+			organization.SortingKeys.ByName,
+			organization.SortingKeys.ByCharacters,
+			organization.SortingKeys.ByFileDate,
+			organization.SortingKeys.ByFileSize,
+			organization.SortingKeys.ByImageSize,
+			organization.SortingKeys.ByImageWidth,
+			organization.SortingKeys.ByImageHeight
 		]
-		self.active_ordering = organization.Ordering.ByName
+		self.active_ordering = organization.SortingKeys.ByName
 		self.__idly_refresh_index_id = None
 		self.image_list = organization.Album()
 		self.image_list.connect("image-added", self._image_added)
@@ -463,7 +463,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"paste" : (self.pasted_data,),
 			"sort" : (lambda data: self.image_list.sort(),),
 			"sort-reverse" : (self.__sort_changed,),
-			"sort-name" : (self.change_ordering,), # For group
+			"sort-name" : (self.__ordering_mode_changed,), # For group
 			"remove" : (self.handle_remove,),
 			"clear" : (self.handle_clear,),
 			"quit" : (lambda data: self.destroy(),),
@@ -605,11 +605,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
 						
 		prefs_dialog.destroy()
 		
-	def change_ordering(self, radioaction, current):
+	def __ordering_mode_changed(self, radioaction, current):
+		#TODO: Use GObject.bind_property_with_closure for this
 		sort_value = current.get_current_value()
 		self.active_ordering = self.ordering_modes[sort_value]
 	
 		self.image_list.comparer = self.active_ordering
+		if not self.image_list.autosort:
+			self.image_list.sort()
 		
 	def __sort_changed(self, *data):
 		if not self.image_list.autosort:

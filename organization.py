@@ -16,7 +16,6 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
     
 import os
-from functools import cmp_to_key
 from gi.repository import GLib, GObject
 from collections import MutableSequence
 
@@ -78,7 +77,7 @@ class Album(GObject.Object):
 			self.__autosort_signal_id = None
 			
 		if self.comparer and len(self._store) > 1:
-			self._store.sort(key=cmp_to_key(self.comparer),
+			self._store.sort(key=self.comparer,
 			                 reverse=self.reverse)
 			
 			self.emit("order-changed")
@@ -127,57 +126,34 @@ class Album(GObject.Object):
 			self.sort()
 		
 		return False
-
-def cmp(a, b):
-	# Pfft, versions
-	return (a > b) - (b > a)
-
-class Ordering:
-	''' Contains ordering functions '''
+		
+class SortingKeys:
+	''' Contains functions to get keys in images for sorting them '''
 	
 	@staticmethod
-	def ByName(image_a, image_b):
-		keymaker = GLib.utf8_collate_key_for_filename
-		key_a = keymaker(image_a.fullname, len(image_a.fullname))
-		key_b = keymaker(image_b.fullname, len(image_b.fullname))
-		return cmp(key_a, key_b)
+	def ByName(image):
+		return GLib.utf8_collate_key_for_filename(image.fullname, -1)
 		
 	@staticmethod
-	def ByCharacters(image_a, image_b):
-		return cmp(image_a.fullname.lower(), image_b.fullname.lower())
+	def ByCharacters(image):
+		return image.fullname.lower()
 			
 	@staticmethod
-	def ByFileSize(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.data_size, meta_b.data_size)
+	def ByFileSize(image):
+		return image.get_metadata().data_size
 		
 	@staticmethod
-	def ByFileDate(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.modification_date, meta_b.modification_date) * -1
+	def ByFileDate(image):
+		return image.get_metadata().modification_date
 		
 	@staticmethod
-	def ByImageSize(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.get_area(), meta_b.get_area())
+	def ByImageSize(image):
+		return image.get_metadata().get_area()
 		
 	@staticmethod
-	def ByImageWidth(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.width, meta_b.width)
+	def ByImageWidth(image):
+		return image.get_metadata().width
 		
 	@staticmethod
-	def ByImageHeight(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.height, meta_b.height)
-	
+	def ByImageHeight(image):
+		return image.get_metadata().height
