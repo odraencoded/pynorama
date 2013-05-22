@@ -1010,7 +1010,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if info == DND_URI_LIST:
 			some_uris = selection.get_uris()
 			if some_uris:
-				self.unlist(*self.image_list.images)
+				self.unlist(*self.image_list)
 				images = self.app.load_uris(some_uris, True)
 				self.insert_images(images)
 				
