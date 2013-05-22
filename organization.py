@@ -42,15 +42,31 @@ class Album(GObject.Object):
 	def __len__(self):
 		return len(self._store)
 		
-	def __getitem__(self, index):
-		return self._store[index]
+	def __getitem__(self, item):
+		return self._store[item]
 		
-	def __setitem__(self, index):
-		self._store[index] = value
+	def __setitem__(self, item, value):
+		self._store[item] = value
 		
-	def __delitem__(self, index):
-		image = self._store.pop(index)
-		self.emit("image-removed", image, index)
+	def __delitem__(self, item):
+		if isinstance(item, slice):
+			indices = item.indices(len(self._store))
+			removed_indices = []
+			for i in range(*indices):
+				if item.step and item.step < 0:
+					removed_indices.append(i)
+				else:
+					removed_indices.append(i - len(removed_indices))
+					
+			removed_images = self._store[item]
+			del self._store[item]
+			
+			for i in range(len(removed_indices)):
+				image, index = removed_images[i], removed_indices[i]
+				self.emit("image-removed", image, index)
+		else:
+			image = self._store.pop(item)
+			self.emit("image-removed", image, index)
 	
 	def insert(self, index, image):
 		self._store.insert(index, image)
