@@ -336,11 +336,11 @@ class ImageGFileNode(ImageNode):
 				self.metadata.data_size = 0
 			try:
 				time_str = file_info.get_attribute_as_string("time::modified")
-				self.metadata.modification_date = time.ctime(int(time_str))
+				self.metadata.modification_date = float(time_str)
 			except:
-				self.metadata.modification_date = time.time()
+				self.metadata.modification_date = float(time.time())
 		except:
-			self.metadata.modification_date = time.time()
+			self.metadata.modification_date = float(time.time())
 			self.metadata.data_size = 0
 		
 		# The width and height of the image are loaded from guess where
@@ -385,7 +385,7 @@ class ImageDataNode(ImageNode):
 			self.metadata = ImageMeta()
 			
 		self.metadata.width, self.metadata.height = self.pixbuf.get_width(), self.pixbuf.get_height()
-		self.metadata.modification_date = datetime.datetime.now()
+		self.metadata.modification_date = time.time()
 		self.metadata.data_size = 0
 		
 	def unload(self):			

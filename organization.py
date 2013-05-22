@@ -15,148 +15,145 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
     
-#TODO: Make this module organize images better.
-
 import os
-from functools import cmp_to_key
-from gi.repository import GLib
+from gi.repository import GLib, GObject
+from collections import MutableSequence
 
-class Album:
+class Album(GObject.Object):
 	''' It organizes images '''
 	
+	__gsignals__ = {
+		"image-added" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
+		"image-removed" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
+		"order-changed" : (GObject.SIGNAL_RUN_FIRST, None, []),
+	}
 	def __init__(self):
-		self.images = []
-		self.reverse = False
-	
+		GObject.GObject.__init__(self)
+		MutableSequence.__init__(self)
+		
+		self.connect("notify::reverse", self.__queue_autosort)
+		self.connect("notify::autosort", self.__queue_autosort)
+		self.connect("notify::comparer", self.__queue_autosort)
+		
+		self._store = []
+		self.__autosort_signal_id = None
+		
+	# --- Mutable sequence interface down this line ---#
 	def __len__(self):
-		return len(self.images)
-	
+		return len(self._store)
+		
 	def __getitem__(self, index):
-		return self.images[index]
-	
-	def clear(self):
-		del self.images[:]
-	
-	def get_first(self):
-		return self.images[0]
-	
-	def get_last(self):
-		return self.images[-1]
-	
-	def remove(self, *images):
-		for an_image in images:
-			an_image.remove_links()
-			
-			self.images.remove(an_image)	
-	
-	# Adds images to the album and tries to sort them
-	def add(self, *images):
-		for an_image in images:
-			index = len(self.images)
-				
-			self.images.insert(index, an_image)
-			prev = self.images[index - 1]
-			next = self.images[(index + 1) % len(self.images)]
-			
-			an_image.insert_links(prev, next)
-			
-	def append(self, new_image, previous_image = None):
-		if previous is None:
-			index = -1
-			previous_image = self.images[-1]
-		else:
-			index = self.images.index(previous) + 1
-			
-		next_image = self.images[index + 1]
-		self.images.insert(index, new_image)
-		previous
+		return self._store[index]
 		
-		if self.images:
-			image.previous = self.images[-1]
-			image.next = self.images[0]
-			
-			image.previous.next = image
-			image.next.previous = image
-		else:
-			image.next = image.previous = image
+	def __setitem__(self, index):
+		self._store[index] = value
 		
-		self.images.append(image)
-		
-	def sort(self, comparer, reverse=False):
-		if len(self.images) <= 1:
-			return
-			
-		# Sorts album
-		self.images = sorted(self.images, key=cmp_to_key(comparer), reverse=reverse)
-		
-		# Refreshes next/previous links
-		first_image = self.images[0]
-		previous_image = self.images[-1]
-		for a_image in self.images:				
-			if previous_image:
-				previous_image.next = a_image
-			
-			a_image.next = first_image
-			a_image.previous = previous_image
-			previous_image = a_image
+	def __delitem__(self, index):
+		image = self._store.pop(index)
+		self.emit("image-removed", image, index)
 	
-	def find_image(self, filename):
-		for a_image in self.images:
-			if os.path.samefile(a_image.filename, filename):
-				return a_image
+	def insert(self, index, image):
+		self._store.insert(index, image)
+		self.emit("image-added", image, index)
+		self.__queue_autosort()
+	
+	# --- "inheriting" down this line --- #
+	
+	__contains__ = MutableSequence.__contains__
+	__iter__ = MutableSequence.__iter__
+	__reversed__ = MutableSequence.__reversed__
+	
+	append = MutableSequence.append
+	count = MutableSequence.count
+	extend = MutableSequence.extend
+	index = MutableSequence.index
+	pop = MutableSequence.pop
+	remove = MutableSequence.remove
+	reverse = MutableSequence.reverse
+	
+	def sort(self):
+		if self.__autosort_signal_id:
+			GLib.source_remove(self.__autosort_signal_id)
+			self.__autosort_signal_id = None
+			
+		if self.comparer and len(self._store) > 1:
+			self._store.sort(key=self.comparer,
+			                 reverse=self.reverse)
+			
+			self.emit("order-changed")
+	
+	def next(self, image):
+		''' Returns the image after the input '''
+		index = self._store.index(image)
+		return self._store[(index + 1) % len(self._store)]
 		
-		return None
-
-def cmp(a, b):
-	# Pfft, versions
-	return (a > b) - (b > a)
-
-class Ordering:
-	''' Contains ordering functions '''
+	def previous(self, image):
+		''' Returns the image before the input '''
+		index = self._store.index(image)
+		return self._store[(index - 1) % len(self._store)]		
+	
+	def around(self, image, forward, backwards):
+		''' Returns "forward" images after "image" and
+		    "backwards" images before "image".
+		    This method cycles around the list '''
+		result = []
+		if forward or backwards:
+			start = self._store.index(image)
+			count = len(self._store)
+		
+			for i in range(1, forward):
+				result.append(self._store[(start + i) % count])
+			
+			for i in range(1, backwards):
+				result.append(self._store[(start - i) % count])
+			
+		return result
+	
+	# --- properties down this line --- #
+	
+	autosort = GObject.property(type=bool, default=False)
+	comparer = GObject.property(type=object, default=None)
+	reverse = GObject.property(type=bool, default=False)
+	
+	def __queue_autosort(self, *data):
+		if self.autosort and not self.__autosort_signal_id:
+			self.__autosort_signal_id = GLib.idle_add(
+			    self.__do_autosort, priority=GLib.PRIORITY_HIGH+10)
+	
+	def __do_autosort(self):
+		self.__autosort_signal_id = None
+		if self.autosort:
+			self.sort()
+		
+		return False
+		
+class SortingKeys:
+	''' Contains functions to get keys in images for sorting them '''
 	
 	@staticmethod
-	def ByName(image_a, image_b):
-		keymaker = GLib.utf8_collate_key_for_filename
-		key_a = keymaker(image_a.fullname, len(image_a.fullname))
-		key_b = keymaker(image_b.fullname, len(image_b.fullname))
-		return cmp(key_a, key_b)
+	def ByName(image):
+		return GLib.utf8_collate_key_for_filename(image.fullname, -1)
 		
 	@staticmethod
-	def ByCharacters(image_a, image_b):
-		return cmp(image_a.fullname.lower(), image_b.fullname.lower())
+	def ByCharacters(image):
+		return image.fullname.lower()
 			
 	@staticmethod
-	def ByFileSize(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.data_size, meta_b.data_size)
+	def ByFileSize(image):
+		return image.get_metadata().data_size
 		
 	@staticmethod
-	def ByFileDate(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.modification_date, meta_b.modification_date) * -1
+	def ByFileDate(image):
+		return image.get_metadata().modification_date
 		
 	@staticmethod
-	def ByImageSize(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.get_area(), meta_b.get_area())
+	def ByImageSize(image):
+		return image.get_metadata().get_area()
 		
 	@staticmethod
-	def ByImageWidth(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.width, meta_b.width)
+	def ByImageWidth(image):
+		return image.get_metadata().width
 		
 	@staticmethod
-	def ByImageHeight(image_a, image_b):
-		meta_a = image_a.get_metadata()
-		meta_b = image_b.get_metadata()
-		
-		return cmp(meta_a.height, meta_b.height)
-	
+	def ByImageHeight(image):
+		return image.get_metadata().height
