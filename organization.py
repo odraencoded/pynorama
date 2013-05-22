@@ -66,7 +66,7 @@ class Album(GObject.Object):
 				self.emit("image-removed", image, index)
 		else:
 			image = self._store.pop(item)
-			self.emit("image-removed", image, index)
+			self.emit("image-removed", image, item)
 	
 	def insert(self, index, image):
 		self._store.insert(index, image)
