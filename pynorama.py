@@ -26,7 +26,7 @@ import organization, navigation, loading, preferences, viewing, dialog
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
-	Version = "0.1.2"
+	Version = "v0.1.3"
 	
 	def __init__(self):
 		Gtk.Application.__init__(self)
