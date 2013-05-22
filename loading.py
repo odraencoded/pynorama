@@ -284,8 +284,8 @@ class ImageGFileNode(ImageNode):
 				self.pixbuf = async_finish(result)
 
 		except GLib.GError as gerror:
-			#TODO: G_IO_ERROR_CANCELLED should not set status to bad but I have
-			# absolutely no idea how to check the type of GError
+			# TODO: G_IO_ERROR_CANCELLED should not set status to bad
+			# but I have absolutely no idea how to check the type of GError
 			self.location &= ~Location.Memory
 			self.status = Status.Bad
 			
@@ -307,28 +307,14 @@ class ImageGFileNode(ImageNode):
 		self.location &= ~Location.Memory
 		self.status = Status.Good
 		
-	'''
-	def do_load(self):		
-		stream = self.gfile.read(None)
-		
-		parsename = self.gfile.get_parse_name()
-		if self.gfile.is_native() and parsename.endswith(".gif"):
-			self.animation = GdkPixbuf.PixbufAnimation.new_from_file(parsename)
-			if self.animation.is_static_image():
-				self.pixbuf = self.animation.get_static_image()
-				self.animation = None
-		else:
-			self.pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)
-			
-		self.load_metadata()'''
-	
 	def load_metadata(self):
 		if self.metadata is None:
 			self.metadata = ImageMeta()
 		
 		# These file properties are queried from the file info
 		try:
-			file_info = self.gfile.query_info("standard::size,time::modified", 0, None)
+			file_info = self.gfile.query_info(
+			                       "standard::size,time::modified", 0, None)
 			try:
 				size_str = file_info.get_attribute_as_string("standard::size")
 				self.metadata.data_size = int(size_str)
@@ -384,7 +370,8 @@ class ImageDataNode(ImageNode):
 		if self.metadata is None:
 			self.metadata = ImageMeta()
 			
-		self.metadata.width, self.metadata.height = self.pixbuf.get_width(), self.pixbuf.get_height()
+		self.metadata.width = self.pixbuf.get_width()
+		self.metadata.height = self.pixbuf.get_height()
 		self.metadata.modification_date = time.time()
 		self.metadata.data_size = 0
 		
@@ -398,7 +385,8 @@ def IsAlbumFile(possibly_album_file):
 	
 def GetAlbumImages(album_file):
 	result = []
-	album_enumerator = album_file.enumerate_children("standard::type,standard::name", 0, None)
+	album_enumerator = album_file.enumerate_children(
+	                              "standard::type,standard::name", 0, None)
 	for a_file_info in album_enumerator:
 		if a_file_info.get_file_type() == Gio.FileType.REGULAR:
 			a_file = Gio.File.get_child(album_file, a_file_info.get_name())
@@ -410,7 +398,8 @@ def GetAlbumImages(album_file):
 	
 def GetFileImageFiles(parent_file):
 	result = []
-	parent_enumerator = parent_file.enumerate_children("standard::type,standard::name", 0, None)
+	parent_enumerator = parent_file.enumerate_children(
+	                                "standard::type,standard::name", 0, None)
 	for a_file_info in parent_enumerator:
 		if a_file_info.get_file_type() == Gio.FileType.REGULAR:
 			a_file = Gio.File.get_child(parent_file, a_file_info.get_name())
