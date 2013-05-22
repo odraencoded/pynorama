@@ -236,8 +236,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# then auto_zoom isn't called after rotating or resizing
 		# the imageview
 		self.auto_zoom_zoom_modified = False
-		self.autosort = True
-		self.reverse_sort = False
 		self.ordering_modes = [
 			organization.Ordering.ByName,
 			organization.Ordering.ByCharacters,
@@ -248,7 +246,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			organization.Ordering.ByImageHeight
 		]
 		self.active_ordering = organization.Ordering.ByName
+		self.__idly_refresh_index_id = None
 		self.image_list = organization.Album()
+		self.image_list.connect("image-added", self._image_added)
+		self.image_list.connect("image-removed", self._image_removed)
+		self.image_list.connect("order-changed", self._album_order_changed)
 		# Set clipboard
 		self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
 		
@@ -330,8 +332,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		target_list.add_uri_targets(DND_URI_LIST)
 		
 		self.imageview.drag_dest_set_target_list(target_list)
-		'''self.imageview.add_events(Gdk.EventMask.SCROLL_MASK)
-		self.imageview.connect("scroll-event", self.imageview_scrolling)'''
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
 		preferences.load_into_window(self)
@@ -454,7 +454,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		signaling_params = {
 			"open" : (self.file_open,),
 			"paste" : (self.pasted_data,),
-			"sort" : (lambda data: self.sort_images(),),
+			"sort" : (lambda data: self.image_list.sort(),),
 			"sort-auto" : (self.toggle_autosort,),
 			"sort-reverse" : (self.toggle_reverse_sort,),
 			"sort-name" : (self.change_ordering,), # For group
@@ -602,19 +602,16 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def change_ordering(self, radioaction, current):
 		sort_value = current.get_current_value()
 		self.active_ordering = self.ordering_modes[sort_value]
-		
-		self.image_list.sort(self.active_ordering)
-		self.refresh_index()
+	
+		self.image_list.comparer = self.active_ordering
 		
 	def toggle_reverse_sort(self, data=None):
-		reverse_state = self.actions.get_action("sort-reverse").get_active()
-		if self.reverse_sort != reverse_state:
-			self.reverse_sort = reverse_state
-			self.image_list.images.reverse()
-			self.refresh_index()
+		reverse = self.actions.get_action("sort-reverse").get_active()
+		self.image_list.reverse = reverse
 		
 	def toggle_autosort(self, data=None):
-		self.autosort = self.actions.get_action("sort-auto").get_active()
+		autosort = self.actions.get_action("sort-auto").get_active()
+		self.image_list.autosort = autosort
 	
 	def magnification_changed(self, widget, data=None):
 		self.refresh_interp()
@@ -645,19 +642,24 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		interp_group.unblock_activate()
 		
 	def refresh_index(self):
-		images = self.image_list.images
-		if images:
-			can_remove = True
-			can_goto_first = True
-			can_goto_last = True
+		can_remove = not self.current_image is None
+		can_goto_first = False
+		can_goto_last = False
+		can_previous = False
+		can_next = False
 			
-			count = len(images)
+		if self.image_list:
+			can_remove = True
+			
+			count = len(self.image_list)
 			count_chr_count = len(str(count))
 			
-			if self.current_image in images:
-				image_index = images.index(self.current_image)
+			if self.current_image in self.image_list:
+				image_index = self.image_list.index(self.current_image)
 				can_goto_first = image_index != 0
 				can_goto_last = image_index != count - 1
+				can_previous = True
+				can_next = True
 				
 				index_text = str(image_index + 1).zfill(count_chr_count)
 				
@@ -665,36 +667,25 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				label_text = index_fmt.format(index=index_text, count=count)
 				self.index_label.set_text(label_text)
 			else:
+				can_goto_first = True
+				can_goto_last = True
+				
 				question_marks = _("?") * count_chr_count
 				index_fmt = _("{question_marks}/{count:d}")
 				label_text = index_fmt.format(question_marks=question_marks,
 				                              count=count)
 				self.index_label.set_text(label_text)
 		else:
-			can_remove = self.current_image is not None
-			can_goto_first = False
-			can_goto_last = False
-			
 			self.index_label.set_text("∅")
-		
-		if self.current_image:
-			can_remove = True
-			if not (len(images) <= 1 and self.current_image in images):
-				can_previous = bool(self.current_image.previous)
-				can_next = bool(self.current_image.next)
-			else:
-				can_next = can_previous = False
-		else:
-			can_remove = can_previous = can_next = False
-		
+			
 		sensible_list = [
 			("remove", can_remove),
-			("clear", len(images) > 0),
+			("clear", len(self.image_list) > 0),
 			("go-next", can_next),
 			("go-previous", can_previous),
 			("go-first", can_goto_first),
 			("go-last", can_goto_last),
-			("go-random", len(images) > 1)
+			("go-random", len(self.image_list) > 1)
 		]
 		
 		for action_name, sensitivity in sensible_list:
@@ -942,23 +933,46 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.fullscreen()
 		else:
 			self.unfullscreen()
-			
+	
+	# --- Go go go!!! --- #
 	def go_next(self, *data):
-		if self.current_image and self.current_image.next:
-			self.set_image(self.current_image.next)
+		try:
+			next_image = self.image_list.next(self.current_image)
+			
+		except ValueError:
+			pass
+			
+		else:
+			self.set_image(next_image)
 		
 	def go_previous(self, *data):
-		if self.current_image and self.current_image.previous:
-			self.set_image(self.current_image.previous)
+		try:
+			previous_image = self.image_list.previous(self.current_image)
+			
+		except ValueError:
+			pass
+			
+		else:
+			self.set_image(previous_image)
 			
 	def go_first(self, *data):
-		first_image = self.image_list.get_first()
-		if first_image:
+		try:
+			first_image = self.image_list[0]
+			
+		except IndexError:
+			pass
+			
+		else:
 			self.set_image(first_image)
 	
 	def go_last(self, *data):
-		last_image = self.image_list.get_last()
-		if last_image:
+		try:
+			last_image = self.image_list[-1]
+			
+		except IndexError:
+			pass
+			
+		else:
 			self.set_image(last_image)
 			
 	def go_random(self, *data):
@@ -966,17 +980,17 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if image_count > 1:
 			# Gets a new random index that is not the current one
 			random_int = random.randint(0, image_count - 2)
-			image_index = self.image_list.images.index(self.current_image)
+			image_index = self.image_list.index(self.current_image)
 			if random_int >= image_index:
 				random_int += 1
 			
-			self.set_image(self.image_list.images[random_int])
+			self.set_image(self.image_list[random_int])
 			
 	def handle_clear(self, *data):
-		self.unlist(*self.image_list.images)
+		self.unlist(*self.image_list)
 		
 	def handle_remove(self, *data):
-		if self.current_image is not None:
+		if self.current_image:
 			self.unlist(self.current_image)
 	
 	def pasted_data(self, data=None):
@@ -1038,7 +1052,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		image_chooser.destroy()
 		
 		if clear_list:
-			self.unlist(*self.image_list.images)
+			self.unlist(*self.image_list)
 			
 		if choosen_uris:
 			images = self.app.load_uris(choosen_uris, search_directory)
@@ -1113,7 +1127,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			new_title = title_fmt.format(name=img_name, fullname=img_fullname)
 			self.set_title(new_title)
 			
-		self.refresh_index()
+		self.__queue_refresh_index()
 		
 	def _image_loaded(self, image, error):
 		# Check if the image loaded is the current image, just in case
@@ -1135,9 +1149,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.preused_images.clear()
 		
 		if self.current_image:
+			next_images = self.image_list.around(self.current_image, 2, -2)
+			
+			self.preused_images.update(next_images)
 			self.preused_images.add(self.current_image)
-			self.preused_images.add(self.current_image.next)
-			self.preused_images.add(self.current_image.previous)
+			
 			for preused_image in self.preused_images:
 				self.app.memory.request(preused_image)
 		
@@ -1190,41 +1206,53 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def enlist(self, *images):
 		if images:
-			self.image_list.add(*images)
-			
-			for image in images:
-				self.app.memory.enlist(image)
-			
-			if self.autosort:
-				self.sort_images()
-		
+			self.image_list.extend(images)
+					
 	def unlist(self, *images):
-		if images:
-			new_current_image = self.current_image
-			for removed_image in images:
-				if removed_image == new_current_image:
-					if len(self.image_list) > 1:
-					
-						if new_current_image is self.image_list[-1]:
-							new_current_image = new_current_image.previous
-						else:
-							new_current_image = new_current_image.next
-					else:
-						new_current_image = None
-					
+		for removed_image in images:
+			try:
 				self.image_list.remove(removed_image)
-				self.app.memory.unlist(removed_image)
-				
-			self.set_image(new_current_image)
+			except ValueError:
+				pass
 			
 	def insert_images(self, images):
 		if images:
 			self.enlist(*images)
 			self.set_image(images[0])
 	
-	def sort_images(self):
-		self.image_list.sort(self.active_ordering)
+	def _image_added(self, album, image, index	):
+		self.app.memory.enlist(image)
+		self.__queue_refresh_index()
+		
+	def _image_removed(self, album, image, index):
+		self.app.memory.unlist(image)
+		self.__queue_refresh_index()
+		
+		if self.current_image is image:
+			count = len(album)
+			if index <= count:
+				if count >= 1:
+					new_index = index - 1 if index == count else index
+					new_image = self.image_list[new_index]
+				else:
+					new_image = None
+					
+				self.set_image(new_image)
+				
+	def _album_order_changed(self, album):
+		self.__queue_refresh_index()
+	
+	def __queue_refresh_index(self):
+		if not self.__idly_refresh_index_id:
+			self.__idly_refresh_index_id = GLib.idle_add(
+			     self.__idly_refresh_index, priority=GLib.PRIORITY_HIGH_IDLE)
+	
+	def __idly_refresh_index(self):
+		self.__idly_refresh_index_id = None
 		self.refresh_index()
+	
+	def sort_images(self):
+		self.image_list.sort()
 			
 	def get_enable_auto_sort(self):
 		return self.actions.get_action("sort-auto").get_active()
