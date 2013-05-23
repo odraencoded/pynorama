@@ -1079,10 +1079,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				
 		some_pixels = self.clipboard.wait_for_image()
 		if some_pixels:
-			new_image = self.app.load_pixels(some_pixels)
-			if new_image:
+			new_images = self.app.load_pixels(some_pixels)
+			if new_images:
 				self.go_new = True
-				self.image_list.append(new_image)
+				self.image_list.extend(new_images)
 				self.go_new = False
 			
 	def dragged_data(self, widget, context, x, y, selection, info, timestamp):
@@ -1101,10 +1101,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		elif info == DND_IMAGE:
 			some_pixels = selection.get_pixbuf()
 			if some_pixels:
-				new_image = self.app.load_pixels(some_pixels)
-				if new_image:
+				new_images = self.app.load_pixels(some_pixels)
+				if new_images:
 					self.go_new = True
-					self.image_list.append(new_image)
+					self.image_list.extend(new_images)
 					self.go_new = False
 								
 	def file_open(self, widget, data=None):
