@@ -100,8 +100,9 @@ class ImageViewer(Gtk.Application):
 		some_window = self.get_window()
 		images = self.load_files(files)
 		if images:
-			some_window.enlist(*images)
-			some_window.set_image(images[0])
+			some_window.go_new = True
+			some_window.image_list.extend(images)
+			some_window.go_new = False
 			
 		some_window.present()
 		
@@ -223,6 +224,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.preused_images = set()
 		self.current_image = None
 		self.current_frame = viewing.ImageFrame()
+		self.go_new = False
 		self.load_handle = None
 		# Animation stuff
 		self.anim_handle = None
@@ -996,35 +998,54 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.set_image(self.image_list[random_int])
 			
 	def handle_clear(self, *data):
-		self.unlist(*self.image_list)
+		del self.image_list[:]
 		
 	def handle_remove(self, *data):
 		if self.current_image:
-			self.unlist(self.current_image)
+			try:
+				self.image_list.remove(self.current_image)
+				
+			except ValueError:
+				dialog.log("Couldn't remove. Current image not on the list.")
 	
 	def pasted_data(self, data=None):
 		some_uris = self.clipboard.wait_for_uris()
 		
 		if some_uris:
-			images = self.app.load_uris(some_uris, False)
-			self.insert_images(images)
+			new_images = self.app.load_uris(some_uris, False)
+			if new_images:
+				self.go_new = True
+				self.image_list.extend(new_images)
+				self.go_new = False
 				
 		some_pixels = self.clipboard.wait_for_image()
 		if some_pixels:
-			self.insert_images(self.app.load_pixels(some_pixels))
+			new_image = self.app.load_pixels(some_pixels)
+			if new_image:
+				self.go_new = True
+				self.image_list.append(new_image)
+				self.go_new = False
 			
 	def dragged_data(self, widget, context, x, y, selection, info, timestamp):
 		if info == DND_URI_LIST:
 			some_uris = selection.get_uris()
 			if some_uris:
-				self.unlist(*self.image_list)
-				images = self.app.load_uris(some_uris, True)
-				self.insert_images(images)
+				new_images = self.app.load_uris(some_uris, True)
+				if new_images:
+					del self.image_list[:]
+				
+					self.go_new = True
+					self.image_list.extend(new_images)
+					self.go_new = False
 				
 		elif info == DND_IMAGE:
 			some_pixels = selection.get_pixbuf()
 			if some_pixels:
-				self.insert_images(self.app.load_pixels(some_pixels))
+				new_image = self.app.load_pixels(some_pixels)
+				if new_image:
+					self.go_new = True
+					self.image_list.append(new_image)
+					self.go_new = False
 								
 	def file_open(self, widget, data=None):
 		# Create image choosing dialog
@@ -1061,11 +1082,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		image_chooser.destroy()
 		
 		if clear_list:
-			self.unlist(*self.image_list)
+			del self.image_list[:]
 			
 		if choosen_uris:
 			images = self.app.load_uris(choosen_uris, search_directory)
-			self.insert_images(images)
+			self.image_list.extend(images)
 			
 	def imageview_scrolling(self, widget, data=None):
 		anchor = self.imageview.get_pointer()
@@ -1213,25 +1234,16 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		return False
 		
-	def enlist(self, *images):
-		if images:
-			self.image_list.extend(images)
-					
-	def unlist(self, *images):
-		for removed_image in images:
-			try:
-				self.image_list.remove(removed_image)
-			except ValueError:
-				pass
-			
-	def insert_images(self, images):
-		if images:
-			self.enlist(*images)
-			self.set_image(images[0])
-	
 	def _image_added(self, album, image, index	):
 		self.app.memory.enlist(image)
 		self.__queue_refresh_index()
+		
+		if self.go_new:
+			self.go_new = False
+			self.set_image(image)
+			
+		elif self.current_image is None:
+			self.set_image(image)
 		
 	def _image_removed(self, album, image, index):
 		self.app.memory.unlist(image)
