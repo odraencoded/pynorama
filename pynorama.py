@@ -71,13 +71,12 @@ class ImageViewer(Gtk.Application):
 		
 	def do_open(self, files, file_count, hint):
 		some_window = self.get_window()
-		open_context = loading.Context(files=files)
-		self.open_files(open_context, search=file_count == 1)
-		if open_context.images:
-			some_window.go_new = True
-			some_window.image_list.extend(open_context.images)
-			some_window.go_new = False
-			
+		
+		some_window.go_new = True
+		self.open_files_for_album(some_window.image_list, files=files,
+		                          search=file_count == 1)
+		some_window.go_new = False
+		
 		some_window.present()
 			
 	def open_image_dialog(self, album, window=None):
@@ -124,14 +123,9 @@ class ImageViewer(Gtk.Application):
 		image_chooser.destroy()
 			
 		if choosen_uris:
-			context = loading.Context(uris=choosen_uris)
-			self.open_files(context, choosen_option.loader, search_siblings)
-				
-			if context.images:	
-				if clear_album:
-					del album[:]
-					
-				album.extend(context.images)
+			self.open_files_for_album(album, choosen_option.loader,
+			                          uris=choosen_uris, search=search_siblings,
+			                          replace=clear_album)
 	
 	def show_preferences_dialog(self, window=None):
 		''' Show the preferences dialog '''
@@ -225,7 +219,25 @@ class ImageViewer(Gtk.Application):
 		elif thing.on_memory:
 			dialog.log(dialog.Lines.Loaded(thing))
 	
-	def open_files(self, context, loader=None, search=False, silent=False):
+	def open_files_for_album(self, album, loader=None, files=None, uris=None,
+	                         replace=False, search=False, silent=False):
+		''' Open files or uris for an album '''
+		album_context = loading.Context(files=files, uris=uris)
+		context_sorting = lambda ctx: album.sort_list(ctx.images)
+		
+		self.open_files(album_context, context_sorting=context_sorting,
+		                loader=loader, search=search, silent=silent)
+		
+		if album_context.images:
+			if replace:
+				del album[:]
+				
+			album.extend(album_context.images)
+		
+	def open_files(self, context, loader=None, search=False,
+	                     context_sorting=None, silent=False):
+	                     
+		''' Open files using loading.LoadersLoader '''
 		if loader is None:
 			loader = loading.LoadersLoader.LoaderListLoader
 		
@@ -251,14 +263,12 @@ class ImageViewer(Gtk.Application):
 			context.add_sibling_files(loader)
 		
 		if directories:
-			directories_context = loading.Context()
-			for a_file in directories:
-				DirectoryLoader.open_file(directories_context, a_file)
-			
-			context.files.extend(directories_context.files)
-			
+			self.open_context_images(context, directories, DirectoryLoader,
+			                         sort_method=context_sorting)
+			                         
 		if context.files:
-			self.open_context_images(context, loader)
+			self.open_context_images(context, context.files, loader,
+			                         sort_method=context_sorting)
 		
 		if context.problems and not silent:
 			problem_list = []
@@ -270,12 +280,19 @@ class ImageViewer(Gtk.Application):
 			
 			dialog.alert_list(message, problem_list, columns)
 			
-	def open_context_images(self, context, loader):
+	def open_context_images(self, context, files, loader, sort_method=None):
+		''' Opens files in a loader, sort the result with sort_method and
+		    append it to context. '''
 		loader_context = loading.Context()
-		for a_file in context.files:
+		for a_file in files:
 			loader.open_file(loader_context, a_file)
 		
+		if sort_method:
+			sort_method(loader_context)
+		
 		context.images.extend(loader_context.images)
+		context.files.extend(loader_context.files)
+		context.uris.extend(loader_context.uris)
 		
 	def load_pixels(self, pixels):
 		pixelated_image = loading.PixbufDataImageNode(pixels, "Pixels")
@@ -1063,45 +1080,37 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				dialog.log("Couldn't remove. Current image not on the list.")
 	
 	def pasted_data(self, data=None):
+		self.go_new = True
 		some_uris = self.clipboard.wait_for_uris()
 		
 		if some_uris:
-			open_context = loading.Context(uris=some_uris)
-			self.app.open_files(open_context, search=False)
-			if open_context.images:
-				self.go_new = True
-				self.image_list.extend(open_context.images)
-				self.go_new = False
-				
+			self.app.open_files_for_album(self.image_list, uris=some_uris)
+			
 		some_pixels = self.clipboard.wait_for_image()
 		if some_pixels:
 			new_images = self.app.load_pixels(some_pixels)
 			if new_images:
-				self.go_new = True
 				self.image_list.extend(new_images)
-				self.go_new = False
+				
+		self.go_new = False
 			
 	def dragged_data(self, widget, context, x, y, selection, info, timestamp):
+		self.go_new = True
 		if info == DND_URI_LIST:
 			some_uris = selection.get_uris()
 			if some_uris:
-				open_context = loading.Context(uris=some_uris)
-				self.app.open_files(open_context, search=len(some_uris) == 1)
-				if open_context.images:
-					del self.image_list[:]
-				
-					self.go_new = True
-					self.image_list.extend(open_context.images)
-					self.go_new = False
-				
+				self.app.open_files_for_album(self.image_list, uris=some_uris,
+				                                   search=len(some_uris) == 1,
+				                                   replace=True)
+				                                   
 		elif info == DND_IMAGE:
 			some_pixels = selection.get_pixbuf()
 			if some_pixels:
 				new_images = self.app.load_pixels(some_pixels)
 				if new_images:
-					self.go_new = True
 					self.image_list.extend(new_images)
-					self.go_new = False
+					
+		self.go_new = False
 								
 	def file_open(self, widget, data=None):
 		self.app.open_image_dialog(self.image_list, self)
