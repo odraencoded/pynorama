@@ -16,7 +16,7 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
 import math
-from gi.repository import Gtk, Gdk, GdkPixbuf, GObject
+from gi.repository import Gdk, GdkPixbuf, GLib, GObject, Gtk
 import point
 import cairo
 
@@ -33,7 +33,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		Gtk.DrawingArea.__init__(self)
 		
 		self.__frames = set()
-		self.outline = point.Rectangle()
+		self.outline = point.Rectangle(width=1, height=1)
 		self.__obsolete_offset = False
 		
 		self.offset = 0, 0
@@ -67,11 +67,13 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 					a_frame.connect("notify::center", self.__frame_changed)
 				]
 				self.frame_signals[a_frame] = a_frame_signals
+				
+			a_frame.added(self)
 			
 		if count != len(self.__frames):	
 			self.__compute_outline()
 			self.queue_draw()
-	
+			
 	def remove_frame(self, *frames):
 		''' Removes one or more pictures from the gallery '''
 		count = len(self.__frames)
@@ -82,7 +84,9 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 				for one_frame_signal in a_frame_signals:
 					a_frame.disconnect(one_frame_signal)
 				del self.frame_signals[a_frame]
-				
+			
+			a_frame.removed(self)
+			
 		if count != len(self.__frames):
 			self.__compute_outline()
 			self.queue_draw()
@@ -131,8 +135,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		hadjust = self.get_hadjustment()
 		vadjust = self.get_vadjustment()
 		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
-		fw, fh = frame.get_size()
-		fx, fy = frame.get_center()
+		fw, fh = frame.size
+		fx, fy = frame.center
 		fl, ft = fx - fw / 2, fy - fh / 2
 		
 		x, y = rx * fw + fl, ry * fh + ft
@@ -352,7 +356,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def compute_side_scale(self, mode):
 		''' Calculates the ratio between the combined frames size
 		    and the allocated widget size '''
-			  
+		    
 		hadjust = self.get_hadjustment()
 		vadjust = self.get_vadjustment()
 		lx, ux = hadjust.get_lower(), hadjust.get_upper()
@@ -396,13 +400,15 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		''' Figure out the outline of all frames united '''
 		rectangles = []
 		for a_frame in self.__frames:
-			cx, cy = a_frame.get_center()
-			w, h = a_frame.get_size()
+			cx, cy = a_frame.center
+			w, h = a_frame.size
 			
 			a_rect = point.Rectangle(cx - w / 2.0, cy - h / 2.0, w, h)
 			rectangles.append(a_rect)
 			
 		new_outline = point.Rectangle.Union(*rectangles)
+		new_outline.width = max(new_outline.width, 1)
+		new_outline.height = max(new_outline.height, 1)
 		
 		if self.outline != new_outline:
 			self.outline = new_outline
@@ -520,6 +526,16 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		# Yes, this supports multiple frames!
 		# No, we don't use that feature... not yet.
 		for a_frame in self.__frames:
+			cr.save()
+			try:
+				cr.translate(*a_frame.center)
+				a_frame.draw(cr, self)
+			
+			except Exception:
+				raise
+				
+			cr.restore()
+			'''
 			a_surface = a_frame.get_surface()
 			if a_surface:
 				cr.save()
@@ -539,51 +555,122 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 					
 					cr.paint()
 					
-				except:
+				except Exception:
 					pass
 					
 				finally:
-					cr.restore()
+					cr.restore()'''
     
 class ImageFrame(GObject.GObject):
 	''' Contains a image '''
+	
 	# TODO: Implement rotation and scale
-	def __init__(self, surface=None):
+	def __init__(self):
 		GObject.GObject.__init__(self)
 		self.center = 0, 0
+	
+	def added(self, view):
+		pass
+		
+	def removed(self, view):
+		pass
+	
+	def draw(self, cr, view):
+		raise NotImplementedError
+		
+	@property
+	def size(self):
+		return 0, 0
+			
+	center = GObject.property(type=GObject.TYPE_PYOBJECT)
+	
+class ImageSurfaceFrame(ImageFrame):
+	def __init__(self, surface):
+		ImageFrame.__init__(self)
 		self.surface = surface
 	
-	def get_center(self):
-		return self.center
-	def set_center(self, value):
-		self.center = value
-		
-	def get_surface(self):
-		return self.surface
-	def set_surface(self, value):
-		self.surface = value
-	
-	def get_size(self):
+	def draw(self, cr, view):
 		if self.surface:
-			w, h = self.surface.get_width(), self.surface.get_height()
-			return w, h
+			offset = point.multiply(self.size, (-.5, -.5))
+			cr.set_source_surface(self.surface, *offset)
+		
+			# Set filter
+			a_pattern = cr.get_source()
+			a_filter = view.get_interpolation_for_scale(view.get_magnification())
+			if a_filter is not None:
+				a_pattern.set_filter(a_filter)
+		
+			cr.paint()
+	
+	@property
+	def size(self):
+		if self.surface:
+			return self.surface.get_width(), self.surface.get_height()
 		else:
-			return 1, 1
+			return 0, 0
 			
-	def set_pixbuf(self, pixbuf):
-		''' Utility function, just in case'''
+	surface = GObject.property(type=GObject.TYPE_PYOBJECT)
+	
+class AnimatedPixbufFrame(ImageFrame):
+	def __init__(self, animation):
+		ImageFrame.__init__(self)
+		self.animation = animation
+		self._view_anim = dict()
+	
+	def added(self, view):
+		anim_iter, anim_handle = self._view_anim.get(view, (None, None))
+		if anim_handle:
+			GLib.source_remove(anim_handle)
+		
+		anim_iter = self.animation.get_iter(None)
+		self._view_anim[view] = anim_iter, anim_handle
+		
+		self._schedule_advance(view)
+	
+	def removed(self, view):
+		anim_iter, anim_handle = self._view_anim[view]
+		if anim_handle:
+			GLib.source_remove(anim_handle)
+			
+		del self._view_anim[view]
+	
+	def _advance_animation(self, view):
+		anim_iter, anim_handle = self._view_anim[view]
+		anim_iter.advance(None)
+		self._view_anim[view] = anim_iter, None
+		
+		view.queue_draw()
+		
+		self._schedule_advance(view)
+		
+	def _schedule_advance(self, view):
+		anim_iter, anim_handle = self._view_anim[view]
+		delay = anim_iter.get_delay_time()
+		
+		if delay != -1:
+			anim_handle = GLib.timeout_add(delay, self._advance_animation, view)
+			self._view_anim[view] = anim_iter, anim_handle
+	
+	def draw(self, cr, view):
+		anim_iter, anim_handle = self._view_anim[view]
+		pixbuf = anim_iter.get_pixbuf()
 		if pixbuf:
-			surface = cairo.ImageSurface(cairo.FORMAT_ARGB32,
-			                                  pixbuf.get_width(),
-			                                  pixbuf.get_height())
-			cr = cairo.Context(surface)
-			Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
+			offset = point.multiply(self.size, (-.5, -.5))
+			Gdk.cairo_set_source_pixbuf(cr, pixbuf, *offset)
+			
+			# Set filter
+			a_pattern = cr.get_source()
+			a_filter = view.get_interpolation_for_scale(view.get_magnification())
+			if a_filter is not None:
+				a_pattern.set_filter(a_filter)
+		
 			cr.paint()
 			
+	@property
+	def size(self):
+		if self.animation:
+			return self.animation.get_width(), self.animation.get_height()
 		else:
-			surface = None
-			
-		self.set_surface(surface)
-	
-	center = GObject.property(type=GObject.TYPE_PYOBJECT)
-	surface = GObject.property(type=GObject.TYPE_PYOBJECT)
+			return 0, 0
+				
+	animation = GObject.property(type=GObject.TYPE_PYOBJECT)

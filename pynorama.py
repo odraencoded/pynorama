@@ -291,12 +291,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Setup variables
 		self.preused_images = set()
 		self.current_image = None
-		self.current_frame = viewing.ImageFrame()
+		self.current_frame = None
 		self.go_new = False
 		self.load_handle = None
-		# Animation stuff
-		self.anim_handle = None
-		self.anim_iter = None
 		# Auto zoom stuff
 		self.auto_zoom_magnify = False
 		self.auto_zoom_minify = True
@@ -363,7 +360,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.view_scroller.connect("scroll-event", lambda x, y: True)
 		
 		self.imageview = viewing.ImageView()
-		self.imageview.add_frame(self.current_frame)
 		# Setup a bunch of reactions to all sorts of things
 		self.imageview.connect("notify::magnification",
 		                       self.magnification_changed)
@@ -1145,17 +1141,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				previous_image.disconnect(self.load_handle)
 				self.load_handle = None
 				
-			#previous_image.unload()
-			if self.anim_handle is not None:
-				GLib.source_remove(self.anim_handle)
-				self.anim_handle = None
-				self.anim_iter = None
-				
 		if self.current_image is None:
 			# Current image being none means nothing is displayed.
-			self.current_frame.set_surface(None)
+			self.refresh_frame()
 			self.set_title(_("Pynorama"))
-	
+			
 		else:
 			self.app.memory.request(self.current_image)
 			if self.current_image.on_memory:
@@ -1210,51 +1200,26 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.app.memory.request(preused_image)
 		
 	def refresh_frame(self):
+		if self.current_frame:
+			self.imageview.remove_frame(self.current_frame)
+			
 		if self.current_image:
-			if self.anim_handle is not None:
-				GLib.source_remove(self.anim_handle)
-				self.anim_handle = None
-				self.anim_iter = None
+			self.current_frame = self.current_image.create_frame(self.imageview)
+			if self.current_frame is None:
+				# Create a missing icon frame #
+				missing_icon = self.render_icon(Gtk.STOCK_MISSING_IMAGE,
+				                                Gtk.IconSize.DIALOG)
+				surface_from_pixbuf = loading.PixbufImageNode.SurfaceFromPixbuf
 				
-			if self.current_image.on_memory:
-				# If the image is on the memory, then hurray!
-				if self.current_image.animation:
-					animation = self.current_image.animation
-					self.anim_iter = animation.get_iter(None)
-					delay = self.anim_iter.get_delay_time()
-					if delay != -1:
-						self.anim_handle = GLib.timeout_add(
-							                    delay,
-							                    self.refresh_animation)
-							                    
-					pixbuf = self.anim_iter.get_pixbuf()
-					
-				else:
-					pixbuf = self.current_image.pixbuf
-			else:
-				# Else just use a missing image as it. Works great.
-				pixbuf = self.render_icon(Gtk.STOCK_MISSING_IMAGE,
-				                          Gtk.IconSize.DIALOG)
-				                          
-			self.current_frame.set_pixbuf(pixbuf)
+				missing_surface = surface_from_pixbuf(missing_icon)
+				self.current_frame = viewing.ImageSurfaceFrame(missing_surface)
+			
+			self.imageview.add_frame(self.current_frame)
+			
 			if self.auto_zoom_enabled:
 				self.auto_zoom()
 			self.imageview.adjust_to_boundaries(*self.app.default_position)
 			self.refresh_transform()
-			
-	def refresh_animation(self):
-		self.anim_iter.advance(None)
-		delay = self.anim_iter.get_delay_time()
-		if delay != -1:
-			self.anim_handle = GLib.timeout_add(
-			                        delay,
-			                        self.refresh_animation)
-			                        
-		
-		pixbuf = self.anim_iter.get_pixbuf()
-		self.current_frame.set_pixbuf(pixbuf)
-		
-		return False
 		
 	def _image_added(self, album, image, index	):
 		self.app.memory.enlist(image)

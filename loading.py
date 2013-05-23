@@ -223,11 +223,32 @@ class PixbufFileLoader:
 		
 		PixbufFileLoader.Extensions = tuple(_extensions)		
 		PixbufFileLoader.DialogOption = DialogOption(
-		                                PixbufFileLoader, _("Gdk Images"),
+		                                PixbufFileLoader, _("Pixbuf Images"),
 		                                _patterns, _mime_types)
 		                                
+class PixbufAnimationFileLoader:
+	Extensions = (".gif")
+	
+	@classmethod
+	def should_open(cls, gfile):
+		uri = gfile.get_uri()
+		return uri.endswith(PixbufAnimationFileLoader.Extensions)
+		
+	@classmethod
+	def open_file(cls, context, gfile):
+		try:
+			new_image = PixbufAnimationFileImageNode(gfile)
+			
+		except Exception:
+			pass
+			
+		else:
+			context.images.append(new_image)
 
-
+PixbufAnimationFileLoader.DialogOption = DialogOption(PixbufAnimationFileLoader,
+                                                      _("Pixbuf Animations"),
+                                                      ["*.gif"], ["image/gif"])
+                                                      
 LoadersLoader.LoaderListLoader = LoadersLoader(LoaderList, reversed_open=True)
 SupportedFilesOption = CombinedDialogOption(LoadersLoader.LoaderListLoader,
                                             _("Supported Files"),
@@ -236,8 +257,12 @@ SupportedFilesOption = CombinedDialogOption(LoadersLoader.LoaderListLoader,
 CombinedDialogOption.List.append(SupportedFilesOption)
 
 PixbufFileLoader._setup()
+
 LoaderList.append(PixbufFileLoader)
+LoaderList.append(PixbufAnimationFileLoader)
+
 DialogOption.List.append(PixbufFileLoader.DialogOption)
+DialogOption.List.append(PixbufAnimationFileLoader.DialogOption)
 
 class Status:
 	''' Statuses for loadable objects '''
@@ -267,10 +292,10 @@ class Loadable(GObject.GObject):
 		self.lists = 0
 		
 	def load(self):
-		raise NotImplemented
+		raise NotImplementedError
 		
 	def unload(self):
-		raise NotImplemented
+		raise NotImplementedError
 		
 	@property
 	def on_memory(self):
@@ -369,10 +394,15 @@ class ImageNode(Loadable):
 			self.load_metadata()
 			
 		return self.metadata
+	
+	def create_frame(self, view):
+		raise NotImplementedError
+
+import viewing
 
 class GFileImageNode(ImageNode):
 	def __init__(self, gfile):
-		ImageNode.__init__(self)
+		super().__init__()
 		self.gfile = gfile
 		
 		info = gfile.query_info("standard::display-name", 0, None)
@@ -380,125 +410,52 @@ class GFileImageNode(ImageNode):
 		self.fullname = self.gfile.get_parse_name()
 		
 		self.location = Location.Disk if gfile.is_native() else Location.Distant
-		
-class PixbufFileImageNode(GFileImageNode):
-	def __init__(self, gfile):
-		GFileImageNode.__init__(self, gfile)
-		
-		self.status = Status.Good
-		
-		self.cancellable = None
-		
-	def load(self):
-		if self.is_loading:
-			raise Exception
-			
-		self.cancellable = Gio.Cancellable()
-		
-		stream = self.gfile.read(None)
-		parsename = self.gfile.get_parse_name()
-		
-		self.status = Status.Loading
-		if parsename.endswith(".gif"):
-			load_async = GdkPixbuf.PixbufAnimation.new_from_stream_async
-			self.animation = load_async(stream, self.cancellable,
-			                            self._loaded, True)
-			                            
-		else:
-			load_async = GdkPixbuf.Pixbuf.new_from_stream_async
-			self.pixbuf = load_async(stream, self.cancellable,
-			                         self._loaded, False)
-	def _loaded(self, me, result, is_gif):
-		e = None
-		try:
-			if is_gif:
-				async_finish = GdkPixbuf.PixbufAnimation.new_from_stream_finish
-				self.animation = async_finish(result)
-				
-				if self.animation.is_static_image():
-					self.pixbuf = self.animation.get_static_image()
-					self.animation = None
-			else:
-				async_finish = GdkPixbuf.Pixbuf.new_from_stream_finish
-				self.pixbuf = async_finish(result)
 
-		except GLib.GError as gerror:
-			# TODO: G_IO_ERROR_CANCELLED should not set status to bad
-			# but I have absolutely no idea how to check the type of GError
-			self.location &= ~Location.Memory
-			self.status = Status.Bad
+class PixbufImageNode(ImageNode):
+	def __init__(self, pixbuf=None):
+		super().__init__()
+		self.pixbuf = pixbuf
+		self._surface = None
+	
+	@property
+	def surface(self):
+		if self._surface is None:
+			self._surface = PixbufImageNode.SurfaceFromPixbuf(self.pixbuf)
 			
-			e = gerror
-		else:
-			self.location |= Location.Memory
-			self.status = Status.Good
-			self.load_metadata()
-		finally:
-			self.emit("finished-loading", e)
-			
+		return self._surface
+		
 	def unload(self):
-		if self.cancellable:
-			self.cancellable.cancel()
-			self.cancellable = None
-			
-		self.pixbuf = None
-		self.animation = None
-		self.location &= ~Location.Memory
-		self.status = Status.Good
+		self._surface = None
+
+	def create_frame(self, view):
+		return viewing.ImageSurfaceFrame(self.surface)
+	
+	@staticmethod
+	def SurfaceFromPixbuf(pixbuf):
+		''' Creates a cairo surface from a Gdk pixbuf'''
+		if pixbuf:
+			surface = cairo.ImageSurface(cairo.FORMAT_ARGB32,
+				                         pixbuf.get_width(),
+				                         pixbuf.get_height())
+			cr = cairo.Context(surface)
+			Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
+			cr.paint()
 		
-	def load_metadata(self):
-		if self.metadata is None:
-			self.metadata = ImageMeta()
+		else:
+			surface = None
 		
-		# These file properties are queried from the file info
-		try:
-			file_info = self.gfile.query_info(
-			                       "standard::size,time::modified", 0, None)
-			try:
-				size_str = file_info.get_attribute_as_string("standard::size")
-				self.metadata.data_size = int(size_str)
-			except:
-				self.metadata.data_size = 0
-			try:
-				time_str = file_info.get_attribute_as_string("time::modified")
-				self.metadata.modification_date = float(time_str)
-			except:
-				self.metadata.modification_date = float(time.time())
-		except:
-			self.metadata.modification_date = float(time.time())
-			self.metadata.data_size = 0
-		
-		# The width and height of the image are loaded from guess where
-		if self.pixbuf:
-			self.metadata.width = self.pixbuf.get_width()
-			self.metadata.height = self.pixbuf.get_height()
-			
-		elif self.animation:
-			self.metadata.width = self.animation.get_width()
-			self.metadata.height = self.animation.get_height()
-			
-		elif self.gfile.is_native():
-			try:
-				filepath = self.gfile.get_path()
-				fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(filepath)
-				self.metadata.width = width
-				self.metadata.height = height
-			except:
-				self.metadata.width = 0
-				self.metadata.height = 0
-			
-		# TODO: Add support for non-native files
-		
-class PixbufDataImageNode(ImageNode):
+		return surface
+
+class PixbufDataImageNode(PixbufImageNode, ImageNode):
 	''' An ImageNode created from a pixbuf
 	    This ImageNode can not be loaded or unloaded
 	    Because it can not find the data source by itself '''
 	    
 	def __init__(self, pixbuf, name="Image Data"):
 		ImageNode.__init__(self)
+		PixbufImageNode.__init__(self, pixbuf)
 		
 		self.fullname = self.name = name
-		self.pixbuf = pixbuf
 		
 		self.load_metadata()
 		
@@ -514,6 +471,212 @@ class PixbufDataImageNode(ImageNode):
 		self.metadata.modification_date = time.time()
 		self.metadata.data_size = 0
 		
-	def unload(self):			
+	def unload(self):
+		PixbufImageNode.unload(self)
 		self.pixbuf = None
 		self.location &= ~Location.Memory
+
+class PixbufFileImageNode(GFileImageNode, PixbufImageNode):
+	def __init__(self, gfile):
+		super().__init__(gfile=gfile)
+		
+		self.status = Status.Good
+		self.cancellable = None
+		
+	def load(self):
+		if self.is_loading:
+			raise Exception
+			
+		self.cancellable = Gio.Cancellable()
+		
+		stream = self.gfile.read(None)
+		
+		self.status = Status.Loading
+		load_async = GdkPixbuf.Pixbuf.new_from_stream_async
+		self.pixbuf = load_async(stream, self.cancellable, self._loaded, None)
+		
+	def _loaded(self, me, result, *data):
+		e = None
+		try:
+			async_finish = GdkPixbuf.Pixbuf.new_from_stream_finish
+			self.pixbuf = async_finish(result)
+
+		except GLib.GError as gerror:
+			# TODO: G_IO_ERROR_CANCELLED should not set status to bad
+			# but I have absolutely no idea how to check the type of GError
+			self.location &= ~Location.Memory
+			self.status = Status.Bad
+			
+			e = gerror
+			
+		else:
+			self.location |= Location.Memory
+			self.status = Status.Good
+			self.load_metadata()
+			
+		finally:
+			self.emit("finished-loading", e)
+			
+	def unload(self):
+		if self.cancellable:
+			self.cancellable.cancel()
+			self.cancellable = None
+		
+		PixbufImageNode.unload(self)
+		self.pixbuf = None
+		self.location &= ~Location.Memory
+		self.status = Status.Good
+		
+	def load_metadata(self):
+		if self.metadata is None:
+			self.metadata = ImageMeta()
+		
+		# These file properties are queried from the file info
+		try:
+			file_info = self.gfile.query_info(
+			                       "standard::size,time::modified", 0, None)
+
+		except Exception:
+			self.metadata.modification_date = float(time.time())
+			self.metadata.data_size = 0
+			
+		else:
+			try:
+				size_str = file_info.get_attribute_as_string("standard::size")
+				self.metadata.data_size = int(size_str)
+				
+			except Exception:
+				self.metadata.data_size = 0
+				
+			try:
+				time_str = file_info.get_attribute_as_string("time::modified")
+				self.metadata.modification_date = float(time_str)
+				
+			except Exception:
+				self.metadata.modification_date = float(time.time())
+		
+		# The width and height of the image are loaded from guess where
+		if self.pixbuf:
+			self.metadata.width = self.pixbuf.get_width()
+			self.metadata.height = self.pixbuf.get_height()
+			
+		elif self.gfile.is_native():
+			try:
+				filepath = self.gfile.get_path()
+				fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(filepath)
+				self.metadata.width = width
+				self.metadata.height = height
+			except Exception:
+				self.metadata.width = 0
+				self.metadata.height = 0
+			
+		# TODO: Add support for non-native files
+
+class PixbufAnimationFileImageNode(GFileImageNode, PixbufImageNode):
+	def __init__(self, gfile):
+		super().__init__(gfile=gfile)
+		
+		self.animation = None
+		
+		self.status = Status.Good
+		self.cancellable = None
+		
+	def load(self):
+		if self.is_loading:
+			raise Exception
+			
+		self.cancellable = Gio.Cancellable()
+		
+		stream = self.gfile.read(None)
+		parsename = self.gfile.get_parse_name()
+		
+		self.status = Status.Loading
+		load_async = GdkPixbuf.PixbufAnimation.new_from_stream_async
+		self.animation = load_async(stream, self.cancellable,
+		                            self._loaded, None)
+		
+	def _loaded(self, me, result, *data):
+		e = None
+		try:
+			async_finish = GdkPixbuf.PixbufAnimation.new_from_stream_finish
+			self.animation = async_finish(result)
+			
+			if self.animation.is_static_image():
+				self.pixbuf = self.animation.get_static_image()
+				self.animation = None
+
+		except GLib.GError as gerror:
+			# TODO: G_IO_ERROR_CANCELLED should not set status to bad
+			# but I have absolutely no idea how to check the type of GError
+			self.location &= ~Location.Memory
+			self.status = Status.Bad
+			
+			e = gerror
+			
+		else:
+			self.location |= Location.Memory
+			self.status = Status.Good
+			self.load_metadata()
+			
+		finally:
+			self.emit("finished-loading", e)
+	
+	def create_frame(self, view):
+		if self.pixbuf:
+			return PixbufImageNode.create_frame(self, view)
+		else:
+			return viewing.AnimatedPixbufFrame(self.animation)
+	
+	def unload(self):
+		if self.cancellable:
+			self.cancellable.cancel()
+			self.cancellable = None
+		
+		PixbufImageNode.unload(self)
+		self.pixbuf = None
+		self.animation = None
+		self.location &= ~Location.Memory
+		self.status = Status.Good
+		
+	def load_metadata(self):
+		if self.metadata is None:
+			self.metadata = ImageMeta()
+		
+		# These file properties are queried from the file info
+		try:
+			file_info = self.gfile.query_info(
+			                       "standard::size,time::modified", 0, None)
+
+		except Exception:
+			self.metadata.modification_date = float(time.time())
+			self.metadata.data_size = 0
+			
+		else:
+			try:
+				size_str = file_info.get_attribute_as_string("standard::size")
+				self.metadata.data_size = int(size_str)
+			except Exception:
+				self.metadata.data_size = 0
+				
+			try:
+				time_str = file_info.get_attribute_as_string("time::modified")
+				self.metadata.modification_date = float(time_str)
+			except Exception:
+				self.metadata.modification_date = float(time.time())
+		
+		# The width and height of the image are loaded from guess where
+		if self.animation:
+			self.metadata.width = self.animation.get_width()
+			self.metadata.height = self.animation.get_height()
+			
+		elif self.gfile.is_native():
+			try:
+				filepath = self.gfile.get_path()
+				fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(filepath)
+				self.metadata.width = width
+				self.metadata.height = height
+			except Exception:
+				self.metadata.width = 0
+				self.metadata.height = 0
+			
+		# TODO: Add support for non-native files
