@@ -360,8 +360,7 @@ class ImageNode(Loadable):
 		self.metadata = None
 		
 		self.fullname, self.name = "", ""
-		self.next = self.previous = None
-		
+				
 	def __str__(self):
 		return self.fullname
 	
@@ -370,38 +369,6 @@ class ImageNode(Loadable):
 			self.load_metadata()
 			
 		return self.metadata
-	
-	def insert_links(self, previous, next):
-		if self.next:
-			self.next.previous = self.previous
-		if self.previous:
-			self.previous.next = self.next
-		
-		self.next = next
-		self.previous = previous
-		
-		if self.next:
-			self.next.previous = self
-		if self.previous:
-			self.previous.next = self
-					
-	def remove_links(self):
-		if self.next:
-			self.next.previous = self.previous
-			
-		if self.previous:
-			self.previous.next = self.next
-			
-		self.previous = self.next = None
-	
-	def cut_ties(self):
-		if self.next and self.next.previous is self:
-			self.next.previous = self.previous
-			
-		if self.previous and self.previous.next is self:
-			self.previous.next = self.next
-		
-		self.previous = self.next = None
 		
 class ImageGFileNode(ImageNode):
 	def __init__(self, gfile):
