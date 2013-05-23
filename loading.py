@@ -196,7 +196,7 @@ class PixbufFileLoader:
 	@classmethod
 	def open_file(cls, context, gfile):
 		try:
-			new_image = ImageGFileNode(gfile)
+			new_image = PixbufFileImageNode(gfile)
 			
 		except Exception:
 			pass
@@ -369,8 +369,8 @@ class ImageNode(Loadable):
 			self.load_metadata()
 			
 		return self.metadata
-		
-class ImageGFileNode(ImageNode):
+
+class GFileImageNode(ImageNode):
 	def __init__(self, gfile):
 		ImageNode.__init__(self)
 		self.gfile = gfile
@@ -380,6 +380,11 @@ class ImageGFileNode(ImageNode):
 		self.fullname = self.gfile.get_parse_name()
 		
 		self.location = Location.Disk if gfile.is_native() else Location.Distant
+		
+class PixbufFileImageNode(GFileImageNode):
+	def __init__(self, gfile):
+		GFileImageNode.__init__(self, gfile)
+		
 		self.status = Status.Good
 		
 		self.cancellable = None
@@ -484,7 +489,7 @@ class ImageGFileNode(ImageNode):
 			
 		# TODO: Add support for non-native files
 		
-class ImageDataNode(ImageNode):
+class PixbufDataImageNode(ImageNode):
 	''' An ImageNode created from a pixbuf
 	    This ImageNode can not be loaded or unloaded
 	    Because it can not find the data source by itself '''

@@ -278,7 +278,7 @@ class ImageViewer(Gtk.Application):
 		context.images.extend(loader_context.images)
 		
 	def load_pixels(self, pixels):
-		pixelated_image = loading.ImageDataNode(pixels, "Pixels")
+		pixelated_image = loading.PixbufDataImageNode(pixels, "Pixels")
 		return [pixelated_image]
 	
 class ViewerWindow(Gtk.ApplicationWindow):
