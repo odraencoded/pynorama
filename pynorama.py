@@ -23,6 +23,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
 import organization, navigation, loading, preferences, viewing, dialog
+from loading import DirectoryLoader
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
@@ -70,10 +71,11 @@ class ImageViewer(Gtk.Application):
 		
 	def do_open(self, files, file_count, hint):
 		some_window = self.get_window()
-		images = self.load_files(files)
-		if images:
+		open_context = loading.Context(files=files)
+		self.open_files(open_context, search=file_count == 1)
+		if open_context.images:
 			some_window.go_new = True
-			some_window.image_list.extend(images)
+			some_window.image_list.extend(open_context.images)
 			some_window.go_new = False
 			
 		some_window.present()
@@ -95,32 +97,41 @@ class ImageViewer(Gtk.Application):
 		image_chooser.set_select_multiple(True)
 		image_chooser.set_local_only(False)
 		
-		# Add filters of supported formats from "loading" module
-		for fileFilter in loading.Filters:
-			image_chooser.add_filter(fileFilter)
-		
+		# Add dialog options from "loading" module
+		for a_dialog_option in loading.CombinedDialogOption.List:
+			a_dialog_filter = a_dialog_option.create_filter()
+			image_chooser.add_filter(a_dialog_filter)			
+			
+		for a_dialog_option in loading.DialogOption.List:
+			a_dialog_filter = a_dialog_option.create_filter()
+			image_chooser.add_filter(a_dialog_filter)
+			
 		clear_album = False
-		search_directory = False
+		search_siblings = False
 		choosen_uris = None
 		
 		response = image_chooser.run()
 		
+		choosen_option = image_chooser.get_filter().dialog_option
 		if response in [Gtk.ResponseType.OK, 1]:
 			choosen_uris = image_chooser.get_uris()
 		
 		if response == Gtk.ResponseType.OK:
 			clear_album = True
 			if len(choosen_uris) == 1:
-				search_directory = True
-			
+				search_siblings = True
+				
 		image_chooser.destroy()
-		
-		if clear_album:
-			del album[:]
 			
 		if choosen_uris:
-			images = self.load_uris(choosen_uris, search_directory)
-			album.extend(images)
+			context = loading.Context(uris=choosen_uris)
+			self.open_files(context, choosen_option.loader, search_siblings)
+				
+			if context.images:	
+				if clear_album:
+					del album[:]
+					
+				album.extend(context.images)
 	
 	def show_preferences_dialog(self, window=None):
 		''' Show the preferences dialog '''
@@ -132,7 +143,7 @@ class ImageViewer(Gtk.Application):
 		
 		if dialog.run() == Gtk.ResponseType.OK:
 			dialog.save_prefs()
-						
+			
 		dialog.destroy()
 		
 	def show_about_dialog(self, window=None):
@@ -214,69 +225,62 @@ class ImageViewer(Gtk.Application):
 		elif thing.on_memory:
 			dialog.log(dialog.Lines.Loaded(thing))
 	
-	# TODO: Redesign this entire loading process.
-	def load_files(self, files, search_directory = False):
-		recent_manager = Gtk.RecentManager.get_default()
-		for a_file in files:
-			an_uri = a_file.get_uri()
-			recent_manager.add_item(an_uri)
-			
-		loaded_images = []
-		front_image = None
-		if search_directory and len(files) == 1:
-			single_file = files[0]
-			if not loading.IsAlbumFile(single_file) \
-			   and single_file.has_parent(None) \
-			   and loading.IsSupportedImage(single_file):
-				parent_file = single_file.get_parent()
-				# Try to get some images from the parent
-				# This will fail if it's a network file
-				try:
-					some_files = loading.GetFileImageFiles(parent_file)
-				except GLib.GError:
-					pass # Blimey, it didn't work!
-				else:
-					files = some_files
-					# Move the former single image file to the start
-					for a_file in files:
-						if a_file.equal(single_file):
-							files.remove(a_file)
-							break
-					files.insert(0, single_file)
-										
-		# Load images from files!
-		file_problems = []
-		for a_file in files:
+	def open_files(self, context, loader=None, search=False, silent=False):
+		if loader is None:
+			loader = loading.LoadersLoader.LoaderListLoader
+		
+		context.uris_to_files()
+		context.load_files_info()
+		for a_file, a_problem in context.problems.items():
+			context.files.remove(a_file)
+		
+		directories = []
+		removed_files = 0
+		for i in range(len(context.files)):
+			index = i - removed_files
+			a_file = context.files[index]
 			try:
-				if loading.IsAlbumFile(a_file):
-					some_images = loading.GetAlbumImages(a_file)
-					loaded_images.extend(some_images)
-				else:
-					an_image = loading.ImageGFileNode(a_file)
-					loaded_images.append(an_image)
-					
-			except Exception as a_problem:
-				file_problems.append((a_file, a_problem))
-				
-		if file_problems:
+				if DirectoryLoader.should_open(a_file):
+					removed_files += 1
+					directories.append(a_file)
+					del context.files[index]
+			except Exception:
+				raise
+		
+		if search and context.files:
+			context.add_sibling_files(loader)
+		
+		if directories:
+			directories_context = loading.Context()
+			for a_file in directories:
+				DirectoryLoader.open_file(directories_context, a_file)
+			
+			context.files.extend(directories_context.files)
+			
+		if context.files:
+			self.open_context_images(context, loader)
+		
+		if context.problems and not silent:
 			problem_list = []
-			for a_file, a_problem in file_problems:
-				problem_list.append((a_file.get_parse_name(), str(a_problem)))
-				
-			dialog.alert_list(_("There were errors handling" +
-			                    " the following files"),
-			                  problem_list, ["File", "Error"])
+			for a_file, a_problem in context.problems.items():
+				problem_list.append((a_file.get_parse_name(), str(a_problem))) 
+			
+			message = _("There were problems opening the following files:")
+			columns = [_("File"), _("Error")]
+			
+			dialog.alert_list(message, problem_list, columns)
+			
+	def open_context_images(self, context, loader):
+		loader_context = loading.Context()
+		for a_file in context.files:
+			loader.open_file(loader_context, a_file)
 		
-		return loaded_images
-		
-	def load_uris(self, uris, search_directory):
-		gfiles = [Gio.File.new_for_uri(an_uri) for an_uri in uris]
-		return self.load_files(gfiles, search_directory)
+		context.images.extend(loader_context.images)
 		
 	def load_pixels(self, pixels):
 		pixelated_image = loading.ImageDataNode(pixels, "Pixels")
 		return [pixelated_image]
-		
+	
 class ViewerWindow(Gtk.ApplicationWindow):
 	def __init__(self, app):
 		Gtk.ApplicationWindow.__init__(self,
@@ -1066,10 +1070,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		some_uris = self.clipboard.wait_for_uris()
 		
 		if some_uris:
-			new_images = self.app.load_uris(some_uris, False)
-			if new_images:
+			open_context = loading.Context(uris=some_uris)
+			self.app.open_files(open_context, search=False)
+			if open_context.images:
 				self.go_new = True
-				self.image_list.extend(new_images)
+				self.image_list.extend(open_context.images)
 				self.go_new = False
 				
 		some_pixels = self.clipboard.wait_for_image()
@@ -1084,12 +1089,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if info == DND_URI_LIST:
 			some_uris = selection.get_uris()
 			if some_uris:
-				new_images = self.app.load_uris(some_uris, True)
-				if new_images:
+				open_context = loading.Context(uris=some_uris)
+				self.app.open_files(open_context, search=len(some_uris) == 1)
+				if open_context.images:
 					del self.image_list[:]
 				
 					self.go_new = True
-					self.image_list.extend(new_images)
+					self.image_list.extend(open_context.images)
 					self.go_new = False
 				
 		elif info == DND_IMAGE:
