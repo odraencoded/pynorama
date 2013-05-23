@@ -117,10 +117,10 @@ class Album(GObject.Object):
 			start = self._store.index(image)
 			count = len(self._store)
 		
-			for i in range(1, forward):
+			for i in range(1, 1 + forward):
 				result.append(self._store[(start + i) % count])
 			
-			for i in range(1, backwards):
+			for i in range(1, 1 + backwards):
 				result.append(self._store[(start - i) % count])
 			
 		return result

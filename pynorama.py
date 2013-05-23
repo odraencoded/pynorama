@@ -1179,7 +1179,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.preused_images.clear()
 		
 		if self.current_image:
-			next_images = self.image_list.around(self.current_image, 2, -2)
+			next_images = self.image_list.around(self.current_image, 2, 2)
 			
 			self.preused_images.update(next_images)
 			self.preused_images.add(self.current_image)
