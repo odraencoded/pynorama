@@ -38,7 +38,8 @@ class ImageViewer(Gtk.Application):
 		self.default_position = .5, .5
 		self.memory_check_queued = False
 		self.meta_mouse_handler = navigation.MetaMouseHandler()
-		
+	
+	# --- Gtk.Application interface down this line --- #
 	def do_startup(self):
 		Gtk.Application.do_startup(self)
 		
@@ -62,6 +63,95 @@ class ImageViewer(Gtk.Application):
 		self.memory.connect("thing-unlisted", self.queue_memory_check)
 			
 		Gtk.Window.set_default_icon_name("pynorama")
+	
+	def do_activate(self):
+		some_window = self.get_window()
+		some_window.present()
+		
+	def do_open(self, files, file_count, hint):
+		some_window = self.get_window()
+		images = self.load_files(files)
+		if images:
+			some_window.go_new = True
+			some_window.image_list.extend(images)
+			some_window.go_new = False
+			
+		some_window.present()
+			
+	def open_image_dialog(self, album, window=None):
+		''' Creates an "open image..." dialog for
+		    adding images into an album. '''
+		    
+		image_chooser = Gtk.FileChooserDialog(_("Open Image..."), window,
+		                                      Gtk.FileChooserAction.OPEN,
+		                                      (Gtk.STOCK_CANCEL,
+		                                       Gtk.ResponseType.CANCEL,
+		                                       Gtk.STOCK_ADD,
+		                                       1,
+		                                       Gtk.STOCK_OPEN,
+		                                       Gtk.ResponseType.OK))
+			
+		image_chooser.set_default_response(Gtk.ResponseType.OK)
+		image_chooser.set_select_multiple(True)
+		image_chooser.set_local_only(False)
+		
+		# Add filters of supported formats from "loading" module
+		for fileFilter in loading.Filters:
+			image_chooser.add_filter(fileFilter)
+		
+		clear_album = False
+		search_directory = False
+		choosen_uris = None
+		
+		response = image_chooser.run()
+		
+		if response in [Gtk.ResponseType.OK, 1]:
+			choosen_uris = image_chooser.get_uris()
+		
+		if response == Gtk.ResponseType.OK:
+			clear_album = True
+			if len(choosen_uris) == 1:
+				search_directory = True
+			
+		image_chooser.destroy()
+		
+		if clear_album:
+			del album[:]
+			
+		if choosen_uris:
+			images = self.load_uris(choosen_uris, search_directory)
+			album.extend(images)
+	
+	def show_preferences_dialog(self, window=None):
+		''' Show the preferences dialog '''
+		dialog = preferences.Dialog(self)
+			
+		dialog.set_transient_for(window or self.get_window())
+		dialog.set_modal(True)
+		dialog.set_destroy_with_parent(True)
+		
+		if dialog.run() == Gtk.ResponseType.OK:
+			dialog.save_prefs()
+						
+		dialog.destroy()
+		
+	def show_about_dialog(self, window=None):
+		''' Shows the about dialog '''
+		dialog = Gtk.AboutDialog(program_name="pynorama",
+		                         version=ImageViewer.Version,
+		                         comments=_("pynorama is an image viewer"),
+		                         logo_icon_name="pynorama",
+		                         license_type=Gtk.License.GPL_3_0)
+		                         
+		dialog.set_copyright("Copyrght © 2013 Leonardo Augusto Pereira")
+		
+		dialog.set_transient_for(window or self.get_window())
+		dialog.set_modal(True)
+		dialog.set_destroy_with_parent(True)
+		
+		#dialog.connect("response", lambda a, b: a.destroy())
+		dialog.run()
+		dialog.destroy()
 		
 	def get_window(self):
 		windows = self.get_windows() # XP, Vista, 7, 8?
@@ -80,32 +170,6 @@ class ImageViewer(Gtk.Application):
 			a_window.set_fullscreen(fillscreen)
 			return a_window
 			
-	def show_about_dialog(self, *data):
-		dialog = Gtk.AboutDialog(parent=self.get_window(),
-		                         program_name="pynorama",
-		                         version=ImageViewer.Version,
-		                         comments=_("pynorama is an image viewer"),
-		                         logo_icon_name="pynorama",
-		                         license_type=Gtk.License.GPL_3_0)
-		                         
-		dialog.set_copyright("Copyrght © 2013 Leonardo Augusto Pereira")
-		dialog.connect("response", lambda a, b: a.destroy())
-		dialog.run()
-		
-	def do_activate(self):
-		some_window = self.get_window()
-		some_window.present()
-		
-	def do_open(self, files, file_count, hint):
-		some_window = self.get_window()
-		images = self.load_files(files)
-		if images:
-			some_window.go_new = True
-			some_window.image_list.extend(images)
-			some_window.go_new = False
-			
-		some_window.present()
-		
 	def queue_memory_check(self, *data):
 		if not self.memory_check_queued:
 			self.memory_check_queued = True
@@ -212,7 +276,7 @@ class ImageViewer(Gtk.Application):
 	def load_pixels(self, pixels):
 		pixelated_image = loading.ImageDataNode(pixels, "Pixels")
 		return [pixelated_image]
-			
+		
 class ViewerWindow(Gtk.ApplicationWindow):
 	def __init__(self, app):
 		Gtk.ApplicationWindow.__init__(self,
@@ -495,9 +559,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"ui-scrollbar-left" : (self.change_scrollbars,),
 			"ui-keep-above" : (self.toggle_keep_above,),
 			"ui-keep-below" : (self.toggle_keep_below,),
-			"preferences" : (self.show_preferences,),
+			"preferences" : (lambda data:
+			                 self.app.show_preferences_dialog(self),),
 			"fullscreen" : (self.toggle_fullscreen,),
-			"about" : (self.app.show_about_dialog,),
+			"about" : (lambda data: self.app.show_about_dialog(self),),
 		}
 		
 		sort_group, interp_group, zoom_mode_group = [], [], []
@@ -595,18 +660,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def state(self, message):
 		self.statusbar.push(0, message)
 		
-	# Events		
-	def show_preferences(self, data=None):
-		prefs_dialog = preferences.Dialog(self.app)
-			
-		prefs_dialog.set_transient_for(self)
-		prefs_dialog.set_modal(True)
-		
-		if prefs_dialog.run() == Gtk.ResponseType.OK:
-			prefs_dialog.save_prefs()
-						
-		prefs_dialog.destroy()
-		
+	# --- event handling down this line --- #
 	def __ordering_mode_changed(self, radioaction, current):
 		#TODO: Use GObject.bind_property_with_closure for this
 		sort_value = current.get_current_value()
@@ -1048,45 +1102,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 					self.go_new = False
 								
 	def file_open(self, widget, data=None):
-		# Create image choosing dialog
-		image_chooser = Gtk.FileChooserDialog(_("Open Image..."), self,
-		                                      Gtk.FileChooserAction.OPEN,
-		                                      (Gtk.STOCK_CANCEL,
-		                                       Gtk.ResponseType.CANCEL,
-		                                       Gtk.STOCK_ADD,
-		                                       1,
-		                                       Gtk.STOCK_OPEN,
-		                                       Gtk.ResponseType.OK))
-			
-		image_chooser.set_default_response(Gtk.ResponseType.OK)
-		image_chooser.set_select_multiple(True)
-		image_chooser.set_local_only(False)
-		# Add filters of supported formats from "loading" module
-		for fileFilter in loading.Filters:
-			image_chooser.add_filter(fileFilter)
-		
-		clear_list = False
-		search_directory = False
-		choosen_uris = None
-		
-		response = image_chooser.run()
-		
-		if response in [Gtk.ResponseType.OK, 1]:
-			choosen_uris = image_chooser.get_uris()
-		
-		if response == Gtk.ResponseType.OK:
-			clear_list = True
-			if len(choosen_uris) == 1:
-				search_directory = True
-			
-		image_chooser.destroy()
-		
-		if clear_list:
-			del self.image_list[:]
-			
-		if choosen_uris:
-			images = self.app.load_uris(choosen_uris, search_directory)
-			self.image_list.extend(images)
+		self.app.open_image_dialog(self.image_list, self)
 			
 	def imageview_scrolling(self, widget, data=None):
 		anchor = self.imageview.get_pointer()
