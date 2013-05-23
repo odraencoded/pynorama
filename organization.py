@@ -91,12 +91,17 @@ class Album(GObject.Object):
 		if self.__autosort_signal_id:
 			GLib.source_remove(self.__autosort_signal_id)
 			self.__autosort_signal_id = None
-			
-		if self.comparer and len(self._store) > 1:
-			self._store.sort(key=self.comparer,
-			                 reverse=self.reverse)
-			
+		
+		if self.sort_list(self._store):
 			self.emit("order-changed")
+	
+	def sort_list(self, a_list):
+		if self.comparer and len(a_list) > 1:
+			a_list.sort(key=self.comparer, reverse=self.reverse)
+			return True
+			
+		else:
+			return False
 	
 	def next(self, image):
 		''' Returns the image after the input '''
