@@ -397,22 +397,28 @@ class ViewerWindow(Gtk.ApplicationWindow):
 						
 		# Add a status bar
 		self.statusbar = Gtk.Statusbar()
-		self.statusbar.set_spacing(24)
+		self.statusbar.set_spacing(8)
+		
+		self.statusbar.spinner = Gtk.Spinner()
+		self.statusbar.pack_start(self.statusbar.spinner, False, False, 8)
+		self.statusbar.reorder_child(self.statusbar.spinner, 0)
 		
 		# With a label for image index
 		self.index_label = Gtk.Label()
 		self.index_label.set_alignment(1, 0.5)
-		self.statusbar.pack_end(self.index_label, False, False, 0)
+		self.statusbar.pack_end(self.index_label, False, True, 8)
 		
 		# And a label for the image transformation
 		self.transform_label = Gtk.Label()
 		self.transform_label.set_alignment(0, 0.5)
-		self.statusbar.pack_end(self.transform_label, False, False, 0)
+		self.statusbar.pack_end(self.transform_label, False, True, 8)
 		
 		# Show status
-		vlayout.pack_end(self.statusbar, False, False, 0)
+		vlayout.pack_end(self.statusbar, False, True, 0)
 		
 		self.statusbar.show_all()
+		self.statusbar.spinner.hide()
+		
 		self.refresh_transform()
 		self.refresh_index()
 		self.refresh_interp()
@@ -677,9 +683,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.actions.add_action(an_action)
 			else:
 				self.actions.add_action_with_accel(an_action, an_accel)
-				
-	def state(self, message):
-		self.statusbar.push(0, message)
 		
 	# --- event handling down this line --- #
 	def __ordering_mode_changed(self, radioaction, current):
@@ -775,7 +778,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def refresh_transform(self):
 		if self.current_image:
-			if self.current_image.status == loading.Status.Bad:
+			if self.current_image.is_bad:
 				# This just may happen
 				pic = _("Error")
 				
@@ -1155,21 +1158,27 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.load_handle = None
 				
 		if self.current_image is None:
-			# Current image being none means nothing is displayed.
+			# Current image being none means nothing is displayed #
 			self.refresh_frame()
 			self.set_title(_("Pynorama"))
 			
 		else:
 			self.app.memory.request(self.current_image)
-			if self.current_image.on_memory:
+			if self.current_image.on_memory or self.current_image.is_bad:
 				self.refresh_frame()
 				self.refresh_preuse()
 				
 			else:
-				self.state(dialog.Lines.Loading(self.current_image))
+				message = dialog.Lines.Loading(self.current_image)
+				ctx = self.statusbar.get_context_id("loading")
+				self.statusbar.pop(ctx)
+				self.statusbar.push(ctx, message)
+				
+				self.statusbar.spinner.show()
+				self.statusbar.spinner.start() # ~like a record~ #
+				
 				self.load_handle = self.current_image.connect(
-				                                      "finished-loading",
-				                                      self._image_loaded)
+				                        "finished-loading", self._image_loaded)
 				                                      
 			# Sets the window title
 			img_name = self.current_image.name
@@ -1187,12 +1196,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def _image_loaded(self, image, error):
 		# Check if the image loaded is the current image, just in case
 		if image == self.current_image:
-			if image.on_memory:
-				self.state(dialog.Lines.Loaded(image))
-				
+			self.statusbar.spinner.stop()
 			if error:
-				self.state(dialog.Lines.Error(error))
-				
+				message = dialog.Lines.Error(error)
+				ctx = self.statusbar.get_context_id("loading")
+				self.statusbar.pop(ctx)
+				self.statusbar.push(ctx, message)
+			
 			self.refresh_frame()
 			self.refresh_preuse()
 			
@@ -1217,6 +1227,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.imageview.remove_frame(self.current_frame)
 			
 		if self.current_image:
+			self.statusbar.spinner.hide()
+			self.statusbar.spinner.stop()
+			
 			self.current_frame = self.current_image.create_frame(self.imageview)
 			if self.current_frame is None:
 				# Create a missing icon frame #
@@ -1226,6 +1239,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				
 				missing_surface = surface_from_pixbuf(missing_icon)
 				self.current_frame = viewing.ImageSurfaceFrame(missing_surface)
+				
+			else:
+				# Remove "loading" message if it loaded
+				ctx = self.statusbar.get_context_id("loading")
+				self.statusbar.pop(ctx)
+			
 			
 			self.imageview.add_frame(self.current_frame)
 			

@@ -309,6 +309,10 @@ class Loadable(GObject.GObject):
 	def is_loading(self):
 		return self.status == Status.Loading
 		
+	@property
+	def is_bad(self):
+		return self.status == Status.Bad
+		
 class Memory(GObject.GObject):
 	''' A very basic memory management thing '''
 	__gsignals__ = {
@@ -475,6 +479,7 @@ class PixbufDataImageNode(PixbufImageNode, ImageNode):
 		PixbufImageNode.unload(self)
 		self.pixbuf = None
 		self.location &= ~Location.Memory
+		self.status = Status.Bad
 
 class PixbufFileImageNode(GFileImageNode, PixbufImageNode):
 	def __init__(self, gfile):
