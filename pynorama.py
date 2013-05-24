@@ -398,7 +398,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Add a status bar
 		self.statusbar = Gtk.Statusbar()
 		self.statusbar.set_spacing(8)
-		
+		message_area = self.statusbar.get_message_area().get_parent()
+		self.statusbar.set_child_packing(
+		     message_area, True, True, 8, Gtk.PackType.START)
+		#print(message_area, message_area.get_parent())
 		self.statusbar.spinner = Gtk.Spinner()
 		self.statusbar.pack_start(self.statusbar.spinner, False, False, 8)
 		self.statusbar.reorder_child(self.statusbar.spinner, 0)
@@ -1197,11 +1200,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Check if the image loaded is the current image, just in case
 		if image == self.current_image:
 			self.statusbar.spinner.stop()
-			if error:
-				message = dialog.Lines.Error(error)
-				ctx = self.statusbar.get_context_id("loading")
-				self.statusbar.pop(ctx)
-				self.statusbar.push(ctx, message)
 			
 			self.refresh_frame()
 			self.refresh_preuse()
@@ -1229,23 +1227,30 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if self.current_image:
 			self.statusbar.spinner.hide()
 			self.statusbar.spinner.stop()
-			
-			self.current_frame = self.current_image.create_frame(self.imageview)
-			if self.current_frame is None:
-				# Create a missing icon frame #
-				missing_icon = self.render_icon(Gtk.STOCK_MISSING_IMAGE,
-				                                Gtk.IconSize.DIALOG)
-				surface_from_pixbuf = loading.PixbufImageNode.SurfaceFromPixbuf
+			try:
+				image_frame = self.current_image.create_frame(self.imageview)
 				
-				missing_surface = surface_from_pixbuf(missing_icon)
-				self.current_frame = viewing.ImageSurfaceFrame(missing_surface)
+			except Exception:
+				image_frame = None
 				
-			else:
+			finally:
 				# Remove "loading" message if it loaded
 				ctx = self.statusbar.get_context_id("loading")
 				self.statusbar.pop(ctx)
-			
-			
+				
+				if image_frame is None:
+					# Create a missing icon frame #
+					missing_icon = self.render_icon(Gtk.STOCK_MISSING_IMAGE,
+						                            Gtk.IconSize.DIALOG)
+						                            
+					missing_surface = viewing.SurfaceFromPixbuf(missing_icon)
+					image_frame = viewing.ImageSurfaceFrame(missing_surface)
+					
+					if self.current_image.error:
+						message = dialog.Lines.Error(self.current_image.error)
+						self.statusbar.push(ctx, message)
+					
+			self.current_frame = image_frame
 			self.imageview.add_frame(self.current_frame)
 			
 			if self.auto_zoom_enabled:
@@ -1253,7 +1258,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.imageview.adjust_to_boundaries(*self.app.default_position)
 			self.refresh_transform()
 		
-	def _image_added(self, album, image, index	):
+	def _image_added(self, album, image, index):
 		self.app.memory.enlist(image)
 		self.__queue_refresh_index()
 		

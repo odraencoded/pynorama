@@ -264,6 +264,10 @@ LoaderList.append(PixbufAnimationFileLoader)
 DialogOption.List.append(PixbufFileLoader.DialogOption)
 DialogOption.List.append(PixbufAnimationFileLoader.DialogOption)
 
+class DataError(Exception):
+	''' For exceptions due to the current state of the data loaded '''
+	pass
+
 class Status:
 	''' Statuses for loadable objects '''
 	Bad = -1 # Something went wrong
@@ -384,6 +388,7 @@ class ImageNode(Loadable):
 	def __init__(self):
 		Loadable.__init__(self)
 		
+		self.error = None
 		self.pixbuf = None
 		self.animation = None
 		self.metadata = None
@@ -414,7 +419,7 @@ class GFileImageNode(ImageNode):
 		self.fullname = self.gfile.get_parse_name()
 		
 		self.location = Location.Disk if gfile.is_native() else Location.Distant
-
+		
 class PixbufImageNode(ImageNode):
 	def __init__(self, pixbuf=None):
 		super().__init__()
@@ -423,8 +428,8 @@ class PixbufImageNode(ImageNode):
 	
 	@property
 	def surface(self):
-		if self._surface is None:
-			self._surface = PixbufImageNode.SurfaceFromPixbuf(self.pixbuf)
+		if self._surface is None and self.pixbuf:
+			self._surface = viewing.SurfaceFromPixbuf(self.pixbuf)
 			
 		return self._surface
 		
@@ -432,23 +437,10 @@ class PixbufImageNode(ImageNode):
 		self._surface = None
 
 	def create_frame(self, view):
+		if self.surface is None:
+			raise DataError
+			
 		return viewing.ImageSurfaceFrame(self.surface)
-	
-	@staticmethod
-	def SurfaceFromPixbuf(pixbuf):
-		''' Creates a cairo surface from a Gdk pixbuf'''
-		if pixbuf:
-			surface = cairo.ImageSurface(cairo.FORMAT_ARGB32,
-				                         pixbuf.get_width(),
-				                         pixbuf.get_height())
-			cr = cairo.Context(surface)
-			Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
-			cr.paint()
-		
-		else:
-			surface = None
-		
-		return surface
 
 class PixbufDataImageNode(PixbufImageNode, ImageNode):
 	''' An ImageNode created from a pixbuf
@@ -501,18 +493,17 @@ class PixbufFileImageNode(GFileImageNode, PixbufImageNode):
 		self.pixbuf = load_async(stream, self.cancellable, self._loaded, None)
 		
 	def _loaded(self, me, result, *data):
-		e = None
+		self.error = None
 		try:
 			async_finish = GdkPixbuf.Pixbuf.new_from_stream_finish
 			self.pixbuf = async_finish(result)
 
 		except GLib.GError as gerror:
-			# TODO: G_IO_ERROR_CANCELLED should not set status to bad
-			# but I have absolutely no idea how to check the type of GError
-			self.location &= ~Location.Memory
-			self.status = Status.Bad
-			
-			e = gerror
+			# If cancellable is None, that means loading was cancelled
+			if self.cancellable:
+				self.location &= ~Location.Memory
+				self.status = Status.Bad
+				self.error = gerror
 			
 		else:
 			self.location |= Location.Memory
@@ -520,7 +511,8 @@ class PixbufFileImageNode(GFileImageNode, PixbufImageNode):
 			self.load_metadata()
 			
 		finally:
-			self.emit("finished-loading", e)
+			self.cancellable = None
+			self.emit("finished-loading", self.error)
 			
 	def unload(self):
 		if self.cancellable:
@@ -571,6 +563,7 @@ class PixbufFileImageNode(GFileImageNode, PixbufImageNode):
 				fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(filepath)
 				self.metadata.width = width
 				self.metadata.height = height
+				
 			except Exception:
 				self.metadata.width = 0
 				self.metadata.height = 0
@@ -601,7 +594,7 @@ class PixbufAnimationFileImageNode(GFileImageNode, PixbufImageNode):
 		                            self._loaded, None)
 		
 	def _loaded(self, me, result, *data):
-		e = None
+		self.error = None
 		try:
 			async_finish = GdkPixbuf.PixbufAnimation.new_from_stream_finish
 			self.animation = async_finish(result)
@@ -611,12 +604,11 @@ class PixbufAnimationFileImageNode(GFileImageNode, PixbufImageNode):
 				self.animation = None
 
 		except GLib.GError as gerror:
-			# TODO: G_IO_ERROR_CANCELLED should not set status to bad
-			# but I have absolutely no idea how to check the type of GError
-			self.location &= ~Location.Memory
-			self.status = Status.Bad
-			
-			e = gerror
+			# If cancellable is None, that means loading was cancelled
+			if self.cancellable:
+				self.location &= ~Location.Memory
+				self.status = Status.Bad
+				self.error = gerror
 			
 		else:
 			self.location |= Location.Memory
@@ -624,13 +616,18 @@ class PixbufAnimationFileImageNode(GFileImageNode, PixbufImageNode):
 			self.load_metadata()
 			
 		finally:
-			self.emit("finished-loading", e)
+			self.cancellable = None
+			self.emit("finished-loading", self.error)
 	
 	def create_frame(self, view):
 		if self.pixbuf:
 			return PixbufImageNode.create_frame(self, view)
-		else:
+			
+		elif self.animation:
 			return viewing.AnimatedPixbufFrame(self.animation)
+			
+		else:
+			raise DataError
 	
 	def unload(self):
 		if self.cancellable:
@@ -680,6 +677,7 @@ class PixbufAnimationFileImageNode(GFileImageNode, PixbufImageNode):
 				fmt, width, height = GdkPixbuf.Pixbuf.get_file_info(filepath)
 				self.metadata.width = width
 				self.metadata.height = height
+				
 			except Exception:
 				self.metadata.width = 0
 				self.metadata.height = 0

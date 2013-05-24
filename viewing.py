@@ -535,7 +535,9 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 				raise
 				
 			cr.restore()
-			
+
+# --- Image frames related code down this line --- #
+
 class ImageFrame(GObject.GObject):
 	''' Contains a image '''
 	
@@ -597,11 +599,15 @@ class AnimatedPixbufFrame(ImageFrame):
 		anim_iter, anim_handle = self._view_anim.get(view, (None, None))
 		if anim_handle:
 			GLib.source_remove(anim_handle)
+			anim_handle = None
 		
-		anim_iter = self.animation.get_iter(None)
-		self._view_anim[view] = anim_iter, anim_handle
-		
-		self._schedule_advance(view)
+		try:
+			anim_iter = self.animation.get_iter(None)
+			self._view_anim[view] = anim_iter, anim_handle
+			self._schedule_advance(view)			
+			
+		except Exception:
+			self._view_anim[view] = anim_iter, anim_handle
 	
 	def removed(self, view):
 		anim_iter, anim_handle = self._view_anim[view]
@@ -651,3 +657,14 @@ class AnimatedPixbufFrame(ImageFrame):
 			return 0, 0
 				
 	animation = GObject.property(type=GObject.TYPE_PYOBJECT)
+	
+def SurfaceFromPixbuf(pixbuf):
+	''' Creates a cairo surface from a Gdk pixbuf'''
+	surface = cairo.ImageSurface(cairo.FORMAT_ARGB32,
+		                         pixbuf.get_width(),
+		                         pixbuf.get_height())
+	cr = cairo.Context(surface)
+	Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
+	cr.paint()
+	
+	return surface
