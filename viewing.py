@@ -535,32 +535,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 				raise
 				
 			cr.restore()
-			'''
-			a_surface = a_frame.get_surface()
-			if a_surface:
-				cr.save()
-				try:					
-					# My naming style is an_weird_one
-					a_w, an_h = a_surface.get_width(), a_surface.get_height()
-					an_x, an_y = a_frame.get_center()
-					cr.translate(an_x, an_y)
-					
-					cr.set_source_surface(a_surface, -a_w / 2, -an_h / 2)
-					
-					# Set filter
-					a_pattern = cr.get_source()
-					a_filter = self.get_interpolation_for_scale(zoooooom)
-					if a_filter is not None:
-						a_pattern.set_filter(a_filter)
-					
-					cr.paint()
-					
-				except Exception:
-					pass
-					
-				finally:
-					cr.restore()'''
-    
+			
 class ImageFrame(GObject.GObject):
 	''' Contains a image '''
 	
@@ -596,7 +571,8 @@ class ImageSurfaceFrame(ImageFrame):
 		
 			# Set filter
 			a_pattern = cr.get_source()
-			a_filter = view.get_interpolation_for_scale(view.get_magnification())
+			zoom = view.get_magnification()
+			a_filter = view.get_interpolation_for_scale(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		
@@ -660,7 +636,8 @@ class AnimatedPixbufFrame(ImageFrame):
 			
 			# Set filter
 			a_pattern = cr.get_source()
-			a_filter = view.get_interpolation_for_scale(view.get_magnification())
+			zoom = view.get_magnification()
+			a_filter = view.get_interpolation_for_scale(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		
