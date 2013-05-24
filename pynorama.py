@@ -262,7 +262,9 @@ class ImageViewer(Gtk.Application):
 		if search and context.files:
 			# Sibling file loading is not sorted
 			context.add_sibling_files(loader)
-			self.open_context_images(context, context.files, loader)
+			files = list(context.files)
+			context.files.clear()
+			self.open_context_images(context, files, loader)
 			                         
 		if directories:
 			self.open_context_images(context, directories, DirectoryLoader,
