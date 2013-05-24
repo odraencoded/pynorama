@@ -36,6 +36,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		self.outline = point.Rectangle(width=1, height=1)
 		self.__obsolete_offset = False
 		
+		self.get_style_context().add_class(Gtk.STYLE_CLASS_VIEW)
+		
 		self.offset = 0, 0
 		self.magnification = 1
 		self.rotation = 0
@@ -503,9 +505,12 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def do_draw(self, cr):
 		''' Draws everything! '''
 		# Renders the BG. Not sure if it works
-		Gtk.render_background(self.get_style_context(), cr, 0, 0,
-		                      self.get_allocated_width(),
-		                      self.get_allocated_height())
+		style = self.get_style_context()
+		size = self.get_allocated_width(), self.get_allocated_height()
+		Gtk.render_background(style, cr, 0, 0, *size)
+		
+		cr.save()
+		
 		if self.__obsolete_offset:
 			self.__compute_offset()
 			
@@ -535,7 +540,10 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 				raise
 				
 			cr.restore()
-
+		
+		cr.restore()
+		Gtk.render_frame(style, cr, 0, 0, *size)
+		
 # --- Image frames related code down this line --- #
 
 class ImageFrame(GObject.GObject):

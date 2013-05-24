@@ -368,12 +368,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.menubar.show_all()
 		self.toolbar.show_all()
 		
-		# Create a scrollwindow and a imagev--, galleryview,
-		# and then set the VIEW style to the scrolled window,
-		# NOT the galleryview, the scrolled window.
+		# Create a scrollwindow and a imagev--, galleryv-- err.. imageview!
 		self.view_scroller = Gtk.ScrolledWindow()
-		scroller_style = self.view_scroller.get_style_context()
-		scroller_style.add_class(Gtk.STYLE_CLASS_VIEW)
 		# TODO: There ought to be a better way
 		# to drop the default key behaviour
 		self.view_scroller.connect("key-press-event", lambda x, y: True)
@@ -394,33 +390,39 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.view_scroller.show_all()
 		
 		vlayout.pack_start(self.view_scroller, True, True, 0)
-						
-		# Add a status bar
-		self.statusbar = Gtk.Statusbar()
-		self.statusbar.set_spacing(8)
-		message_area = self.statusbar.get_message_area().get_parent()
-		self.statusbar.set_child_packing(
-		     message_area, True, True, 8, Gtk.PackType.START)
-		#print(message_area, message_area.get_parent())
-		self.statusbar.spinner = Gtk.Spinner()
-		self.statusbar.pack_start(self.statusbar.spinner, False, False, 8)
-		self.statusbar.reorder_child(self.statusbar.spinner, 0)
+		
+		# Add a status bar, the statusbar box and a statusbar box box
+		self.statusbarboxbox = Gtk.Box()
+		self.statusbarboxbox.set_orientation(Gtk.Orientation.VERTICAL)
+		separator = Gtk.Separator()
+		self.statusbarboxbox.pack_start(separator, False, False, 0)
+		
+		self.statusbarbox = Gtk.Box(Gtk.Orientation.HORIZONTAL)
+		self.statusbarbox.set_border_width(2)
+		self.statusbarbox.set_spacing(8)
 		
 		# With a label for image index
 		self.index_label = Gtk.Label()
 		self.index_label.set_alignment(1, 0.5)
-		self.statusbar.pack_end(self.index_label, False, True, 8)
+		self.statusbarbox.pack_start(self.index_label, False, True, 6)
+		
+		self.loading_spinner = Gtk.Spinner()
+		self.statusbarbox.pack_start(self.loading_spinner, False, False, 6)
+		
+		self.statusbar = Gtk.Statusbar()
+		self.statusbarbox.pack_start(self.statusbar, True, True, 6)
 		
 		# And a label for the image transformation
 		self.transform_label = Gtk.Label()
 		self.transform_label.set_alignment(0, 0.5)
-		self.statusbar.pack_end(self.transform_label, False, True, 8)
+		self.statusbarbox.pack_end(self.transform_label, False, False, 6)
+		self.statusbarboxbox.pack_end(self.statusbarbox, False, False, 0)
 		
 		# Show status
-		vlayout.pack_end(self.statusbar, False, True, 0)
+		vlayout.pack_end(self.statusbarboxbox, False, True, 0)
 		
-		self.statusbar.show_all()
-		self.statusbar.spinner.hide()
+		self.statusbarboxbox.show_all()
+		self.loading_spinner.hide()
 		
 		self.refresh_transform()
 		self.refresh_index()
@@ -955,7 +957,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		show_tools = self.actions.get_action("ui-toolbar").get_active()
 		show_status = self.actions.get_action("ui-statusbar").get_active()
 		self.toolbar.set_visible(show_tools)		
-		self.statusbar.set_visible(show_status)		
+		self.statusbarboxbox.set_visible(show_status)		
 	
 	def toggle_keep_above(self, *data):
 		keep_above = self.actions.get_action("ui-keep-above")
@@ -1177,8 +1179,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.statusbar.pop(ctx)
 				self.statusbar.push(ctx, message)
 				
-				self.statusbar.spinner.show()
-				self.statusbar.spinner.start() # ~like a record~ #
+				self.loading_spinner.show()
+				self.loading_spinner.start() # ~like a record~ #
 				
 				self.load_handle = self.current_image.connect(
 				                        "finished-loading", self._image_loaded)
@@ -1199,7 +1201,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def _image_loaded(self, image, error):
 		# Check if the image loaded is the current image, just in case
 		if image == self.current_image:
-			self.statusbar.spinner.stop()
+			self.loading_spinner.stop()
 			
 			self.refresh_frame()
 			self.refresh_preuse()
@@ -1225,8 +1227,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.imageview.remove_frame(self.current_frame)
 			
 		if self.current_image:
-			self.statusbar.spinner.hide()
-			self.statusbar.spinner.stop()
+			self.loading_spinner.hide()
+			self.loading_spinner.stop()
 			try:
 				image_frame = self.current_image.create_frame(self.imageview)
 				
@@ -1345,10 +1347,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.toolbar.set_visible(value)
 		
 	def get_statusbar_visible(self):
-		return self.statusbar.get_visible()
+		return self.statusbarboxbox.get_visible()
 	def set_statusbar_visible(self, value):
 		self.actions.get_action("ui-statusbar").set_active(value)
-		self.statusbar.set_visible(value)
+		self.statusbarboxbox.set_visible(value)
 	
 	def get_hscrollbar_placement(self):
 		top = self.actions.get_action("ui-scrollbar-top").get_active()
