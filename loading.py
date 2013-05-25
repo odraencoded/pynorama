@@ -127,20 +127,24 @@ class Context:
 		siblings = set()
 		for a_parent_file in parent_files:
 			# Use BasicFileInfo here to save trouble #
-			enumerator = a_parent_file.enumerate_children(
-				                       Context.BasicFileInfo, 0, None)
-		
-			for a_file_info in enumerator:
-				a_sibling = Gio.File.get_child(
-					            a_parent_file, a_file_info.get_name())
-					            
-				# Only add children files that do not equal an input file #
-				for a_gfile in gfiles:
-					if a_gfile.equal(a_sibling):
-						break # cool trick, huh?
-				else:
-					a_sibling.info = a_file_info
-					siblings.add(a_sibling)
+			try:
+				enumerator = a_parent_file.enumerate_children(
+				                           Context.BasicFileInfo, 0, None)
+			except Exception:
+				continue
+				
+			else:
+				for a_file_info in enumerator:
+					a_sibling = Gio.File.get_child(
+							        a_parent_file, a_file_info.get_name())
+							        
+					# Only add children files that do not equal an input file #
+					for a_gfile in gfiles:
+						if a_gfile.equal(a_sibling):
+							break # cool trick, huh?
+					else:
+						a_sibling.info = a_file_info
+						siblings.add(a_sibling)
 					
 		new_files = [a_file for a_file in siblings \
 		                        if loader.should_open(a_file)]
