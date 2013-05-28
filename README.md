@@ -38,6 +38,7 @@ There is currently __no build system__ for the application.
 ### Requirements
 
 Pynorama requires a python3 interpreter, Gtk3 and gobject introspection modules.
+Including python3-gi-cairo. Kind of important.
 It also requires pynorama.gschema.xml to be installed and compiled.
 
 Good luck with that.
