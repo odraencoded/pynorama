@@ -296,8 +296,6 @@ class Loadable(GObject.GObject):
 		
 		self.location = Location.Nowhere
 		self.status = Status.Bad
-		self.uses = 0
-		self.lists = 0
 		
 	def load(self):
 		raise NotImplementedError
@@ -305,6 +303,9 @@ class Loadable(GObject.GObject):
 	def unload(self):
 		raise NotImplementedError
 		
+	uses = GObject.property(type=int, default=0)
+	lists = GObject.property(type=int, default=0)
+	
 	@property
 	def on_memory(self):
 		return self.location & Location.Memory == Location.Memory
@@ -337,44 +338,42 @@ class Memory(GObject.GObject):
 		self.unused_stuff = set()
 		self.enlisted_stuff = set()
 		self.unlisted_stuff = set()
-		
-	def request(self, thing):
-		thing.uses += 1
+	
+	def observe(self, thing):
+		''' Start generating events for a thing  '''
+		thing.connect("notify::uses", self._uses_changed)
+		thing.connect("notify::lists", self._lists_changed)
+	
+	def _uses_changed(self, thing, *data):
 		if thing.uses == 1:
 			if thing in self.unused_stuff:
 				self.unused_stuff.remove(thing)
 			else:
 				self.requested_stuff.add(thing)
 				self.emit("thing-requested", thing)
-		
-	def free(self, thing):
-		thing.uses -= 1
-		if thing.uses == 0:
+				
+		elif thing.uses == 0:
 			if thing in self.requested_stuff:
 				self.requested_stuff.remove(thing)
 			else:
 				self.unused_stuff.add(thing)
 				self.emit("thing-unused", thing)
 	
-	def enlist(self, thing):
-		thing.lists += 1
-		
+	def _lists_changed(self, thing, *data):
 		if thing.lists == 1:
 			if thing in self.unlisted_stuff:
 				self.unlisted_stuff.remove(thing)
 			else:
 				self.enlisted_stuff.add(thing)
 				self.emit("thing-enlisted", thing)
-	
-	def unlist(self, thing):
-		thing.lists -= 1
-		if thing.lists == 0:
+		
+		elif thing.lists == 0:
 			if thing in self.enlisted_stuff:
 				self.enlisted_stuff.remove(thing)
 			else:
 				self.unlisted_stuff.add(thing)
 				self.emit("thing-unlisted", thing)
-		
+				
 class ImageMeta():
 	''' Contains some assorted metadata of an image
 	    This should be used in sorting functions '''

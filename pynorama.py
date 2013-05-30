@@ -220,7 +220,8 @@ class ImageViewer(Gtk.Application):
 			dialog.log(dialog.Lines.Loaded(thing))
 	
 	def open_files_for_album(self, album, loader=None, files=None, uris=None,
-	                         replace=False, search=False, silent=False):
+	                         replace=False, search=False, silent=False,
+	                         manage=True):
 		''' Open files or uris for an album '''
 		album_context = loading.Context(files=files, uris=uris)
 		context_sorting = lambda ctx: album.sort_list(ctx.images)
@@ -231,7 +232,11 @@ class ImageViewer(Gtk.Application):
 		if album_context.images:
 			if replace:
 				del album[:]
-				
+			
+			if manage:			
+				for image in album_context.images:
+					self.memory.observe(image)
+					
 			album.extend(album_context.images)
 		
 	def open_files(self, context, loader=None, search=False,
@@ -1157,7 +1162,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		previous_image = self.current_image
 		self.current_image = image
 		if previous_image is not None:
-			self.app.memory.free(previous_image)
+			previous_image.uses -= 1
 			if self.load_handle:
 				previous_image.disconnect(self.load_handle)
 				self.load_handle = None
@@ -1168,7 +1173,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.set_title(_("Pynorama"))
 			
 		else:
-			self.app.memory.request(self.current_image)
+			self.current_image.uses += 1
 			if self.current_image.on_memory or self.current_image.is_bad:
 				self.refresh_frame()
 				self.refresh_preuse()
@@ -1209,7 +1214,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	# TODO: Replace this by a decent preloading system
 	def refresh_preuse(self):
 		for preused_image in self.preused_images:
-			self.app.memory.free(preused_image)
+			preused_image.uses -= 1
 			
 		self.preused_images.clear()
 		
@@ -1220,7 +1225,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.preused_images.add(self.current_image)
 			
 			for preused_image in self.preused_images:
-				self.app.memory.request(preused_image)
+				preused_image.uses += 1
 		
 	def refresh_frame(self):
 		if self.current_frame:
@@ -1261,7 +1266,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.refresh_transform()
 		
 	def _image_added(self, album, image, index):
-		self.app.memory.enlist(image)
+		image.lists += 1
 		self.__queue_refresh_index()
 		
 		if self.go_new:
@@ -1272,7 +1277,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.set_image(image)
 		
 	def _image_removed(self, album, image, index):
-		self.app.memory.unlist(image)
+		image.lists -= 1
 		self.__queue_refresh_index()
 		
 		if self.current_image is image:
