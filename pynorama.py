@@ -1185,7 +1185,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 					self.statusbar.push(loading_ctx, message)
 					
 				# Refresh frame #
-				self._refresh_focus_frame(focused_image)
+				self._refresh_focus_frame()
 			
 			else:				
 				# Show loading hints #
