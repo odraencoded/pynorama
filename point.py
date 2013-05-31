@@ -68,12 +68,20 @@ class Rectangle:
 	def bottom(self):
 		return self.top + self.height
 	
+	def unbox_point(relative_point):
+		return add((self.left, self.top),
+		            multiply((self.width, self.height), relative_point))
+	
 	def to_tuple(self):
 		return self.left, self.top, self.width, self.height
 	
 	def copy(self):
 		return Rectangle(self.left, self.top, self.width, self.height)
-		
+	
+	def shift(self, displacement):
+		l, t = add((self.left, self.top), displacement)
+		return Rectangle(l, t, self.width, self.height)
+	
 	def spin(self, angle):
 		''' Basic trigonometrics '''
 		result = self.copy()

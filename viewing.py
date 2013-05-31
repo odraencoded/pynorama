@@ -137,11 +137,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		hadjust = self.get_hadjustment()
 		vadjust = self.get_vadjustment()
 		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
-		fw, fh = frame.size
-		fx, fy = frame.center
-		fl, ft = fx - fw / 2, fy - fh / 2
-		
-		x, y = rx * fw + fl, ry * fh + ft
+		x, y = frame.rectangle.shift(frame.origin).unbox_point(rx, ry)
 		x, y = point.spin((x, y), self.get_rotation() / 180 * math.pi)
 		
 		self.adjust_to(x - vw * rx, y - vh * ry)
@@ -402,11 +398,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		''' Figure out the outline of all frames united '''
 		rectangles = []
 		for a_frame in self.__frames:
-			cx, cy = a_frame.center
-			w, h = a_frame.size
-			
-			a_rect = point.Rectangle(cx - w / 2.0, cy - h / 2.0, w, h)
-			rectangles.append(a_rect)
+			rectangles.append(a_frame.rectangle.shift(a_frame.origin))
 			
 		new_outline = point.Rectangle.Union(*rectangles)
 		new_outline.width = max(new_outline.width, 1)
@@ -533,7 +525,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		for a_frame in self.__frames:
 			cr.save()
 			try:
-				cr.translate(*a_frame.center)
+				cr.translate(*a_frame.origin)
 				a_frame.draw(cr, self)
 			
 			except Exception:
@@ -552,7 +544,7 @@ class ImageFrame(GObject.GObject):
 	# TODO: Implement rotation and scale
 	def __init__(self):
 		GObject.GObject.__init__(self)
-		self.center = 0, 0
+		self.origin = 0, 0
 	
 	def added(self, view):
 		pass
@@ -564,10 +556,14 @@ class ImageFrame(GObject.GObject):
 		raise NotImplementedError
 		
 	@property
+	def rectangle(self):
+		return point.Rectangle()
+	
+	@property
 	def size(self):
-		return 0, 0
-			
-	center = GObject.property(type=GObject.TYPE_PYOBJECT)
+		return self.rectangle.to_tuple()[2:]
+	
+	origin = GObject.property(type=GObject.TYPE_PYOBJECT)
 	
 class ImageSurfaceFrame(ImageFrame):
 	def __init__(self, surface):
@@ -589,11 +585,12 @@ class ImageSurfaceFrame(ImageFrame):
 			cr.paint()
 	
 	@property
-	def size(self):
+	def rectangle(self):
 		if self.surface:
-			return self.surface.get_width(), self.surface.get_height()
+			w, h = self.surface.get_width(), self.surface.get_height()
+			return point.Rectangle(-w/2, -h/2, w, h)
 		else:
-			return 0, 0
+			return point.Rectangle()
 			
 	surface = GObject.property(type=GObject.TYPE_PYOBJECT)
 	
@@ -658,12 +655,13 @@ class AnimatedPixbufFrame(ImageFrame):
 			cr.paint()
 			
 	@property
-	def size(self):
+	def rectangle(self):
 		if self.animation:
-			return self.animation.get_width(), self.animation.get_height()
+			w, h = self.animation.get_width(), self.animation.get_height()
+			return point.Rectangle(-w/2, -h/2, w, h)
 		else:
-			return 0, 0
-				
+			return point.Rectangle()
+							
 	animation = GObject.property(type=GObject.TYPE_PYOBJECT)
 	
 def SurfaceFromPixbuf(pixbuf):
