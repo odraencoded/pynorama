@@ -201,10 +201,15 @@ class AlbumViewLayout(GObject.Object):
 		self.layout = layout
 		self.album = album
 		self.view = view
-		
-	def get_focus(self):
-		return self.layout.get_focus(self)
-		
+	
+	@property	
+	def focus_image(self):
+		return self.layout.get_focus_image(self)
+	
+	@property
+	def focus_frame(self):
+		return self.layout.get_focus_frame(self)
+	
 	def go_index(self, index):
 		self.layout.go_image(self, self.album[index])
 		
@@ -240,23 +245,27 @@ class AlbumLayout:
 	def __init__(self):
 		pass
 	
-	def get_focus(self, avl):
+	def get_focus_image(self, avl):
 		''' Returns the image in focus '''
 		raise NotImplementedError
-		
+	
+	def get_focus_frame(self, avl):
+		''' Returns the frame in focus '''
+		raise NotImplementedError
+				
 	def go_image(self, avl, image):
 		''' Lays out an image '''
 		raise NotImplementedError
 	
 	def go_next(self, avl):
-		focus = self.get_focus(avl)
+		focus = avl.focus_image
 		next_image = avl.album.next(focus)
-		self.go_image(avl, next_image)
+		avl.go_image(next_image)
 	
 	def go_previous(self, avl):
-		focus = self.get_focus(avl)
+		focus = avl.focus_image
 		previous_image = avl.album.previous(focus)
-		self.go_image(avl, previous_image)		
+		avl.go_image(previous_image)		
 		
 	def start(self, avl):
 		''' Set any initial variables in an AlbumViewLayout '''
@@ -306,8 +315,11 @@ class SingleFrameLayout(AlbumLayout):
 		del avl.old_album
 		del avl.removed_signal_id
 			
-	def get_focus(self, avl):
+	def get_focus_image(self, avl):
 		return avl.current_image
+	
+	def get_focus_frame(self, avl):
+		return avl.current_frame
 	
 	def go_image(self, avl, target_image):
 		if avl.current_image == target_image:

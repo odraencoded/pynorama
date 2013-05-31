@@ -742,7 +742,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		interp_group.unblock_activate()
 		
 	def refresh_index(self):
-		focused_image = self.avl.get_focus()
+		focused_image = self.avl.focus_image
 		can_remove = not focused_image is None
 		can_goto_first = False
 		can_goto_last = False
@@ -793,7 +793,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.actions.get_action(action_name).set_sensitive(sensitivity)
 		
 	def refresh_transform(self):
-		focused_image = self.avl.get_focus()
+		focused_image = self.avl.focus_image
 		if focused_image:
 			if focused_image.is_bad:
 				# This just may happen
@@ -1057,7 +1057,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if image_count > 1:
 			# Gets a new random index that is not the current one
 			random_int = random.randint(0, image_count - 2)
-			image_index = self.avl.album.index(self.avl.get_focus())
+			image_index = self.avl.album.index(self.avl.focus_image)
 			if random_int >= image_index:
 				random_int += 1
 			
@@ -1067,7 +1067,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		del self.image_list[:]
 		
 	def handle_remove(self, *data):
-		focus = self.avl.get_focus()
+		focus = self.avl.focus_image
 		if focus:
 			self.image_list.remove(focus)
 	
@@ -1151,7 +1151,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.go_new = False
 			self.avl.go_image(image)
 			
-		elif self.avl.get_focus() is None:
+		elif self.avl.focus_image is None:
 			self.avl.go_image(image)
 		
 	def _image_removed(self, album, image, index):
@@ -1201,7 +1201,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.loading_spinner.stop()
 			
 	def _focus_loaded(self, image, error):
-		focused_image = self.avl.get_focus()
+		focused_image = self.avl.focus_image
 		if focused_image == image:
 			# Hide loading hints #
 			loading_ctx = self.statusbar.get_context_id("loading")
@@ -1215,15 +1215,15 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.statusbar.push(loading_ctx, message)
 				
 			# Refresh frame #
-			self._refresh_focus_frame(image)
+			self._refresh_focus_frame()
 				
 		self._old_focused_image.disconnect(self._focus_loaded_handler_id)
 		self._focus_loaded_handler_id = None
 		
-	def _refresh_focus_frame(self, focused_image):
+	def _refresh_focus_frame(self):
 		if self.auto_zoom_enabled:
 			self.auto_zoom()
-			
+		
 		self.imageview.adjust_to_boundaries(*self.app.default_position)
 		self.refresh_transform()
 			
