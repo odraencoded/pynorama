@@ -178,3 +178,212 @@ class SortingKeys:
 	@staticmethod
 	def ByImageHeight(image):
 		return image.get_metadata().height
+
+from gi.repository import Gtk
+import viewing
+
+class AlbumViewLayout(GObject.Object):
+	''' Used to tell layouts the album used for a view
+	    Layouts should store data in this thing
+	    Just call this avl for short '''
+    
+	__gsignals__ = {
+		"focus-changed" : (GObject.SIGNAL_RUN_FIRST, None, [object])
+	}
+    
+	def __init__(self, album, view, layout):
+		GObject.Object.__init__(self)
+		self.__is_clean = True
+		self.__old_view = self.__old_album = self.__old_layout = None
+		
+		self.connect("notify::layout", self._layout_changed)
+		
+		self.layout = layout
+		self.album = album
+		self.view = view
+		
+	def get_focus(self):
+		return self.layout.get_focus(self)
+		
+	def go_index(self, index):
+		self.layout.go_image(self, self.album[index])
+		
+	def go_image(self, image):
+		self.layout.go_image(self, image)
+	
+	def go_next(self):
+		self.layout.go_next(self)
+	
+	def go_previous(self):
+		self.layout.go_previous(self)
+	
+	def clean(self):
+		if not self.__is_clean:
+			self.__old_layout.clean(self)
+			self.__is_clean = True
+	
+	def _layout_changed(self, *data):
+		if self.__old_layout:
+			self.clean()
+		
+		self.__old_layout = self.layout
+		if self.layout:
+			self.__is_clean = False
+			self.layout.start(self)
+		
+	album = GObject.property(type=object, default=None)
+	view = GObject.property(type=object, default=None)
+	layout = GObject.property(type=object, default=None)
+	
+class AlbumLayout:
+	''' Layout for an album '''
+	def __init__(self):
+		pass
+	
+	def get_focus(self, avl):
+		''' Returns the image in focus '''
+		raise NotImplementedError
+		
+	def go_image(self, avl, image):
+		''' Lays out an image '''
+		raise NotImplementedError
+	
+	def go_next(self, avl):
+		focus = self.get_focus(avl)
+		next_image = avl.album.next(focus)
+		self.go_image(avl, next_image)
+	
+	def go_previous(self, avl):
+		focus = self.get_focus(avl)
+		previous_image = avl.album.previous(focus)
+		self.go_image(avl, previous_image)		
+		
+	def start(self, avl):
+		''' Set any initial variables in an AlbumViewLayout '''
+		pass
+		
+	def clean(self, avl):
+		''' Reverse whatever was done at start '''
+		pass
+	
+	def update_setup(self, avl):
+		pass
+		
+class SingleFrameLayout(AlbumLayout):
+	''' Shows a single album image in a view '''
+	def __init__(self):
+		pass
+	
+	def start(self, avl):
+		avl.current_image = None
+		avl.current_frame = None
+		avl.load_handle = None
+		avl.old_album = None
+		avl.removed_signal_id = None
+		avl.album_notify_id = avl.connect(
+		                          "notify::album", self._album_changed, avl)
+		self._album_changed(avl)
+		
+	def clean(self, avl):
+		if avl.load_handle:
+			avl.current_image.disconnect(avl.load_handle)
+		del avl.load_handle
+		
+		if avl.current_image:
+			avl.current_image.uses -= 1
+		del avl.current_image
+		
+		if avl.current_frame:
+			avl.view.remove_frame(avl.current_frame)
+		del avl.current_frame
+		
+		avl.disconnect(avl.album_notify_id)
+		del avl.album_notify_id
+		
+		if not avl.old_album is None:
+			avl.old_album.disconnect(avl.removed_signal_id)
+			
+		del avl.old_album
+		del avl.removed_signal_id
+			
+	def get_focus(self, avl):
+		return avl.current_image
+	
+	def go_image(self, avl, target_image):
+		if avl.current_image == target_image:
+			pass
+			
+		previous_image = avl.current_image
+		avl.current_image = target_image
+		
+		if previous_image:
+			previous_image.uses -= 1 # decrement use count
+			if avl.load_handle: # remove "finished-loading" handle
+				previous_image.disconnect(avl.load_handle)
+				avl.load_handle = None
+				
+		if target_image is None:
+			# Current image being none means nothing is displayed #
+			self._refresh_frame(avl)
+			
+		else:
+			target_image.uses += 1
+			if target_image.on_memory or target_image.is_bad:
+				self._refresh_frame(avl)
+				
+			else:
+				avl.load_handle = avl.current_image.connect(
+				                  "finished-loading", self._image_loaded, avl)
+		
+		avl.emit("focus-changed", avl.current_image)
+		
+	def _refresh_frame(self, avl):
+		if avl.current_frame:
+			avl.view.remove_frame(avl.current_frame)
+			
+		if avl.current_image:
+			try:
+				new_frame = avl.current_image.create_frame(avl.view)
+				
+			except Exception:
+				new_frame = None
+				
+			finally:				
+				if new_frame is None:
+					# Create a missing icon frame #
+					error_icon = avl.view.render_icon(Gtk.STOCK_MISSING_IMAGE,
+						                              Gtk.IconSize.DIALOG)
+						                            
+					error_surface = viewing.SurfaceFromPixbuf(error_icon)
+					new_frame = viewing.ImageSurfaceFrame(error_surface)
+					
+			avl.current_frame = new_frame
+			avl.view.add_frame(new_frame)
+	
+	def _album_changed(self, avl, *data):
+		if not avl.old_album is None:
+			avl.old_album.disconnect(avl.removed_signal_id)
+			avl.removed_signal_id = None
+		
+		avl.old_album = avl.album
+		if not avl.album is None:
+			avl.removed_signal_id = avl.album.connect(
+			                        "image-removed", self._image_removed, avl)
+			                        
+	def _image_added(self, album, image, index, avl):
+		pass
+	
+	def _image_removed(self, album, image, index, avl):
+		if image == avl.current_image:
+			count = len(album)
+			if index <= count:
+				if count >= 1:
+					new_index = index - 1 if index == count else index
+					new_image = album[new_index]
+				else:
+					new_image = None
+					
+				self.go_image(avl, new_image)
+	
+	def _image_loaded(self, image, error, avl):
+		self._refresh_frame(avl)
