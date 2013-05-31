@@ -20,6 +20,12 @@ from gi.repository import Gdk, GdkPixbuf, GLib, GObject, Gtk
 import point
 import cairo
 
+class ZoomMode:
+	FillView = 0
+	MatchWidth = 1
+	MatchHeight = 2
+	FitContent = 3
+
 # Quite possibly the least badly designed class in the whole program.
 class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	''' This widget can display PictureFrames.
@@ -110,6 +116,46 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		else:
 			self.set_flip((not hflip, vflip))
 	
+	def zoom_for_size(self, size, mode):
+		''' Gets a zoom for a size based on a zoom mode '''
+		w, h = self.get_widget_size()
+		sw, sh = size
+		
+		if mode == ZoomMode.MatchWidth:
+			# Match view and size width
+			size_side = sw
+			view_side = w
+		
+		elif mode == ZoomMode.MatchHeight:
+			# Match view and size height
+			size_side = sh
+			view_side = h
+		else:
+			wr, hr = w / sw, h / sh
+			
+			if mode == ZoomMode.FitContent:
+				# Fit size inside view
+				if wr < hr:
+					size_side = sw
+					view_side = w
+				else:
+					size_side = sh
+					view_side = h
+										
+			elif mode == ZoomMode.FillView:
+				# Overflow size in view in only one side
+				if wr > hr:
+					size_side = sw
+					view_side = w
+				else:
+					size_side = sh
+					view_side = h
+			
+			else:
+				size_side = view_size = 1
+				
+		return view_side / size_side
+		
 	def adjust_to_pin(self, pin):
 		''' Adjusts the view so that the same widget point in the pin can be
 		    converted to the same absolute point in the pin '''
@@ -350,50 +396,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	minify_interpolation = GObject.property(type=GObject.TYPE_INT)
 	magnify_interpolation = GObject.property(type=GObject.TYPE_INT)
 	
-	# --- computing stuff down this line --- #
-	def compute_side_scale(self, mode):
-		''' Calculates the ratio between the combined frames size
-		    and the allocated widget size '''
-		    
-		hadjust = self.get_hadjustment()
-		vadjust = self.get_vadjustment()
-		lx, ux = hadjust.get_lower(), hadjust.get_upper()
-		ly, uy = vadjust.get_lower(), vadjust.get_upper()
-		w, h = ux - lx, uy - ly
-		vw, vh = self.get_allocated_width(), self.get_allocated_height()
-			
-		if mode == "width":
-			# Match width
-			side = w
-			view = vw
-			
-		elif mode == "height":
-			# Match height
-			side = h
-			view = vh
-		else:
-			rw, rh = vw / w, vh / h
-			if mode == "smallest":
-				# Smallest side = largest ratio
-				if rw > rh:
-					side = w
-					view = vw
-				else:
-					side = h
-					view = vh
-			elif mode == "largest":
-				# Largest side = smallest ratio
-				if rw < rh:
-					side = w
-					view = vw
-				else:
-					side = h
-					view = vh
-			else:
-			 view = side = 1
-			 
-		return view / side
-		
+	# --- computing stuff down this line --- #	
 	def __compute_outline(self):
 		''' Figure out the outline of all frames united '''
 		rectangles = []

@@ -23,6 +23,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
 import organization, navigation, loading, preferences, viewing, dialog
+from viewing import ZoomMode
 from loading import DirectoryLoader
 DND_URI_LIST, DND_IMAGE = range(2)
 
@@ -612,10 +613,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"sort-auto" : None,
 			"sort-reverse" : None,
 			"auto-zoom-enable" : None,
-			"auto-zoom-fit" : (3, zoom_mode_group),
-			"auto-zoom-fill" : (0, zoom_mode_group),
-			"auto-zoom-match-width" : (1, zoom_mode_group),
-			"auto-zoom-match-height" : (2, zoom_mode_group),
+			"auto-zoom-fit" : (ZoomMode.FitContent, zoom_mode_group),
+			"auto-zoom-fill" : (ZoomMode.FillView, zoom_mode_group),
+			"auto-zoom-match-width" : (ZoomMode.MatchWidth, zoom_mode_group),
+			"auto-zoom-match-height" : (ZoomMode.MatchHeight, zoom_mode_group),
 			"auto-zoom-minify" : None,
 			"auto-zoom-magnify" : None,
 			"fullscreen" : None,
@@ -931,15 +932,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			  "fill" = magnify based on the smallest side
 			  "width" = magnify based on width
 			  "height" = magnify based on height '''
-			  
-		if self.auto_zoom_magnify or self.auto_zoom_minify:
-			side_name = ["smallest", "width",
-			             "height", "largest"][self.auto_zoom_mode]
-			scale = self.imageview.compute_side_scale(side_name)
 		
-			if scale > 1 and self.auto_zoom_magnify or \
-			   scale < 1 and self.auto_zoom_minify:
-				self.imageview.set_magnification(scale)
+		frame = self.avl.focus_frame	  
+		if frame and (self.auto_zoom_magnify or self.auto_zoom_minify):
+			'''side_name = ["smallest", "width",
+			             "height", "largest"][self.auto_zoom_mode]'''
+			
+			new_zoom = self.imageview.zoom_for_size(
+			                      frame.size, self.auto_zoom_mode)
+			                      
+			if (new_zoom > 1 and self.auto_zoom_magnify) or \
+			   (new_zoom < 1 and self.auto_zoom_minify):
+				self.imageview.set_magnification(new_zoom)
 				self.auto_zoom_zoom_modified = False
 			else:
 				self.imageview.set_magnification(1)
