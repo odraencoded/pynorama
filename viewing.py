@@ -416,8 +416,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		    Also clamp them. Clamping is important. '''
 		    
 		# Name's Bounds, James Bounds
-		bounds = self.outline.spin(self.get_rotation() / 180 * math.pi)
-		bounds = bounds.flip(*self.get_flip())
+		bounds = self.outline.flip(*self.get_flip())
+		bounds = bounds.spin(self.get_rotation() / 180 * math.pi)
 		hadjust, vadjust = self.get_hadjustment(), self.get_vadjustment()
 		if hadjust:
 			hadjust.set_lower(bounds.left)
@@ -427,10 +427,9 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			# Clamp value
 			max_value = hadjust.get_upper() - hadjust.get_page_size()
 			min_value = hadjust.get_lower()
-			if hadjust.get_value() > max_value:
-				hadjust.set_value(max_value)
-			if hadjust.get_value() < min_value:
-				hadjust.set_value(min_value)
+			value = hadjust.get_value()
+			clamped_value = min(max_value, max(min_value, value))
+			hadjust.set_value(clamped_value)
 			
 		if vadjust:
 			vadjust.set_lower(bounds.top)
@@ -440,37 +439,35 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			# Clamp value
 			max_value = vadjust.get_upper() - vadjust.get_page_size()
 			min_value = vadjust.get_lower()
-			if vadjust.get_value() > max_value:
-				vadjust.set_value(max_value)
-			if vadjust.get_value() < min_value:
-				vadjust.set_value(min_value)
-				
+			value = vadjust.get_value()
+			clamped_value = min(max_value, max(min_value, value))
+			vadjust.set_value(clamped_value)
+			
 		self.__obsolete_offset = True
 			
 	def __compute_offset(self):
 		''' Figures out the x, y offset based on the adjustments '''
 		x, y = self.offset
-		allocation = self.get_allocation()
 		hadjust = self.get_hadjustment()
 		if hadjust:
-			span = hadjust.get_upper() - hadjust.get_lower()
+			upper, lower = hadjust.get_upper(), hadjust.get_lower()
+			span = upper - lower
 			diff = span - self.get_magnified_width()
 			if diff > 0:
 				x = hadjust.get_value()
-				ox = 0
 			else:
-				x = -self.get_magnified_width() / 2
+				x = lower + diff / 2
 								
 		vadjust = self.get_vadjustment()
-		if vadjust:			
-			span = vadjust.get_upper() - vadjust.get_lower()
+		if vadjust:
+			upper, lower = vadjust.get_upper(), vadjust.get_lower()
+			span = upper - lower
 			diff = span - self.get_magnified_height()
 			if diff > 0:
 				y = vadjust.get_value()
-				oy = 0
 			else:
-				y = -self.get_magnified_height() / 2
-						
+				y = lower + diff / 2
+				
 		self.__obsolete_offset = False
 		self.offset = x, y
 	
