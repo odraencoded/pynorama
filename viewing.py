@@ -137,7 +137,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		hadjust = self.get_hadjustment()
 		vadjust = self.get_vadjustment()
 		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
-		x, y = frame.rectangle.shift(frame.origin).unbox_point(rx, ry)
+		x, y = frame.rectangle.shift(frame.origin).unbox_point((rx, ry))
 		x, y = point.spin((x, y), self.get_rotation() / 180 * math.pi)
 		
 		self.adjust_to(x - vw * rx, y - vh * ry)

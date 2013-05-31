@@ -68,7 +68,7 @@ class Rectangle:
 	def bottom(self):
 		return self.top + self.height
 	
-	def unbox_point(relative_point):
+	def unbox_point(self, relative_point):
 		return add((self.left, self.top),
 		            multiply((self.width, self.height), relative_point))
 	

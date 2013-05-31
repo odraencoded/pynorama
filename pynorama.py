@@ -1224,7 +1224,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if self.auto_zoom_enabled:
 			self.auto_zoom()
 		
-		self.imageview.adjust_to_boundaries(*self.app.default_position)
+		focus_frame = self.avl.focus_frame
+		if focus_frame:
+			self.imageview.adjust_to_frame(
+			     focus_frame, *self.app.default_position)
+			
 		self.refresh_transform()
 			
 	def __queue_refresh_index(self):
