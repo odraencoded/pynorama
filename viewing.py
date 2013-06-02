@@ -65,39 +65,33 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		
 	def add_frame(self, *frames):
 		''' Adds one or more pictures to the gallery '''
-		count = len(self.__frames)
 		for a_frame in frames:
 			self.__frames.add(a_frame)
 			a_frame_signals = self.frame_signals.get(a_frame, None)
 			if a_frame_signals is None:
 				a_frame_signals = [
-					a_frame.connect("notify::surface", self.__frame_changed),
-					a_frame.connect("notify::center", self.__frame_changed)
+					a_frame.connect("notify::origin", self.__frame_changed)
 				]
 				self.frame_signals[a_frame] = a_frame_signals
 				
 			a_frame.added(self)
 			
-		if count != len(self.__frames):	
-			self.__compute_outline()
-			self.queue_draw()
+		self.__compute_outline()
+		self.queue_draw()
 			
 	def remove_frame(self, *frames):
 		''' Removes one or more pictures from the gallery '''
-		count = len(self.__frames)
 		for a_frame in frames:
 			self.__frames.discard(a_frame)
-			a_frame_signals = self.frame_signals.get(a_frame, None)
+			a_frame_signals = self.frame_signals.pop(a_frame, None)
 			if a_frame_signals is not None:
 				for one_frame_signal in a_frame_signals:
 					a_frame.disconnect(one_frame_signal)
-				del self.frame_signals[a_frame]
 			
 			a_frame.removed(self)
 			
-		if count != len(self.__frames):
-			self.__compute_outline()
-			self.queue_draw()
+		self.__compute_outline()
+		self.queue_draw()
 									
 	# --- view manipulation down this line --- #
 	def pan(self, direction):
