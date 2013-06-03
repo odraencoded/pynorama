@@ -181,7 +181,7 @@ class SortingKeys:
 		return image.get_metadata().height
 
 from gi.repository import Gtk
-import viewing
+import point, viewing
 
 class AlbumViewLayout(GObject.Object):
 	''' Used to tell layouts the album used for a view
@@ -189,7 +189,7 @@ class AlbumViewLayout(GObject.Object):
 	    Just call this avl for short '''
     
 	__gsignals__ = {
-		"focus-changed" : (GObject.SIGNAL_RUN_FIRST, None, [object])
+		"focus-changed" : (GObject.SIGNAL_RUN_FIRST, None, [object, bool])
 	}
     
 	def __init__(self, album, view, layout):
@@ -367,7 +367,7 @@ class SingleFrameLayout(AlbumLayout):
 				avl.load_handle = avl.current_image.connect(
 				                  "finished-loading", self._image_loaded, avl)
 		
-		avl.emit("focus-changed", avl.current_image)
+		avl.emit("focus-changed", avl.current_image, False)
 		
 	def _refresh_frame(self, avl):
 		if avl.current_frame:
@@ -436,8 +436,8 @@ class FrameStripLayout(AlbumLayout):
 		self.space_after = 3840
 		self.space_before = 2560
 		# Max number of images, has priority over min number of pixesl
-		self.limit_after = 20
-		self.limit_before = 10
+		self.limit_after = 60
+		self.limit_before = 40
 		
 		self._direction = None
 		self.direction = direction
@@ -451,8 +451,9 @@ class FrameStripLayout(AlbumLayout):
 		if self._direction != value:
 			self._direction = value
 			
-			self._get_length, self._place_before, self._place_after = \
-			                       FrameStripLayout.DirectionMethods[value]
+			self._get_length, self._get_rect_distance, \
+			     self._place_before, self._place_after = \
+			          FrameStripLayout.DirectionMethods[value]
 			
 			self.refresh_subscribers.queue()
 	
@@ -465,7 +466,7 @@ class FrameStripLayout(AlbumLayout):
 		avl.space_before = avl.space_after = 0
 		avl.load_handles = {}
 		
-		avl.old_album = None
+		avl.old_view = avl.old_album = None
 		
 		# Use PRIORITY_DEFAULT_IDLE - 10 to create frames after they
 		# are drawn but before they can be unloaded (avoiding having to reload
@@ -474,8 +475,12 @@ class FrameStripLayout(AlbumLayout):
 		avl.update_sides.priority = GLib.PRIORITY_DEFAULT_IDLE - 10
 		
 		avl.album_signals = []
-		avl.album_notify_id = avl.connect(
-		                          "notify::album", self._album_changed, avl)
+		avl.view_signals = []
+		avl.notify_signals = [
+			avl.connect("notify::album", self._album_changed, avl),
+			avl.connect("notify::view", self._view_changed, avl)
+		]
+		self._view_changed(avl)
 		self._album_changed(avl)
 		
 	def clean(self, avl):
@@ -494,18 +499,23 @@ class FrameStripLayout(AlbumLayout):
 		del avl.space_before, avl.space_after
 		del avl.load_handles
 		
-		avl.disconnect(avl.album_notify_id)
-		del avl.album_notify_id
-		
-		if not avl.old_album is None:
+		for signal_id in avl.notify_signals:
+			avl.disconnect(signal_id)
+			
+		if avl.old_album is not None:
 			for signal_id in avl.album_signals:
 				avl.old_album.disconnect(signal_id)
+		
+		if avl.old_view is not None:
+			for signal_id in avl.view_signals:
+				avl.old_view.disconnect(signal_id)			
 		
 		avl.update_sides.cancel_queue()
 		del avl.update_sides
 		
-		del avl.old_album
-		del avl.album_signals
+		del avl.old_album, avl.old_view
+		del avl.notify_signals
+		del avl.album_signals, avl.view_signals
 			
 	def get_focus_image(self, avl):
 		return avl.center_image
@@ -520,7 +530,7 @@ class FrameStripLayout(AlbumLayout):
 				avl.center_image = avl.shown_images[new_index]
 				avl.center_frame = avl.shown_frames[new_index]
 				avl.center_index = new_index
-				avl.emit("focus-changed", avl.center_image)
+				avl.emit("focus-changed", avl.center_image, False)
 				
 			else:
 				new_image = avl.album.next(avl.center_image)
@@ -536,7 +546,7 @@ class FrameStripLayout(AlbumLayout):
 				avl.center_image = avl.shown_images[new_index]
 				avl.center_frame = avl.shown_frames[new_index]
 				avl.center_index = new_index
-				avl.emit("focus-changed", avl.center_image)
+				avl.emit("focus-changed", avl.center_image, False)
 				
 			else:
 				new_image = avl.album.previous(avl.center_image)
@@ -553,22 +563,71 @@ class FrameStripLayout(AlbumLayout):
 		avl.center_index = avl.center_image = avl.center_frame = None
 		self._insert_image(avl, 0, image)
 		
+	def _view_changed(self, avl, *data):
+		# Handler for album changes in avl
+		if avl.old_view is not None:
+			for signal_id in avl.view_signals:
+				avl.old_view.disconnect(signal_id)
+				
+			avl.view_signals = None
+			
+		avl.old_view = avl.view
+		if avl.view is not None:
+			avl.view_signals = [
+				avl.view.connect("offset-change", self._offset_change, avl),
+			]
+				
 	def _album_changed(self, avl, *data):
 		# Handler for album changes in avl
-		if not avl.old_album is None:
+		if avl.old_album is not None:
 			for signal_id in avl.album_signals:
 				avl.old_album.disconnect(signal_id)
 				
 			avl.album_signals = None
 			
 		avl.old_album = avl.album
-		if not avl.album is None:
+		if avl.album is not None:
 			avl.album_signals = [
 				avl.album.connect("image-removed", self._image_removed, avl),
 				avl.album.connect("image-added", self._image_added, avl),
 				avl.album.connect("order-changed", self._order_changed, avl),
 			]
-	
+			
+	def _offset_change(self, view, avl, *data):
+		if avl.center_frame and not view.frames_fit:
+			w, h = avl.view.get_widget_size()
+			tl = avl.view.get_absolute_point((0, 0))
+			tr = avl.view.get_absolute_point((w, 0))
+			bl = avl.view.get_absolute_point((0, h))
+			br = avl.view.get_absolute_point((w, h))
+			absolute_view_rect = point.Rectangle.FromPoints(tl, tr, bl, br)
+			
+			frame_distances = []
+			for i in range(len(avl.shown_frames)):
+				a_frame = avl.shown_frames[i]
+				if a_frame:
+					a_rect = a_frame.rectangle.shift(a_frame.origin)
+					a_visible_rect = absolute_view_rect & a_rect
+					
+					if a_visible_rect.width and a_visible_rect.height:
+						a_distance = self._get_rect_distance(
+						                  absolute_view_rect, a_rect)
+						                  												
+						frame_distances.append((i, a_distance))
+			
+			if frame_distances:
+				best_index = min(frame_distances, key=lambda v: v[1])[0]
+				best_image = avl.shown_images[best_index]
+				best_frame = avl.shown_frames[best_index]
+			
+				if avl.center_image is not best_image:
+					avl.center_index = best_index			
+					avl.center_image = best_image
+					avl.center_frame = best_frame
+				
+					avl.update_sides.queue()
+					avl.emit("focus-changed", best_image, True)
+					
 	def _image_added(self, album, image, index, avl):
 		# Handles an iamge added to an album
 		next = album.next(image)
@@ -614,7 +673,7 @@ class FrameStripLayout(AlbumLayout):
 					avl.center_image = avl.shown_images[new_index]
 					avl.center_frame = avl.shown_frames[new_index]
 					avl.center_index = new_index
-					avl.emit("focus-changed", avl.center_image)
+					avl.emit("focus-changed", avl.center_image, True)
 			
 				else:
 					avl.center_index = None
@@ -641,7 +700,7 @@ class FrameStripLayout(AlbumLayout):
 		if not avl.center_image:
 			avl.center_index = index
 			avl.center_image = image
-			avl.emit("focus-changed", image)
+			avl.emit("focus-changed", image, False)
 		
 		elif index <= avl.center_index:
 			avl.center_index += 1
@@ -842,13 +901,25 @@ class FrameStripLayout(AlbumLayout):
 	_GetFrameWidth = lambda f: f.rectangle.width if f else 0
 	_GetFrameHeight = lambda f: f.rectangle.height if f else 0
 	
+	def _GetHorizontalRectDistance(view_rect, rect):
+		center = view_rect.left + view_rect.width / 2
+		dist_a = abs(rect.left - center) / view_rect.width
+		dist_b = abs(rect.left + rect.width - center) / view_rect.width
+		return dist_a + dist_b
+		
+	def _GetVerticalRectDistance(view_rect, rect):
+		center = view_rect.top + view_rect.height / 2
+		dist_a = abs(rect.top - center) / view_rect.height
+		dist_b = abs(rect.top + rect.height - center) / view_rect.height
+		return dist_a + dist_b
+			
 	DirectionMethods = {
-		LayoutDirection.Right : (_GetFrameWidth,
+		LayoutDirection.Right : (_GetFrameWidth, _GetHorizontalRectDistance,
 		                         _CoordinateToLeft, _CoordinateToRight),
-		LayoutDirection.Left : (_GetFrameWidth,
+		LayoutDirection.Left : (_GetFrameWidth, _GetHorizontalRectDistance,
 		                        _CoordinateToRight, _CoordinateToLeft),
-		LayoutDirection.Up : (_GetFrameHeight,
+		LayoutDirection.Up : (_GetFrameHeight, _GetVerticalRectDistance,
 		                      _CoordinateToBottom, _CoordinateToTop),
-		LayoutDirection.Down : (_GetFrameHeight,
+		LayoutDirection.Down : (_GetFrameHeight, _GetVerticalRectDistance,
 		                        _CoordinateToTop, _CoordinateToBottom)
 	}

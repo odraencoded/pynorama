@@ -155,7 +155,6 @@ class ImageViewer(Gtk.Application):
 		dialog.set_modal(True)
 		dialog.set_destroy_with_parent(True)
 		
-		#dialog.connect("response", lambda a, b: a.destroy())
 		dialog.run()
 		dialog.destroy()
 		
@@ -439,7 +438,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.drag_dest_set_target_list(target_list)
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
-		self.layout = organization.SingleFrameLayout()
+		self.layout = organization.FrameStripLayout()
 		self.avl = organization.AlbumViewLayout(album=self.image_list,
 		                                        layout=self.layout,
 		                                        view=self.imageview)
@@ -1165,12 +1164,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def _album_order_changed(self, album):
 		self.__queue_refresh_index()
 	
-	def _focus_changed(self, avl, focused_image):
+	def _focus_changed(self, avl, focused_image, hint):
 		if self._focus_loaded_handler_id:
 			self._old_focused_image.disconnect(self._focus_loaded_handler_id)
 			self._focus_loaded_handler_id = None
 		
 		self._old_focused_image = focused_image
+		self._focus_hint = hint
 		
 		self.__queue_refresh_index()
 		self.refresh_title(focused_image)
@@ -1225,13 +1225,16 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self._focus_loaded_handler_id = None
 		
 	def _refresh_focus_frame(self):
-		if self.auto_zoom_enabled:
-			self.auto_zoom()
+		if not self._focus_hint:
+			if self.auto_zoom_enabled:
+				self.auto_zoom()
 		
-		focus_frame = self.avl.focus_frame
-		if focus_frame:
-			self.imageview.adjust_to_frame(
-			     focus_frame, *self.app.default_position)
+			focus_frame = self.avl.focus_frame
+			if focus_frame:
+				self.imageview.adjust_to_frame(
+					 focus_frame, *self.app.default_position)
+					 
+			self._focus_hint = True
 			
 		self.refresh_transform()
 			
