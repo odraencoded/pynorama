@@ -229,12 +229,14 @@ class AlbumViewLayout(GObject.Object):
 	
 	def _layout_changed(self, *data):
 		if self.__old_layout:
+			self.__old_layout.unsubscribe(self)
 			self.clean()
 		
 		self.__old_layout = self.layout
 		if self.layout:
 			self.__is_clean = False
 			self.layout.start(self)
+			self.layout.subscribe(self)
 		
 	album = GObject.property(type=object, default=None)
 	view = GObject.property(type=object, default=None)
@@ -243,7 +245,35 @@ class AlbumViewLayout(GObject.Object):
 class AlbumLayout:
 	''' Layout for an album '''
 	def __init__(self):
-		pass
+		self.__subscribers = set()
+		self.__idle_refresh_id = None
+	
+	def subscribe(self, avl):
+		self.__subscribers.add(avl)
+		
+	def unsubscribe(self, avl):
+		self.__subscribers.discard(avl)
+	
+	def refresh_subscribers(self):
+		''' Layouts should call this or queue_refresh for
+		    propagating changes in the layout properites '''
+		if self.__idle_refresh_id:
+			GLib.source_remove(self.__idle_refresh_id)
+			self.__idle_refresh_id = None
+			
+		for avl in self.__subscribers:
+			self.update(avl)
+			
+	def queue_refresh(self):
+		if self.__subscribers and self.__idle_refresh_id is None:
+			self.__idle_refresh_id = GLib.idle_add(
+			     self.__idly_refresh, priority=GLib.PRIORITY_HIGH)
+		
+	def __idly_refresh(self):
+		self.__idle_refresh_id = None
+		self.refresh_subscribers()
+		
+	#~ Interface down this line ~#
 	
 	def get_focus_image(self, avl):
 		''' Returns the image in focus '''
@@ -275,13 +305,12 @@ class AlbumLayout:
 		''' Reverse whatever was done at start '''
 		pass
 	
-	def update_setup(self, avl):
+	def update(self, avl):
+		''' Propagate changes in a layout property to an avl '''
 		pass
 		
 class SingleFrameLayout(AlbumLayout):
 	''' Shows a single album image in a view '''
-	def __init__(self):
-		pass
 	
 	def start(self, avl):
 		avl.current_image = None
@@ -400,15 +429,44 @@ class SingleFrameLayout(AlbumLayout):
 	def _image_loaded(self, image, error, avl):
 		self._refresh_frame(avl)
 
+class LayoutDirection:
+	Left = "left"
+	Right = "right"
+	Up = "up"
+	Down = "down"
+	
 class FrameStripLayout(AlbumLayout):
 	''' Shows a strip of album images in a view '''
-	def __init__(self):
+	
+	def __init__(self, direction=LayoutDirection.Down):
+		AlbumLayout.__init__(self)
+		
 		# Min number of pixels before and after the center image
 		self.space_after = 3840
 		self.space_before = 2560
 		# Max number of images, has priority over min number of pixesl
 		self.limit_after = 20
 		self.limit_before = 10
+		
+		self._direction = None
+		self.direction = direction
+		
+	@property
+	def direction(self):
+		return self._direction
+		
+	@direction.setter
+	def direction(self, value):
+		if self._direction != value:
+			self._direction = value
+			
+			self._get_length, self._place_before, self._place_after = \
+			                       FrameStripLayout.DirectionMethods[value]
+			
+			self.queue_refresh()
+	
+	def update(self, avl):
+		self._reposition_frames(avl)
 		
 	def start(self, avl):
 		avl.center_index = avl.center_frame = avl.center_image = None
@@ -458,7 +516,7 @@ class FrameStripLayout(AlbumLayout):
 	
 	def get_focus_frame(self, avl):
 		return avl.center_frame
-	
+		
 	def go_next(self, avl):
 		if avl.center_frame:
 			new_index = avl.center_index + 1
@@ -749,21 +807,17 @@ class FrameStripLayout(AlbumLayout):
 	def _reposition_frames(self, avl):
 		# Place frames around the center frame of images around the center image
 		if avl.center_frame:
-			side_ranges = (range(avl.center_index - 1, -1, -1),
-			               range(avl.center_index + 1, len(avl.shown_frames)))
-			               
-			frame_placers = self._place_before, self._place_after
+			shown_frames = avl.shown_frames
+			frame_count = len(shown_frames)
+			placement_data = (
+				(self._place_before, range(avl.center_index, -1, -1)),
+				(self._place_after, range(avl.center_index, frame_count))
+			)
 			
-			for i in range(2):
-				a_side_range = side_ranges[i]
-				frame_beside = avl.center_frame
-				a_frame_placer = frame_placers[i]
-				for j in a_side_range:
-					a_frame = avl.shown_frames[j]
-					if a_frame:
-						a_frame_placer(frame_beside, a_frame)
-						frame_beside = a_frame
-	
+			for a_coordinator, a_range in placement_data:
+				self._place_frames(
+				     a_coordinator, (shown_frames[j] for j in a_range))
+				
 	def _compute_lengths(self, avl):
 		# Recalculate the space used by images after and before the center image
 		if avl.center_frame:
@@ -787,21 +841,34 @@ class FrameStripLayout(AlbumLayout):
 			avl.space_after = 0
 			avl.space_before = 0
 	
-	def _place_after(self, frame, next_frame):
-		rect = frame.rectangle.shift(frame.origin)
-		
-		next_rect = next_frame.rectangle
-		ox, oy = next_frame.origin
-		ox = rect.right - next_rect.left
-		next_frame.origin = ox, oy
+	def _place_frames(self, coordinate_modifier, frames):
+		previous_rect = None
+		for a_frame in frames:
+			if a_frame:
+				frame_rect = a_frame.rectangle
+				ox, oy = a_frame.origin
+				if previous_rect:
+					ox, oy = coordinate_modifier(previous_rect, 
+					                             ox, oy, frame_rect)
+					a_frame.origin = ox, oy
+					
+				previous_rect = frame_rect.shift((ox, oy))
+					
+	_CoordinateToRight = lambda p, x, y, r: (p.right - r.left, y)
+	_CoordinateToLeft = lambda p, x, y, r: (p.left - r.right, y)
+	_CoordinateToTop = lambda p, x, y, r: (x, p.top - r.bottom)
+	_CoordinateToBottom = lambda p, x, y, r: (x, p.bottom - r.top)
 	
-	def _place_before(self, frame, previous_frame):
-		rect = frame.rectangle.shift(frame.origin)
-		
-		previous_rect = previous_frame.rectangle
-		ox, oy = previous_frame.origin
-		ox = rect.left - previous_rect.right
-		previous_frame.origin = ox, oy
-				
-	def _get_length(self, frame):
-		return frame.rectangle.width if frame else 0
+	_GetFrameWidth = lambda f: f.rectangle.width if f else 0
+	_GetFrameHeight = lambda f: f.rectangle.height if f else 0
+	
+	DirectionMethods = {
+		LayoutDirection.Right : (_GetFrameWidth,
+		                         _CoordinateToLeft, _CoordinateToRight),
+		LayoutDirection.Left : (_GetFrameWidth,
+		                        _CoordinateToRight, _CoordinateToLeft),
+		LayoutDirection.Up : (_GetFrameHeight,
+		                      _CoordinateToBottom, _CoordinateToTop),
+		LayoutDirection.Down : (_GetFrameHeight,
+		                        _CoordinateToTop, _CoordinateToBottom)
+	}
