@@ -17,7 +17,7 @@
 
 import math
 from gi.repository import Gdk, GdkPixbuf, GLib, GObject, Gtk
-import point
+import point, utility
 import cairo
 
 class ZoomMode:
@@ -39,6 +39,9 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		Gtk.DrawingArea.__init__(self)
 		
 		self.__frames = set()
+		self.refresh_outline = utility.IdlyMethod(self.refresh_outline)
+		self.refresh_outline.priority = GLib.PRIORITY_HIGH
+		
 		self.outline = point.Rectangle(width=1, height=1)
 		self.__obsolete_offset = False
 		
@@ -76,7 +79,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 				
 			a_frame.added(self)
 			
-		self.__compute_outline()
+		self.refresh_outline.queue()
 		self.queue_draw()
 			
 	def remove_frame(self, *frames):
@@ -90,9 +93,22 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			
 			a_frame.removed(self)
 			
-		self.__compute_outline()
+		self.refresh_outline.queue()
 		self.queue_draw()
-									
+	
+	def refresh_outline(self):
+		''' Figure out the outline of all frames united '''
+		rectangles = [a_frame.rectangle.shift(a_frame.origin) for a_frame \
+		                                                      in self.__frames]
+		                                                      
+		new_outline = point.Rectangle.Union(rectangles)
+		new_outline.width = max(new_outline.width, 1)
+		new_outline.height = max(new_outline.height, 1)
+		
+		if self.outline != new_outline:
+			self.outline = new_outline
+			self.__compute_adjustments()
+	
 	# --- view manipulation down this line --- #
 	def pan(self, direction):
 		self.adjust_to(*point.add(self.get_adjustment(), direction))
@@ -391,20 +407,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	magnify_interpolation = GObject.property(type=GObject.TYPE_INT)
 	
 	# --- computing stuff down this line --- #	
-	def __compute_outline(self):
-		''' Figure out the outline of all frames united '''
-		rectangles = []
-		for a_frame in self.__frames:
-			rectangles.append(a_frame.rectangle.shift(a_frame.origin))
-			
-		new_outline = point.Rectangle.Union(*rectangles)
-		new_outline.width = max(new_outline.width, 1)
-		new_outline.height = max(new_outline.height, 1)
-		
-		if self.outline != new_outline:
-			self.outline = new_outline
-			self.__compute_adjustments()
-			
+	
 	def __compute_adjustments(self):
 		''' Figure out lower, upper and page size of adjustments.
 		    Also clamp them. Clamping is important. '''
@@ -468,7 +471,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	# --- event stuff down this line --- #
 	def __frame_changed(self, *some_data_we_are_not_gonna_use_anyway):
 		''' Callback for when a picture frame surface changes '''
-		self.__compute_outline()
+		self.refresh_outline.queue()
 		self.queue_draw()
 	
 	def __adjustment_changed(self, data):
@@ -538,6 +541,8 @@ class ImageFrame(GObject.GObject):
 	# TODO: Implement rotation and scale
 	def __init__(self):
 		GObject.GObject.__init__(self)
+		self.size = 0, 0
+		self.rectangle = point.Rectangle()
 		self.origin = 0, 0
 	
 	def added(self, view):
@@ -549,26 +554,19 @@ class ImageFrame(GObject.GObject):
 	def draw(self, cr, view):
 		raise NotImplementedError
 		
-	@property
-	def rectangle(self):
-		return point.Rectangle()
-	
-	@property
-	def size(self):
-		return self.rectangle.to_tuple()[2:]
-	
 	origin = GObject.property(type=GObject.TYPE_PYOBJECT)
 	
 class ImageSurfaceFrame(ImageFrame):
 	def __init__(self, surface):
 		ImageFrame.__init__(self)
+		self.connect("notify::surface", self._surface_changed)
 		self.surface = surface
 	
 	def draw(self, cr, view):
 		if self.surface:
 			offset = point.multiply(self.size, (-.5, -.5))
 			cr.set_source_surface(self.surface, *offset)
-		
+			
 			# Set filter
 			a_pattern = cr.get_source()
 			zoom = view.get_magnification()
@@ -577,20 +575,21 @@ class ImageSurfaceFrame(ImageFrame):
 				a_pattern.set_filter(a_filter)
 		
 			cr.paint()
-	
-	@property
-	def rectangle(self):
-		if self.surface:
-			w, h = self.surface.get_width(), self.surface.get_height()
-			return point.Rectangle(-w/2, -h/2, w, h)
-		else:
-			return point.Rectangle()
 			
 	surface = GObject.property(type=GObject.TYPE_PYOBJECT)
-	
+	def _surface_changed(self, *args):
+		if self.surface:
+			w, h = self.surface.get_width(), self.surface.get_height()
+			self.rectangle = point.Rectangle(-w/2, -h/2, w, h)
+			self.size = w, h
+		else:
+			self.size = 0, 0
+			self.rectangle = point.Rectangle()
+			
 class AnimatedPixbufFrame(ImageFrame):
 	def __init__(self, animation):
 		ImageFrame.__init__(self)
+		self.connect("notify::animation", self._animation_changed)
 		self.animation = animation
 		self._view_anim = dict()
 	
@@ -647,16 +646,16 @@ class AnimatedPixbufFrame(ImageFrame):
 				a_pattern.set_filter(a_filter)
 		
 			cr.paint()
-			
-	@property
-	def rectangle(self):
+				
+	animation = GObject.property(type=GObject.TYPE_PYOBJECT)
+	def _animation_changed(self, *args):
 		if self.animation:
 			w, h = self.animation.get_width(), self.animation.get_height()
-			return point.Rectangle(-w/2, -h/2, w, h)
+			self.rectangle = point.Rectangle(-w/2, -h/2, w, h)
+			self.size = w, h
 		else:
-			return point.Rectangle()
-							
-	animation = GObject.property(type=GObject.TYPE_PYOBJECT)
+			self.rectangle = point.Rectangle()
+			self.size = 0, 0
 	
 def SurfaceFromPixbuf(pixbuf):
 	''' Creates a cairo surface from a Gdk pixbuf'''

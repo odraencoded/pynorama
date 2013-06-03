@@ -125,26 +125,14 @@ class Rectangle:
 		return result
 	
 	@staticmethod
-	def Union(*rectangles):
+	def Union(rectangles):
 		''' Rectangles! UNITE!!! '''
 		if rectangles:
-			first = True
-			t, l, r, b = 0,0,0,0
-			for a_rectangle in rectangles:
-				if a_rectangle:
-					if first:
-						t = a_rectangle.top
-						l = a_rectangle.left
-						b = a_rectangle.bottom
-						r = a_rectangle.right
-						first = False
-					else:
-						t = min(t, a_rectangle.top)
-						l = min(l, a_rectangle.left)
-						b = max(b, a_rectangle.bottom)
-						r = max(r, a_rectangle.right)
-					
-			return Rectangle(l, t, r - l, b - t)
-		
+			top = min((r.top for r in rectangles))
+			left = min((r.left for r in rectangles))
+			bottom = max((r.top + r.height for r in rectangles))
+			right = max((r.left + r.width for r in rectangles))
 		else:
-			return Rectangle()
+			top, left, bottom, right = 0
+			
+		return Rectangle(left, top, right - left, bottom - top)
