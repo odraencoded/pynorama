@@ -523,8 +523,8 @@ class FrameStripLayout(AlbumLayout):
 				avl.emit("focus-changed", avl.center_image)
 				
 			else:
-				avl.center_image = None
 				new_image = avl.album.next(avl.center_image)
+				avl.center_index = avl.center_frame = avl.center_image = None
 				self._insert_image(avl, new_index, new_image)
 				
 			avl.update_sides.queue()
