@@ -68,6 +68,21 @@ class Rectangle:
 	def bottom(self):
 		return self.top + self.height
 	
+	@property
+	def area(self):
+		return self.width * self.height
+	
+	def __and__(self, other):
+		left = max(self.left, other.left)
+		top = max(self.top, other.top)
+		right = min(self.left + self.width, other.left + other.width)
+		bottom = min(self.top + self.height, other.top + other.height)
+		
+		width = max(right - left, 0)
+		height = max(bottom - top, 0)
+		
+		return Rectangle(left, top, width, height)
+	
 	def unbox_point(self, relative_point):
 		return add((self.left, self.top),
 		            multiply((self.width, self.height), relative_point))
@@ -133,6 +148,18 @@ class Rectangle:
 			bottom = max((r.top + r.height for r in rectangles))
 			right = max((r.left + r.width for r in rectangles))
 		else:
-			top, left, bottom, right = 0
+			top = left = bottom = right = 0
 			
+		return Rectangle(left, top, right - left, bottom - top)
+	
+	@staticmethod
+	def FromPoints(*points):
+		xs = [p[0] for p in points]
+		ys = [p[1] for p in points]
+		
+		left = min(xs)
+		right = max(xs)
+		top = min(ys)
+		bottom = max(ys)
+		
 		return Rectangle(left, top, right - left, bottom - top)
