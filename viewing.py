@@ -32,7 +32,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	    It can also zoom in, out, rotate, adjust and etc. '''
 	
 	__gsignals__ = {
-		"transform-change" : (GObject.SIGNAL_RUN_FIRST, None, [])
+		"transform-change" : (GObject.SIGNAL_RUN_FIRST, None, []),
+		"offset-change" : ((GObject.SIGNAL_RUN_FIRST, None, []))
 	}
 	
 	def __init__(self):
@@ -109,6 +110,12 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			self.outline = new_outline
 			self.__compute_adjustments()
 	
+	@property
+	def frames_fit(self):
+		''' Whether all frames are within the widget view '''
+		w, h = self.get_magnified_width(), self.get_magnified_height()
+		return self.outline.width < w and self.outline.height < h
+		
 	# --- view manipulation down this line --- #
 	def pan(self, direction):
 		self.adjust_to(*point.add(self.get_adjustment(), direction))
@@ -260,16 +267,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def get_absolute_point(self, widget_point):
 		''' Returns a point with the view transformations of a point in the
 		    widget reverted '''
-		x, y = self.offset
-		
-		px, py = widget_point
-		px /= self.get_allocated_width()
-		py /= self.get_allocated_height()
-		
-		magw = self.get_magnified_width()
-		magh = self.get_magnified_height()
-		
-		x, y = x + px * magw, y + py * magh
+		inv_zoom = 1 / self.get_magnification()
+		x, y = point.add(self.offset, point.scale(widget_point, inv_zoom))
 		
 		rotation = self.get_rotation()
 		if rotation:
@@ -467,6 +466,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 				
 		self.__obsolete_offset = False
 		self.offset = x, y
+		GLib.idle_add(self.emit, "offset-change", priority=GLib.PRIORITY_HIGH)
 	
 	# --- event stuff down this line --- #
 	def __frame_changed(self, *some_data_we_are_not_gonna_use_anyway):
