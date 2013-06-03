@@ -18,6 +18,7 @@
 import os
 from gi.repository import GLib, GObject
 from collections import MutableSequence
+import utility
 
 class Album(GObject.Object):
 	''' It organizes images '''
@@ -246,33 +247,23 @@ class AlbumLayout:
 	''' Layout for an album '''
 	def __init__(self):
 		self.__subscribers = set()
-		self.__idle_refresh_id = None
-	
+		
+		self.refresh_subscribers = utility.IdlyMethod(self.refresh_subscribers)
+		self.refresh_subscribers.priority = GLib.PRIORITY_HIGH + 20
+		
 	def subscribe(self, avl):
 		self.__subscribers.add(avl)
 		
 	def unsubscribe(self, avl):
 		self.__subscribers.discard(avl)
-	
+		
 	def refresh_subscribers(self):
 		''' Layouts should call this or queue_refresh for
 		    propagating changes in the layout properites '''
-		if self.__idle_refresh_id:
-			GLib.source_remove(self.__idle_refresh_id)
-			self.__idle_refresh_id = None
-			
+		    
 		for avl in self.__subscribers:
-			self.update(avl)
-			
-	def queue_refresh(self):
-		if self.__subscribers and self.__idle_refresh_id is None:
-			self.__idle_refresh_id = GLib.idle_add(
-			     self.__idly_refresh, priority=GLib.PRIORITY_HIGH)
-		
-	def __idly_refresh(self):
-		self.__idle_refresh_id = None
-		self.refresh_subscribers()
-		
+			self.update(avl)	
+	
 	#~ Interface down this line ~#
 	
 	def get_focus_image(self, avl):
@@ -463,7 +454,7 @@ class FrameStripLayout(AlbumLayout):
 			self._get_length, self._place_before, self._place_after = \
 			                       FrameStripLayout.DirectionMethods[value]
 			
-			self.queue_refresh()
+			self.refresh_subscribers.queue()
 	
 	def update(self, avl):
 		self._reposition_frames(avl)
@@ -475,7 +466,13 @@ class FrameStripLayout(AlbumLayout):
 		avl.load_handles = {}
 		
 		avl.old_album = None
-		avl.idle_update_sides_id = None
+		
+		# Use PRIORITY_DEFAULT_IDLE - 10 to create frames after they
+		# are drawn but before they can be unloaded (avoiding having to reload
+		# images after a _clear_images(...)		
+		avl.update_sides = utility.IdlyMethod(self._update_sides, avl)
+		avl.update_sides.priority = GLib.PRIORITY_DEFAULT_IDLE - 10
+		
 		avl.album_signals = []
 		avl.album_notify_id = avl.connect(
 		                          "notify::album", self._album_changed, avl)
@@ -504,10 +501,9 @@ class FrameStripLayout(AlbumLayout):
 			for signal_id in avl.album_signals:
 				avl.old_album.disconnect(signal_id)
 		
-		if avl.idle_update_sides_id:
-			GLib.source_remove(avl.idle_update_sides_id)
-			
-		del avl.idle_update_sides_id
+		avl.update_sides.cancel_queue()
+		del avl.update_sides
+		
 		del avl.old_album
 		del avl.album_signals
 			
@@ -531,7 +527,7 @@ class FrameStripLayout(AlbumLayout):
 				new_image = avl.album.next(avl.center_image)
 				self._insert_image(avl, new_index, new_image)
 				
-			self._queue_update_sides(avl)
+			avl.update_sides.queue()
 		
 	def go_previous(self, avl):
 		if avl.center_frame:
@@ -547,7 +543,7 @@ class FrameStripLayout(AlbumLayout):
 				avl.center_index = avl.center_frame = avl.center_image = None
 				self._insert_image(avl, 0, new_image)
 				
-			self._queue_update_sides(avl)
+			avl.update_sides.queue()
 			
 	def go_image(self, avl, image):
 		if avl.center_image is image:
@@ -627,7 +623,7 @@ class FrameStripLayout(AlbumLayout):
 						new_image = avl.album.next(avl.album[index - 1])
 						self._insert_image(avl, new_index, new_image)
 			
-			self._queue_update_sides(avl)
+			avl.update_sides.queue()
 			self._reposition_frames(avl)
 	
 	def _order_changed(self, album, avl):
@@ -677,7 +673,7 @@ class FrameStripLayout(AlbumLayout):
 	def _load_frame(self, avl, image):
 		if image.on_memory or image.is_bad:
 			self._refresh_frames(avl, image)
-			self._queue_update_sides(avl)
+			avl.update_sides.queue()
 			
 		else:
 			load_handle_id = avl.load_handles.get(image, None)
@@ -693,26 +689,10 @@ class FrameStripLayout(AlbumLayout):
 			
 		if image in avl.shown_images:
 			self._refresh_frames(avl, image)
-			self._queue_update_sides(avl)
-	
-	# Use PRIORITY_DEFAULT_IDLE - 10 to create frames after they
-	# are drawn but before they can be unloaded (avoiding having to reload
-	# images after a _clear_images(...)
-	def _queue_update_sides(self, avl):
-		if not avl.idle_update_sides_id:
-			avl.idle_update_sides_id = GLib.idle_add(
-			                           self._idly_update_sides, avl,
-			                           priority=GLib.PRIORITY_DEFAULT_IDLE - 10)
-	
-	def _idly_update_sides(self, avl):
-		avl.idle_update_sides_id = None
-		self._update_sides(avl)
+			avl.update_sides.queue()
 	
 	def _update_sides(self, avl):
 		# Adds or removes images at either side
-		if avl.idle_update_sides_id:
-			GLib.source_remove(avl.idle_update_sides_id)
-		
 		if avl.center_frame and len(avl.album) > 1:
 			self._compute_lengths(avl)
 			
