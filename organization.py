@@ -399,3 +399,409 @@ class SingleFrameLayout(AlbumLayout):
 	
 	def _image_loaded(self, image, error, avl):
 		self._refresh_frame(avl)
+
+class FrameStripLayout(AlbumLayout):
+	''' Shows a strip of album images in a view '''
+	def __init__(self):
+		# Min number of pixels before and after the center image
+		self.space_after = 3840
+		self.space_before = 2560
+		# Max number of images, has priority over min number of pixesl
+		self.limit_after = 20
+		self.limit_before = 10
+		
+	def start(self, avl):
+		avl.center_index = avl.center_frame = avl.center_image = None
+		avl.shown_images, avl.shown_frames = [], []
+		avl.space_before = avl.space_after = 0
+		avl.load_handles = {}
+		
+		avl.old_album = None
+		avl.idle_update_sides_id = None
+		avl.album_signals = []
+		avl.album_notify_id = avl.connect(
+		                          "notify::album", self._album_changed, avl)
+		self._album_changed(avl)
+		
+	def clean(self, avl):
+		for an_image in avl.shown_images:
+			an_image.uses -= 1
+			
+		for a_frame in avl.shown_frames:
+			if a_frame:
+				avl.view.remove_frame(a_frame)
+				
+		for an_image, a_handle_id in avl.load_handles.items():
+			an_image.disconnect(a_handle_id)				
+		
+		del avl.center_image, avl.center_frame
+		del avl.shown_images, avl.shown_frames
+		del avl.space_before, avl.space_after
+		del avl.load_handles
+		
+		avl.disconnect(avl.album_notify_id)
+		del avl.album_notify_id
+		
+		if not avl.old_album is None:
+			for signal_id in avl.album_signals:
+				avl.old_album.disconnect(signal_id)
+		
+		if avl.idle_update_sides_id:
+			GLib.source_remove(avl.idle_update_sides_id)
+			
+		del avl.idle_update_sides_id
+		del avl.old_album
+		del avl.album_signals
+			
+	def get_focus_image(self, avl):
+		return avl.center_image
+	
+	def get_focus_frame(self, avl):
+		return avl.center_frame
+	
+	def go_next(self, avl):
+		if avl.center_frame:
+			new_index = avl.center_index + 1
+			if new_index < len(avl.shown_images):
+				avl.center_image = avl.shown_images[new_index]
+				avl.center_frame = avl.shown_frames[new_index]
+				avl.center_index = new_index
+				avl.emit("focus-changed", avl.center_image)
+				
+			else:
+				avl.center_image = None
+				new_image = avl.album.next(avl.center_image)
+				self._insert_image(avl, new_index, new_image)
+				
+			self._queue_update_sides(avl)
+		
+	def go_previous(self, avl):
+		if avl.center_frame:
+			new_index = avl.center_index - 1
+			if new_index >= 0:
+				avl.center_image = avl.shown_images[new_index]
+				avl.center_frame = avl.shown_frames[new_index]
+				avl.center_index = new_index
+				avl.emit("focus-changed", avl.center_image)
+				
+			else:
+				new_image = avl.album.previous(avl.center_image)
+				avl.center_index = avl.center_frame = avl.center_image = None
+				self._insert_image(avl, 0, new_image)
+				
+			self._queue_update_sides(avl)
+			
+	def go_image(self, avl, image):
+		if avl.center_image is image:
+			return
+			
+		self._clear_images(avl)
+		avl.center_index = avl.center_image = avl.center_frame = None
+		self._insert_image(avl, 0, image)
+		
+	def _album_changed(self, avl, *data):
+		# Handler for album changes in avl
+		if not avl.old_album is None:
+			for signal_id in avl.album_signals:
+				avl.old_album.disconnect(signal_id)
+				
+			avl.album_signals = None
+			
+		avl.old_album = avl.album
+		if not avl.album is None:
+			avl.album_signals = [
+				avl.album.connect("image-removed", self._image_removed, avl),
+				avl.album.connect("image-added", self._image_added, avl),
+				avl.album.connect("order-changed", self._order_changed, avl),
+			]
+	
+	def _image_added(self, album, image, index, avl):
+		# Handles an iamge added to an album
+		next = album.next(image)
+		prev = album.previous(image)
+		
+		if prev is image or prev is next:
+			prev = None
+			
+		if next is image:
+			next = None
+			
+		if prev or next:
+			change = 0
+			inserted_prev = False
+			for i in range(len(avl.shown_images)):
+				j = i + change
+				an_image = avl.shown_images[j]
+				if an_image is next and not inserted_prev:
+					self._insert_image(avl, j, image)
+					change += 1
+					inserted_prev = False
+					
+				elif an_image is prev:
+					self._insert_image(avl, j + 1, image)
+					change += 1
+					inserted_prev = True
+					
+				else:
+					inserted_prev = False
+					
+	def _image_removed(self, album, image, index, avl):
+		# Handles an image removed from an album
+		removed_frame = False
+		while image in avl.shown_images:
+			removed_index = avl.shown_images.index(image)
+			self._remove_image(avl, removed_index)
+			removed_frame = True
+				
+		if removed_frame:
+			if image is avl.center_image:
+				new_index = avl.center_index
+				if new_index < len(avl.shown_images):
+					avl.center_image = avl.shown_images[new_index]
+					avl.center_frame = avl.shown_frames[new_index]
+					avl.center_index = new_index
+					avl.emit("focus-changed", avl.center_image)
+			
+				else:
+					avl.center_index = None
+					avl.center_frame = avl.center_image = None
+					if avl.album:
+						new_image = avl.album.next(avl.album[index - 1])
+						self._insert_image(avl, new_index, new_image)
+			
+			self._queue_update_sides(avl)
+			self._reposition_frames(avl)
+	
+	def _order_changed(self, album, avl):
+		self._clear_images(avl)
+		old_center_image = avl.center_image
+		avl.center_index = avl.center_image = avl.center_frame = None
+		self._insert_image(avl, 0, old_center_image)
+	
+	def _insert_image(self, avl, index, image):
+		avl.shown_images.insert(index, image)
+		avl.shown_frames.insert(index, None)
+		
+		image.uses += 1
+		
+		if not avl.center_image:
+			avl.center_index = index
+			avl.center_image = image
+			avl.emit("focus-changed", image)
+		
+		elif index <= avl.center_index:
+			avl.center_index += 1
+		
+		self._load_frame(avl, image)
+	
+	def _remove_image(self, avl, index):
+		image = avl.shown_images.pop(index)
+		frame = avl.shown_frames.pop(index)
+		
+		image.uses -= 1
+		
+		if index < avl.center_index:
+			avl.center_index -= 1
+		
+		if frame:
+			avl.view.remove_frame(frame)
+	
+	def _append_image(self, avl, image):
+		self._insert_image(avl, len(avl.shown_images), image)
+		
+	def _prepend_image(self, avl, image):
+		self._insert_image(avl, 0, image)
+	
+	def _clear_images(self, avl):
+		while avl.shown_images:
+			self._remove_image(avl, 0)
+			
+	def _load_frame(self, avl, image):
+		if image.on_memory or image.is_bad:
+			self._refresh_frames(avl, image)
+			self._queue_update_sides(avl)
+			
+		else:
+			load_handle_id = avl.load_handles.get(image, None)
+			if not load_handle_id:
+				load_handle_id = image.connect("finished-loading", 
+				                               self._image_loaded, avl)
+				avl.load_handles[image] = load_handle_id
+				
+	def _image_loaded(self, image, error, avl):
+		load_handle_id = avl.load_handles.pop(image, None)
+		if load_handle_id:
+			image.disconnect(load_handle_id)
+			
+		if image in avl.shown_images:
+			self._refresh_frames(avl, image)
+			self._queue_update_sides(avl)
+	
+	# Use PRIORITY_DEFAULT_IDLE - 10 to create frames after they
+	# are drawn but before they can be unloaded (avoiding having to reload
+	# images after a _clear_images(...)
+	def _queue_update_sides(self, avl):
+		if not avl.idle_update_sides_id:
+			avl.idle_update_sides_id = GLib.idle_add(
+			                           self._idly_update_sides, avl,
+			                           priority=GLib.PRIORITY_DEFAULT_IDLE - 10)
+	
+	def _idly_update_sides(self, avl):
+		avl.idle_update_sides_id = None
+		self._update_sides(avl)
+	
+	def _update_sides(self, avl):
+		# Adds or removes images at either side
+		if avl.idle_update_sides_id:
+			GLib.source_remove(avl.idle_update_sides_id)
+		
+		if avl.center_frame and len(avl.album) > 1:
+			self._compute_lengths(avl)
+			
+			before_count = avl.center_index
+			after_count = len(avl.shown_images) - avl.center_index - 1
+			
+			while after_count > self.limit_after:
+				avl.space_after -= self._get_length(avl.shown_frames[-1])
+				self._remove_image(avl, len(avl.shown_frames) -1)
+				after_count -= 1
+				
+			if after_count < self.limit_after:
+				foremost_frame = avl.shown_frames[-1]
+				if avl.space_after < self.space_after:
+					if foremost_frame:
+						foremost_image = avl.shown_images[-1]
+						beyond_foremost_image = avl.album.next(foremost_image)
+						self._append_image(avl, beyond_foremost_image)
+				else:
+					foremost_length = self._get_length(foremost_frame)
+					while avl.space_after - foremost_length > self.space_after \
+						  if foremost_frame \
+						  else avl.space_after > self.space_after:
+						self._remove_image(avl, len(avl.shown_frames) -1)
+						avl.space_after -= foremost_length
+						foremost_frame = avl.shown_frames[-1]
+						foremost_length = self._get_length(foremost_frame)
+			
+			while before_count > self.limit_before:
+				avl.space_before -= self._get_length(avl.shown_frames[0])
+				self._remove_image(avl, 0)
+				before_count -= 1
+			
+			if before_count < self.limit_before:
+				backmost_frame = avl.shown_frames[0]
+				if avl.space_before < self.space_before:	
+					if backmost_frame:
+						backmost_image = avl.shown_images[0]
+						beyond_backmost_image = avl.album.previous(backmost_image)
+						self._prepend_image(avl, beyond_backmost_image)
+				else:
+					backmost_length = self._get_length(backmost_frame)
+					while avl.space_before - backmost_length > self.space_before \
+						  if backmost_frame \
+						  else avl.space_before > self.space_before:
+						self._remove_image(avl, 0)
+						avl.space_before -= backmost_length
+						backmost_frame = avl.shown_frames[0]
+						backmost_length = self._get_length(backmost_frame)
+					
+	def _refresh_frames(self, avl, image, overwrite=False):
+		# Create frames to represent an image
+		error_surface = None
+		new_frames = []
+		for i in range(len(avl.shown_images)):
+			shown_image = avl.shown_images[i]
+			if image is shown_image:
+				shown_frame = avl.shown_frames[i]
+				if not shown_frame or overwrite:
+					try:
+						shown_frame = image.create_frame(avl.view)
+						
+					except Exception:
+						if not error_surface:
+							pixbuf = avl.view.render_icon(
+							                 Gtk.STOCK_MISSING_IMAGE,
+							                 Gtk.IconSize.DIALOG)
+							                 
+							error_surface = viewing.SurfaceFromPixbuf(pixbuf)
+							
+						shown_frame = viewing.ImageSurfaceFrame(error_surface)
+					
+					self._set_frame(avl, i, shown_frame)
+					new_frames.append(shown_frame)
+					
+		if new_frames:
+			if image is avl.center_image and not avl.center_frame:
+				avl.center_frame = new_frames[0]
+			
+			self._reposition_frames(avl)
+		
+	def _set_frame(self, avl, index, new_frame):
+		old_frame = avl.shown_frames[index]
+		if new_frame is not old_frame:
+			if old_frame:
+				avl.view.remove_frame(old_frame)
+			
+			avl.shown_frames[index] = new_frame
+			if new_frame:
+				avl.view.add_frame(new_frame)
+	
+	def _reposition_frames(self, avl):
+		# Place frames around the center frame of images around the center image
+		if avl.center_frame:
+			side_ranges = (range(avl.center_index - 1, -1, -1),
+			               range(avl.center_index + 1, len(avl.shown_frames)))
+			               
+			frame_placers = self._place_before, self._place_after
+			
+			for i in range(2):
+				a_side_range = side_ranges[i]
+				frame_beside = avl.center_frame
+				a_frame_placer = frame_placers[i]
+				for j in a_side_range:
+					a_frame = avl.shown_frames[j]
+					if a_frame:
+						a_frame_placer(frame_beside, a_frame)
+						frame_beside = a_frame
+	
+	def _compute_lengths(self, avl):
+		# Recalculate the space used by images after and before the center image
+		if avl.center_frame:
+			side_ranges = (range(avl.center_index),
+			               range(avl.center_index + 1, len(avl.shown_frames)))
+			side_lengths = []
+			
+			for i in range(2):
+				a_side_range = side_ranges[i]
+				a_side_length = 0
+				for j in a_side_range:
+					a_frame = avl.shown_frames[j]
+					if a_frame:
+						a_side_length += self._get_length(a_frame)
+				
+				side_lengths.append(a_side_length)
+				
+			avl.space_before, avl.space_after = side_lengths
+			
+		else:
+			avl.space_after = 0
+			avl.space_before = 0
+	
+	def _place_after(self, frame, next_frame):
+		rect = frame.rectangle.shift(frame.origin)
+		
+		next_rect = next_frame.rectangle
+		ox, oy = next_frame.origin
+		ox = rect.right - next_rect.left
+		next_frame.origin = ox, oy
+	
+	def _place_before(self, frame, previous_frame):
+		rect = frame.rectangle.shift(frame.origin)
+		
+		previous_rect = previous_frame.rectangle
+		ox, oy = previous_frame.origin
+		ox = rect.left - previous_rect.right
+		previous_frame.origin = ox, oy
+				
+	def _get_length(self, frame):
+		return frame.rectangle.width if frame else 0
