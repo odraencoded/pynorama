@@ -429,7 +429,7 @@ class LayoutDirection:
 class FrameStripLayout(GObject.Object, AlbumLayout):
 	''' Shows a strip of album images in a view '''
 	
-	def __init__(self, direction=LayoutDirection.Down):
+	def __init__(self, direction=LayoutDirection.Down, loop=False):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
 		
@@ -441,9 +441,13 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		self.limit_before = 40
 		
 		self.connect("notify::direction", self._direction_changed)
+		self.connect("notify::loop", self._loop_changed)
+		
 		self.direction = direction
+		self.loop = loop
 	
 	direction = GObject.property(type=object)
+	loop = GObject.property(type=bool, default=False)
 	
 	def _direction_changed(self, *data):
 		self._get_length, self._get_rect_distance, \
@@ -452,8 +456,12 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		
 		self.refresh_subscribers.queue()
 	
+	def _loop_changed(self, *data):
+		self.refresh_subscribers.queue()
+	
 	def update(self, avl):
 		self._reposition_frames(avl)
+		self._update_sides(avl)
 		
 	def start(self, avl):
 		avl.center_index = avl.center_frame = avl.center_image = None
@@ -752,56 +760,95 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 	
 	def _update_sides(self, avl):
 		# Adds or removes images at either side
-		if avl.center_frame and len(avl.album) > 1:
+		if avl.center_frame:
+			center_image = avl.center_image
+			shown_frames, shown_images = avl.shown_frames, avl.shown_images
+			
+			# Removes the center image from around the center frame
+			if not self.loop:
+				for i in range(avl.center_index -1, -1, -1):
+					if shown_images[i] is center_image:
+						for j in range(i + 1):
+							self._remove_image(avl, 0)
+							
+						break
+						
+				for i in range(avl.center_index + 1, len(shown_images)):
+					if shown_images[i] is center_image:
+						for j in range(len(shown_images) - i):
+							self._remove_image(avl, i)
+							
+						break
+			
 			self._compute_lengths(avl)
 			
 			before_count = avl.center_index
-			after_count = len(avl.shown_images) - avl.center_index - 1
+			after_count = len(shown_images) - avl.center_index - 1
 			
-			while after_count > self.limit_after:
-				avl.space_after -= self._get_length(avl.shown_frames[-1])
-				self._remove_image(avl, len(avl.shown_frames) -1)
-				after_count -= 1
+			if after_count > self.limit_after:
+				# Remove images after center image
+				# if the count is over the limit
+				for i in range(after_count - self.limit_after):
+					avl.space_after -= self._get_length(shown_frames[-1])
+					self._remove_image(avl, len(shown_frames) -1)
 				
-			if after_count < self.limit_after:
-				foremost_frame = avl.shown_frames[-1]
+				after_count = self.limit_after
+			
+			if	after_count < self.limit_after:
+				foremost_frame = shown_frames[-1]
+				# Add an image if there is extra space
 				if avl.space_after < self.space_after:
 					if foremost_frame:
-						foremost_image = avl.shown_images[-1]
+						foremost_image = shown_images[-1]
 						beyond_foremost_image = avl.album.next(foremost_image)
-						self._append_image(avl, beyond_foremost_image)
+						if self.loop or \
+						   beyond_foremost_image is not center_image:
+							self._append_image(avl, beyond_foremost_image)
+						
 				else:
+					# Remove images if there is no extra space
 					foremost_length = self._get_length(foremost_frame)
-					while avl.space_after - foremost_length > self.space_after \
+					while avl.space_after - foremost_length > \
+						  self.space_after \
 						  if foremost_frame \
 						  else avl.space_after > self.space_after:
-						self._remove_image(avl, len(avl.shown_frames) -1)
+						self._remove_image(avl, len(shown_frames) -1)
 						avl.space_after -= foremost_length
-						foremost_frame = avl.shown_frames[-1]
+						foremost_frame = shown_frames[-1]
 						foremost_length = self._get_length(foremost_frame)
-			
-			while before_count > self.limit_before:
-				avl.space_before -= self._get_length(avl.shown_frames[0])
-				self._remove_image(avl, 0)
-				before_count -= 1
-			
-			if before_count < self.limit_before:
-				backmost_frame = avl.shown_frames[0]
+					
+			if before_count > self.limit_before:
+				# Remove images before center image
+				# if the count is over the limit
+				for i in range(before_count - self.limit_before):
+					avl.space_before -= self._get_length(shown_frames[0])
+					self._remove_image(avl, 0)
+					
+				before_count = self.limit_before
+				
+			if	before_count < self.limit_before:
+				backmost_frame = shown_frames[0]
+				# Add an image if there is extra space
 				if avl.space_before < self.space_before:	
 					if backmost_frame:
-						backmost_image = avl.shown_images[0]
-						beyond_backmost_image = avl.album.previous(backmost_image)
-						self._prepend_image(avl, beyond_backmost_image)
+						backmost_image = shown_images[0]
+						beyond_backmost_image = \
+						       avl.album.previous(backmost_image)
+						if self.loop or \
+						   beyond_backmost_image is not center_image:
+							self._prepend_image(avl, beyond_backmost_image)
 				else:
+					# Remove images if there is no extra space
 					backmost_length = self._get_length(backmost_frame)
-					while avl.space_before - backmost_length > self.space_before \
-						  if backmost_frame \
+					while avl.space_before - backmost_length > \
+					      self.space_before \
+					      if backmost_frame \
 						  else avl.space_before > self.space_before:
 						self._remove_image(avl, 0)
 						avl.space_before -= backmost_length
-						backmost_frame = avl.shown_frames[0]
+						backmost_frame = shown_frames[0]
 						backmost_length = self._get_length(backmost_frame)
-					
+						
 	def _refresh_frames(self, avl, image, overwrite=False):
 		# Create frames to represent an image
 		error_surface = None
