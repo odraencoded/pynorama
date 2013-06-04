@@ -17,8 +17,14 @@
 
 import math
 from gi.repository import Gdk, GdkPixbuf, GLib, GObject, Gtk
-import point
+import point, utility
 import cairo
+
+class ZoomMode:
+	FillView = 0
+	MatchWidth = 1
+	MatchHeight = 2
+	FitContent = 3
 
 # Quite possibly the least badly designed class in the whole program.
 class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
@@ -26,13 +32,17 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	    It can also zoom in, out, rotate, adjust and etc. '''
 	
 	__gsignals__ = {
-		"transform-change" : (GObject.SIGNAL_RUN_FIRST, None, [])
+		"transform-change" : (GObject.SIGNAL_RUN_FIRST, None, []),
+		"offset-change" : ((GObject.SIGNAL_RUN_FIRST, None, []))
 	}
 	
 	def __init__(self):
 		Gtk.DrawingArea.__init__(self)
 		
 		self.__frames = set()
+		self.refresh_outline = utility.IdlyMethod(self.refresh_outline)
+		self.refresh_outline.priority = GLib.PRIORITY_HIGH
+		
 		self.outline = point.Rectangle(width=1, height=1)
 		self.__obsolete_offset = False
 		
@@ -59,40 +69,53 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		
 	def add_frame(self, *frames):
 		''' Adds one or more pictures to the gallery '''
-		count = len(self.__frames)
 		for a_frame in frames:
 			self.__frames.add(a_frame)
 			a_frame_signals = self.frame_signals.get(a_frame, None)
 			if a_frame_signals is None:
 				a_frame_signals = [
-					a_frame.connect("notify::surface", self.__frame_changed),
-					a_frame.connect("notify::center", self.__frame_changed)
+					a_frame.connect("notify::origin", self.__frame_changed)
 				]
 				self.frame_signals[a_frame] = a_frame_signals
 				
 			a_frame.added(self)
 			
-		if count != len(self.__frames):	
-			self.__compute_outline()
-			self.queue_draw()
+		self.refresh_outline.queue()
+		self.queue_draw()
 			
 	def remove_frame(self, *frames):
 		''' Removes one or more pictures from the gallery '''
-		count = len(self.__frames)
 		for a_frame in frames:
 			self.__frames.discard(a_frame)
-			a_frame_signals = self.frame_signals.get(a_frame, None)
+			a_frame_signals = self.frame_signals.pop(a_frame, None)
 			if a_frame_signals is not None:
 				for one_frame_signal in a_frame_signals:
 					a_frame.disconnect(one_frame_signal)
-				del self.frame_signals[a_frame]
 			
 			a_frame.removed(self)
 			
-		if count != len(self.__frames):
-			self.__compute_outline()
-			self.queue_draw()
-									
+		self.refresh_outline.queue()
+		self.queue_draw()
+	
+	def refresh_outline(self):
+		''' Figure out the outline of all frames united '''
+		rectangles = [a_frame.rectangle.shift(a_frame.origin) for a_frame \
+		                                                      in self.__frames]
+		                                                      
+		new_outline = point.Rectangle.Union(rectangles)
+		new_outline.width = max(new_outline.width, 1)
+		new_outline.height = max(new_outline.height, 1)
+		
+		if self.outline != new_outline:
+			self.outline = new_outline
+			self.__compute_adjustments()
+	
+	@property
+	def frames_fit(self):
+		''' Whether all frames are within the widget view '''
+		w, h = self.get_magnified_width(), self.get_magnified_height()
+		return self.outline.width < w and self.outline.height < h
+		
 	# --- view manipulation down this line --- #
 	def pan(self, direction):
 		self.adjust_to(*point.add(self.get_adjustment(), direction))
@@ -110,6 +133,46 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		else:
 			self.set_flip((not hflip, vflip))
 	
+	def zoom_for_size(self, size, mode):
+		''' Gets a zoom for a size based on a zoom mode '''
+		w, h = self.get_widget_size()
+		sw, sh = size
+		
+		if mode == ZoomMode.MatchWidth:
+			# Match view and size width
+			size_side = sw
+			view_side = w
+		
+		elif mode == ZoomMode.MatchHeight:
+			# Match view and size height
+			size_side = sh
+			view_side = h
+		else:
+			wr, hr = w / sw, h / sh
+			
+			if mode == ZoomMode.FitContent:
+				# Fit size inside view
+				if wr < hr:
+					size_side = sw
+					view_side = w
+				else:
+					size_side = sh
+					view_side = h
+										
+			elif mode == ZoomMode.FillView:
+				# Overflow size in view in only one side
+				if wr > hr:
+					size_side = sw
+					view_side = w
+				else:
+					size_side = sh
+					view_side = h
+			
+			else:
+				size_side = view_size = 1
+				
+		return view_side / size_side
+		
 	def adjust_to_pin(self, pin):
 		''' Adjusts the view so that the same widget point in the pin can be
 		    converted to the same absolute point in the pin '''
@@ -137,11 +200,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		hadjust = self.get_hadjustment()
 		vadjust = self.get_vadjustment()
 		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
-		fw, fh = frame.size
-		fx, fy = frame.center
-		fl, ft = fx - fw / 2, fy - fh / 2
-		
-		x, y = rx * fw + fl, ry * fh + ft
+		x, y = frame.rectangle.shift(frame.origin).unbox_point((rx, ry))
 		x, y = point.spin((x, y), self.get_rotation() / 180 * math.pi)
 		
 		self.adjust_to(x - vw * rx, y - vh * ry)
@@ -208,16 +267,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def get_absolute_point(self, widget_point):
 		''' Returns a point with the view transformations of a point in the
 		    widget reverted '''
-		x, y = self.offset
-		
-		px, py = widget_point
-		px /= self.get_allocated_width()
-		py /= self.get_allocated_height()
-		
-		magw = self.get_magnified_width()
-		magh = self.get_magnified_height()
-		
-		x, y = x + px * magw, y + py * magh
+		inv_zoom = 1 / self.get_magnification()
+		x, y = point.add(self.offset, point.scale(widget_point, inv_zoom))
 		
 		rotation = self.get_rotation()
 		if rotation:
@@ -354,75 +405,15 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	minify_interpolation = GObject.property(type=GObject.TYPE_INT)
 	magnify_interpolation = GObject.property(type=GObject.TYPE_INT)
 	
-	# --- computing stuff down this line --- #
-	def compute_side_scale(self, mode):
-		''' Calculates the ratio between the combined frames size
-		    and the allocated widget size '''
-		    
-		hadjust = self.get_hadjustment()
-		vadjust = self.get_vadjustment()
-		lx, ux = hadjust.get_lower(), hadjust.get_upper()
-		ly, uy = vadjust.get_lower(), vadjust.get_upper()
-		w, h = ux - lx, uy - ly
-		vw, vh = self.get_allocated_width(), self.get_allocated_height()
-			
-		if mode == "width":
-			# Match width
-			side = w
-			view = vw
-			
-		elif mode == "height":
-			# Match height
-			side = h
-			view = vh
-		else:
-			rw, rh = vw / w, vh / h
-			if mode == "smallest":
-				# Smallest side = largest ratio
-				if rw > rh:
-					side = w
-					view = vw
-				else:
-					side = h
-					view = vh
-			elif mode == "largest":
-				# Largest side = smallest ratio
-				if rw < rh:
-					side = w
-					view = vw
-				else:
-					side = h
-					view = vh
-			else:
-			 view = side = 1
-			 
-		return view / side
-		
-	def __compute_outline(self):
-		''' Figure out the outline of all frames united '''
-		rectangles = []
-		for a_frame in self.__frames:
-			cx, cy = a_frame.center
-			w, h = a_frame.size
-			
-			a_rect = point.Rectangle(cx - w / 2.0, cy - h / 2.0, w, h)
-			rectangles.append(a_rect)
-			
-		new_outline = point.Rectangle.Union(*rectangles)
-		new_outline.width = max(new_outline.width, 1)
-		new_outline.height = max(new_outline.height, 1)
-		
-		if self.outline != new_outline:
-			self.outline = new_outline
-			self.__compute_adjustments()
-			
+	# --- computing stuff down this line --- #	
+	
 	def __compute_adjustments(self):
 		''' Figure out lower, upper and page size of adjustments.
 		    Also clamp them. Clamping is important. '''
 		    
 		# Name's Bounds, James Bounds
-		bounds = self.outline.spin(self.get_rotation() / 180 * math.pi)
-		bounds = bounds.flip(*self.get_flip())
+		bounds = self.outline.flip(*self.get_flip())
+		bounds = bounds.spin(self.get_rotation() / 180 * math.pi)
 		hadjust, vadjust = self.get_hadjustment(), self.get_vadjustment()
 		if hadjust:
 			hadjust.set_lower(bounds.left)
@@ -432,10 +423,9 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			# Clamp value
 			max_value = hadjust.get_upper() - hadjust.get_page_size()
 			min_value = hadjust.get_lower()
-			if hadjust.get_value() > max_value:
-				hadjust.set_value(max_value)
-			if hadjust.get_value() < min_value:
-				hadjust.set_value(min_value)
+			value = hadjust.get_value()
+			clamped_value = min(max_value, max(min_value, value))
+			hadjust.set_value(clamped_value)
 			
 		if vadjust:
 			vadjust.set_lower(bounds.top)
@@ -445,44 +435,43 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			# Clamp value
 			max_value = vadjust.get_upper() - vadjust.get_page_size()
 			min_value = vadjust.get_lower()
-			if vadjust.get_value() > max_value:
-				vadjust.set_value(max_value)
-			if vadjust.get_value() < min_value:
-				vadjust.set_value(min_value)
-				
+			value = vadjust.get_value()
+			clamped_value = min(max_value, max(min_value, value))
+			vadjust.set_value(clamped_value)
+			
 		self.__obsolete_offset = True
 			
 	def __compute_offset(self):
 		''' Figures out the x, y offset based on the adjustments '''
 		x, y = self.offset
-		allocation = self.get_allocation()
 		hadjust = self.get_hadjustment()
 		if hadjust:
-			span = hadjust.get_upper() - hadjust.get_lower()
+			upper, lower = hadjust.get_upper(), hadjust.get_lower()
+			span = upper - lower
 			diff = span - self.get_magnified_width()
 			if diff > 0:
 				x = hadjust.get_value()
-				ox = 0
 			else:
-				x = -self.get_magnified_width() / 2
+				x = lower + diff / 2
 								
 		vadjust = self.get_vadjustment()
-		if vadjust:			
-			span = vadjust.get_upper() - vadjust.get_lower()
+		if vadjust:
+			upper, lower = vadjust.get_upper(), vadjust.get_lower()
+			span = upper - lower
 			diff = span - self.get_magnified_height()
 			if diff > 0:
 				y = vadjust.get_value()
-				oy = 0
 			else:
-				y = -self.get_magnified_height() / 2
-						
+				y = lower + diff / 2
+				
 		self.__obsolete_offset = False
 		self.offset = x, y
+		GLib.idle_add(self.emit, "offset-change", priority=GLib.PRIORITY_HIGH)
 	
 	# --- event stuff down this line --- #
 	def __frame_changed(self, *some_data_we_are_not_gonna_use_anyway):
 		''' Callback for when a picture frame surface changes '''
-		self.__compute_outline()
+		self.refresh_outline.queue()
 		self.queue_draw()
 	
 	def __adjustment_changed(self, data):
@@ -501,40 +490,67 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def do_size_allocate(self, allocation):
 		Gtk.DrawingArea.do_size_allocate(self, allocation)
 		self.__compute_adjustments()
-		
+	
+	class DrawState:
+		''' Caches a bunch of properties '''
+		def __init__(self, view):
+			self.view = view
+			self.magnification = view.get_magnification()
+			
+			self.rotation = view.get_rotation()
+			self.rad_rotation = self.rotation / 180 * math.pi
+			
+			self.hflip, self.vflip = self.flip = view.get_flip()
+			self.is_flipped = self.hflip or self.vflip
+			
+			self.magnify_interpolation = view.get_magnify_interpolation()
+			self.minify_interpolation = view.get_minify_interpolation()
+			
+			self.size = self.width, self.height = (
+				view.get_allocated_width(),
+				view.get_allocated_height()
+			)
+			
+		def get_interpolation_for_scale(self, scale):
+			if scale > 1:
+				return self.magnify_interpolation
+			elif scale < 1:
+				return self.minify_interpolation
+			else:
+				return None		
+	
 	def do_draw(self, cr):
 		''' Draws everything! '''
-		# Renders the BG. Not sure if it works
-		style = self.get_style_context()
-		size = self.get_allocated_width(), self.get_allocated_height()
-		Gtk.render_background(style, cr, 0, 0, *size)
-		
-		cr.save()
-		
 		if self.__obsolete_offset:
 			self.__compute_offset()
+		
+		drawstate = ImageView.DrawState(self)
+		
+		# Renders the BG. Not sure if it works
+		style = self.get_style_context()
+		Gtk.render_background(style, cr, 0, 0, *drawstate.size)
+		
+		cr.save()
 			
 		# Apply the zooooooom
-		zoooooom = self.get_magnification()
-		cr.scale(zoooooom, zoooooom)
+		cr.scale(drawstate.magnification, drawstate.magnification)
 		# Translate the offset
 		x, y = self.offset
 		cr.translate(-x, -y)
 		# Rotate the radians
 		rad = self.get_rotation() / 180 * math.pi
-		cr.rotate(rad)
+		cr.rotate(drawstate.rad_rotation)
 		# Flip the... thing
-		hflip, vflip = self.get_flip()
-		if hflip or vflip:
-			cr.scale(-1 if hflip else 1,
-			         -1 if vflip else 1)
+		if drawstate.is_flipped:
+			cr.scale(-1 if drawstate.hflip else 1,
+			         -1 if drawstate.vflip else 1)
 		# Yes, this supports multiple frames!
 		# No, we don't use that feature... not yet.
 		for a_frame in self.__frames:
 			cr.save()
 			try:
-				cr.translate(*a_frame.center)
-				a_frame.draw(cr, self)
+				cr.translate(*a_frame.origin)
+				a_frame.draw(cr, drawstate)
 			
 			except Exception:
 				raise
@@ -542,7 +558,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			cr.restore()
 		
 		cr.restore()
-		Gtk.render_frame(style, cr, 0, 0, *size)
+		Gtk.render_frame(style, cr, 0, 0, *drawstate.size)
 		
 # --- Image frames related code down this line --- #
 
@@ -552,7 +568,9 @@ class ImageFrame(GObject.GObject):
 	# TODO: Implement rotation and scale
 	def __init__(self):
 		GObject.GObject.__init__(self)
-		self.center = 0, 0
+		self.size = 0, 0
+		self.rectangle = point.Rectangle()
+		self.origin = 0, 0
 	
 	def added(self, view):
 		pass
@@ -560,46 +578,45 @@ class ImageFrame(GObject.GObject):
 	def removed(self, view):
 		pass
 	
-	def draw(self, cr, view):
+	def draw(self, cr, drawstate):
 		raise NotImplementedError
 		
-	@property
-	def size(self):
-		return 0, 0
-			
-	center = GObject.property(type=GObject.TYPE_PYOBJECT)
+	origin = GObject.property(type=GObject.TYPE_PYOBJECT)
 	
 class ImageSurfaceFrame(ImageFrame):
 	def __init__(self, surface):
 		ImageFrame.__init__(self)
+		self.connect("notify::surface", self._surface_changed)
 		self.surface = surface
 	
-	def draw(self, cr, view):
+	def draw(self, cr, drawstate):
 		if self.surface:
 			offset = point.multiply(self.size, (-.5, -.5))
 			cr.set_source_surface(self.surface, *offset)
-		
+			
 			# Set filter
 			a_pattern = cr.get_source()
-			zoom = view.get_magnification()
-			a_filter = view.get_interpolation_for_scale(zoom)
+			zoom = drawstate.magnification
+			a_filter = drawstate.get_interpolation_for_scale(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		
 			cr.paint()
-	
-	@property
-	def size(self):
-		if self.surface:
-			return self.surface.get_width(), self.surface.get_height()
-		else:
-			return 0, 0
 			
 	surface = GObject.property(type=GObject.TYPE_PYOBJECT)
-	
+	def _surface_changed(self, *args):
+		if self.surface:
+			w, h = self.surface.get_width(), self.surface.get_height()
+			self.rectangle = point.Rectangle(-w/2, -h/2, w, h)
+			self.size = w, h
+		else:
+			self.size = 0, 0
+			self.rectangle = point.Rectangle()
+			
 class AnimatedPixbufFrame(ImageFrame):
 	def __init__(self, animation):
 		ImageFrame.__init__(self)
+		self.connect("notify::animation", self._animation_changed)
 		self.animation = animation
 		self._view_anim = dict()
 	
@@ -641,7 +658,7 @@ class AnimatedPixbufFrame(ImageFrame):
 			anim_handle = GLib.timeout_add(delay, self._advance_animation, view)
 			self._view_anim[view] = anim_iter, anim_handle
 	
-	def draw(self, cr, view):
+	def draw(self, cr, drawstate):
 		anim_iter, anim_handle = self._view_anim[view]
 		pixbuf = anim_iter.get_pixbuf()
 		if pixbuf:
@@ -650,21 +667,22 @@ class AnimatedPixbufFrame(ImageFrame):
 			
 			# Set filter
 			a_pattern = cr.get_source()
-			zoom = view.get_magnification()
-			a_filter = view.get_interpolation_for_scale(zoom)
+			zoom = drawstate.magnification
+			a_filter = drawstate.get_interpolation_for_scale(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		
 			cr.paint()
-			
-	@property
-	def size(self):
-		if self.animation:
-			return self.animation.get_width(), self.animation.get_height()
-		else:
-			return 0, 0
 				
 	animation = GObject.property(type=GObject.TYPE_PYOBJECT)
+	def _animation_changed(self, *args):
+		if self.animation:
+			w, h = self.animation.get_width(), self.animation.get_height()
+			self.rectangle = point.Rectangle(-w/2, -h/2, w, h)
+			self.size = w, h
+		else:
+			self.rectangle = point.Rectangle()
+			self.size = 0, 0
 	
 def SurfaceFromPixbuf(pixbuf):
 	''' Creates a cairo surface from a Gdk pixbuf'''

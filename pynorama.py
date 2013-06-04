@@ -23,6 +23,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
 import organization, navigation, loading, preferences, viewing, dialog
+from viewing import ZoomMode
 from loading import DirectoryLoader
 DND_URI_LIST, DND_IMAGE = range(2)
 
@@ -154,7 +155,6 @@ class ImageViewer(Gtk.Application):
 		dialog.set_modal(True)
 		dialog.set_destroy_with_parent(True)
 		
-		#dialog.connect("response", lambda a, b: a.destroy())
 		dialog.run()
 		dialog.destroy()
 		
@@ -314,12 +314,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		                               application=app)
 		self.app = app
 		self.set_default_size(600, 600)
-		# Setup variables
-		self.preused_images = set()
-		self.current_image = None
-		self.current_frame = None
-		self.go_new = False
-		self.load_handle = None
 		# Auto zoom stuff
 		self.auto_zoom_magnify = False
 		self.auto_zoom_minify = True
@@ -329,6 +323,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# then auto_zoom isn't called after rotating or resizing
 		# the imageview
 		self.auto_zoom_zoom_modified = False
+		# Album variables
+		self.__idly_refresh_index_id = None
+		self._focus_loaded_handler_id = None
+		self._old_focused_image = None
+		self.go_new = False
 		self.ordering_modes = [
 			organization.SortingKeys.ByName,
 			organization.SortingKeys.ByCharacters,
@@ -339,7 +338,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			organization.SortingKeys.ByImageHeight
 		]
 		self.active_ordering = organization.SortingKeys.ByName
-		self.__idly_refresh_index_id = None
 		self.image_list = organization.Album()
 		self.image_list.connect("image-added", self._image_added)
 		self.image_list.connect("image-removed", self._image_removed)
@@ -429,10 +427,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.statusbarboxbox.show_all()
 		self.loading_spinner.hide()
 		
-		self.refresh_transform()
-		self.refresh_index()
-		self.refresh_interp()
-		
 		# DnD setup	
 		self.imageview.drag_dest_set(Gtk.DestDefaults.ALL,
 		                             [], Gdk.DragAction.COPY)
@@ -444,7 +438,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.drag_dest_set_target_list(target_list)
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
+		self.layout = organization.FrameStripLayout()
+		self.avl = organization.AlbumViewLayout(album=self.image_list,
+		                                        layout=self.layout,
+		                                        view=self.imageview)
+		
+		self.avl.connect("focus-changed", self._focus_changed)
+		
 		preferences.load_into_window(self)
+		
+		self.refresh_transform()
+		self.refresh_index()
+		self.refresh_interp()
 		
 	def setup_actions(self):
 		self.manager = Gtk.UIManager()
@@ -607,10 +612,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"sort-auto" : None,
 			"sort-reverse" : None,
 			"auto-zoom-enable" : None,
-			"auto-zoom-fit" : (3, zoom_mode_group),
-			"auto-zoom-fill" : (0, zoom_mode_group),
-			"auto-zoom-match-width" : (1, zoom_mode_group),
-			"auto-zoom-match-height" : (2, zoom_mode_group),
+			"auto-zoom-fit" : (ZoomMode.FitContent, zoom_mode_group),
+			"auto-zoom-fill" : (ZoomMode.FillView, zoom_mode_group),
+			"auto-zoom-match-width" : (ZoomMode.MatchWidth, zoom_mode_group),
+			"auto-zoom-match-height" : (ZoomMode.MatchHeight, zoom_mode_group),
 			"auto-zoom-minify" : None,
 			"auto-zoom-magnify" : None,
 			"fullscreen" : None,
@@ -737,7 +742,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		interp_group.unblock_activate()
 		
 	def refresh_index(self):
-		can_remove = not self.current_image is None
+		focused_image = self.avl.focus_image
+		can_remove = not focused_image is None
 		can_goto_first = False
 		can_goto_last = False
 		can_previous = False
@@ -749,8 +755,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			count = len(self.image_list)
 			count_chr_count = len(str(count))
 			
-			if self.current_image in self.image_list:
-				image_index = self.image_list.index(self.current_image)
+			if focused_image in self.image_list:
+				image_index = self.image_list.index(focused_image)
 				can_goto_first = image_index != 0
 				can_goto_last = image_index != count - 1
 				can_previous = True
@@ -787,13 +793,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.actions.get_action(action_name).set_sensitive(sensitivity)
 		
 	def refresh_transform(self):
-		if self.current_image:
-			if self.current_image.is_bad:
+		focused_image = self.avl.focus_image
+		if focused_image:
+			if focused_image.is_bad:
 				# This just may happen
 				pic = _("Error")
 				
-			elif self.current_image.on_memory:
-				metadata = self.current_image.metadata
+			elif focused_image.on_memory:
+				metadata = focused_image.metadata
 				# The width and height are from the source
 				pic = "{width}x{height}".format(width=metadata.width,
 				                                height=metadata.height)
@@ -815,8 +822,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 					zoom = zoom_fmt.format(zoom=mag)
 			else:
 				zoom = ""
-			
-			
+				
 			# Cachin' variables
 			rot = self.imageview.get_rotation()
 			hflip, vflip = self.imageview.get_flip()
@@ -850,7 +856,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			''' Sets the transform label to nothing.
 			    Because there is nothing to transform. '''
 			self.transform_label.set_text(_("Nothing"))
-	
+			
 	def set_view_rotation(self, angle):
 		anchor = self.imageview.get_widget_point()
 		pin = self.imageview.get_pin(anchor)
@@ -925,15 +931,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			  "fill" = magnify based on the smallest side
 			  "width" = magnify based on width
 			  "height" = magnify based on height '''
-			  
-		if self.auto_zoom_magnify or self.auto_zoom_minify:
-			side_name = ["smallest", "width",
-			             "height", "largest"][self.auto_zoom_mode]
-			scale = self.imageview.compute_side_scale(side_name)
 		
-			if scale > 1 and self.auto_zoom_magnify or \
-			   scale < 1 and self.auto_zoom_minify:
-				self.imageview.set_magnification(scale)
+		frame = self.avl.focus_frame	  
+		if frame and (self.auto_zoom_magnify or self.auto_zoom_minify):
+			'''side_name = ["smallest", "width",
+			             "height", "largest"][self.auto_zoom_mode]'''
+			
+			new_zoom = self.imageview.zoom_for_size(
+			                      frame.size, self.auto_zoom_mode)
+			                      
+			if (new_zoom > 1 and self.auto_zoom_magnify) or \
+			   (new_zoom < 1 and self.auto_zoom_minify):
+				self.imageview.set_magnification(new_zoom)
 				self.auto_zoom_zoom_modified = False
 			else:
 				self.imageview.set_magnification(1)
@@ -1035,66 +1044,35 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	
 	# --- Go go go!!! --- #
 	def go_next(self, *data):
-		try:
-			next_image = self.image_list.next(self.current_image)
-			
-		except ValueError:
-			pass
-			
-		else:
-			self.set_image(next_image)
+		self.avl.go_next()
 		
 	def go_previous(self, *data):
-		try:
-			previous_image = self.image_list.previous(self.current_image)
-			
-		except ValueError:
-			pass
-			
-		else:
-			self.set_image(previous_image)
+		self.avl.go_previous()
 			
 	def go_first(self, *data):
-		try:
-			first_image = self.image_list[0]
-			
-		except IndexError:
-			pass
-			
-		else:
-			self.set_image(first_image)
-	
+		self.avl.go_index(0)
+		
 	def go_last(self, *data):
-		try:
-			last_image = self.image_list[-1]
-			
-		except IndexError:
-			pass
-			
-		else:
-			self.set_image(last_image)
-			
+		self.avl.go_index(-1)
+		
 	def go_random(self, *data):
 		image_count = len(self.image_list)
 		if image_count > 1:
 			# Gets a new random index that is not the current one
 			random_int = random.randint(0, image_count - 2)
-			image_index = self.image_list.index(self.current_image)
+			image_index = self.avl.album.index(self.avl.focus_image)
 			if random_int >= image_index:
 				random_int += 1
 			
-			self.set_image(self.image_list[random_int])
+			self.avl.go_index(random_int)
 			
 	def handle_clear(self, *data):
 		del self.image_list[:]
 		
 	def handle_remove(self, *data):
-		if self.current_image:
-			try:
-				self.image_list.remove(self.current_image)
-				
-			except ValueError:
-				dialog.log("Couldn't remove. Current image not on the list.")
+		focus = self.avl.focus_image
+		if focus:
+			self.image_list.remove(focus)
 	
 	def pasted_data(self, data=None):
 		self.go_new = True
@@ -1149,121 +1127,24 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	''' Methods after this comment are actually kind of a big deal.
 	    Do not rename them. '''
 	
-	def do_destroy(self, *data):
-		preferences.set_from_window(self)
-		return Gtk.Window.do_destroy(self)
-	
-	def set_image(self, image):
-		''' Sets the image to be displayed in the window.
-		    This is quite the important method '''
-		if self.current_image == image:
-			return
-			
-		previous_image = self.current_image
-		self.current_image = image
-		if previous_image is not None:
-			previous_image.uses -= 1
-			if self.load_handle:
-				previous_image.disconnect(self.load_handle)
-				self.load_handle = None
-				
-		if self.current_image is None:
-			# Current image being none means nothing is displayed #
-			self.refresh_frame()
-			self.set_title(_("Pynorama"))
-			
-		else:
-			self.current_image.uses += 1
-			if self.current_image.on_memory or self.current_image.is_bad:
-				self.refresh_frame()
-				self.refresh_preuse()
-				
-			else:
-				message = dialog.Lines.Loading(self.current_image)
-				ctx = self.statusbar.get_context_id("loading")
-				self.statusbar.pop(ctx)
-				self.statusbar.push(ctx, message)
-				
-				self.loading_spinner.show()
-				self.loading_spinner.start() # ~like a record~ #
-				
-				self.load_handle = self.current_image.connect(
-				                        "finished-loading", self._image_loaded)
-				                                      
-			# Sets the window title
-			img_name = self.current_image.name
-			img_fullname = self.current_image.fullname
-			if img_name == img_fullname:
+	def refresh_title(self, image=None):
+		if image:
+			if image.name == image.fullname:
 				title_fmt = _("“{name}” - Pynorama")
 			else:
 				title_fmt = _("“{name}” [“{fullname}”] - Pynorama")
 				
-			new_title = title_fmt.format(name=img_name, fullname=img_fullname)
+			new_title = title_fmt.format(
+			                  name=image.name, fullname=image.fullname)
 			self.set_title(new_title)
 			
-		self.__queue_refresh_index()
-		
-	def _image_loaded(self, image, error):
-		# Check if the image loaded is the current image, just in case
-		if image == self.current_image:
-			self.loading_spinner.stop()
+		else:
+			self.set_title(_("Pynorama"))
 			
-			self.refresh_frame()
-			self.refresh_preuse()
-			
-	# TODO: Replace this by a decent preloading system
-	def refresh_preuse(self):
-		for preused_image in self.preused_images:
-			preused_image.uses -= 1
-			
-		self.preused_images.clear()
-		
-		if self.current_image:
-			next_images = self.image_list.around(self.current_image, 2, 2)
-			
-			self.preused_images.update(next_images)
-			self.preused_images.add(self.current_image)
-			
-			for preused_image in self.preused_images:
-				preused_image.uses += 1
-		
-	def refresh_frame(self):
-		if self.current_frame:
-			self.imageview.remove_frame(self.current_frame)
-			
-		if self.current_image:
-			self.loading_spinner.hide()
-			self.loading_spinner.stop()
-			try:
-				image_frame = self.current_image.create_frame(self.imageview)
-				
-			except Exception:
-				image_frame = None
-				
-			finally:
-				# Remove "loading" message if it loaded
-				ctx = self.statusbar.get_context_id("loading")
-				self.statusbar.pop(ctx)
-				
-				if image_frame is None:
-					# Create a missing icon frame #
-					missing_icon = self.render_icon(Gtk.STOCK_MISSING_IMAGE,
-						                            Gtk.IconSize.DIALOG)
-						                            
-					missing_surface = viewing.SurfaceFromPixbuf(missing_icon)
-					image_frame = viewing.ImageSurfaceFrame(missing_surface)
-					
-					if self.current_image.error:
-						message = dialog.Lines.Error(self.current_image.error)
-						self.statusbar.push(ctx, message)
-					
-			self.current_frame = image_frame
-			self.imageview.add_frame(self.current_frame)
-			
-			if self.auto_zoom_enabled:
-				self.auto_zoom()
-			self.imageview.adjust_to_boundaries(*self.app.default_position)
-			self.refresh_transform()
+	def do_destroy(self, *data):
+		preferences.set_from_window(self)
+		self.avl.clean()
+		return Gtk.Window.do_destroy(self)
 		
 	def _image_added(self, album, image, index):
 		image.lists += 1
@@ -1271,29 +1152,92 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		if self.go_new:
 			self.go_new = False
-			self.set_image(image)
+			self.avl.go_image(image)
 			
-		elif self.current_image is None:
-			self.set_image(image)
+		elif self.avl.focus_image is None:
+			self.avl.go_image(image)
 		
 	def _image_removed(self, album, image, index):
 		image.lists -= 1
 		self.__queue_refresh_index()
 		
-		if self.current_image is image:
-			count = len(album)
-			if index <= count:
-				if count >= 1:
-					new_index = index - 1 if index == count else index
-					new_image = self.image_list[new_index]
-				else:
-					new_image = None
-					
-				self.set_image(new_image)
-				
 	def _album_order_changed(self, album):
 		self.__queue_refresh_index()
 	
+	def _focus_changed(self, avl, focused_image, hint):
+		if self._focus_loaded_handler_id:
+			self._old_focused_image.disconnect(self._focus_loaded_handler_id)
+			self._focus_loaded_handler_id = None
+		
+		self._old_focused_image = focused_image
+		self._focus_hint = hint
+		
+		self.__queue_refresh_index()
+		self.refresh_title(focused_image)
+		
+		loading_ctx = self.statusbar.get_context_id("loading")
+		self.statusbar.pop(loading_ctx)
+		
+		if focused_image:
+			if focused_image.on_memory or focused_image.is_bad:
+				self.loading_spinner.hide()
+				self.loading_spinner.stop()
+				
+				# Show error in status bar #
+				if focused_image.error:
+					message = dialog.Lines.Error(focused_image.error)
+					self.statusbar.push(loading_ctx, message)
+					
+				# Refresh frame #
+				self._refresh_focus_frame()
+			
+			else:				
+				# Show loading hints #
+				message = dialog.Lines.Loading(focused_image)
+				self.statusbar.push(loading_ctx, message)
+				self.loading_spinner.show()
+				self.loading_spinner.start() # ~like a record~
+				
+				self._focus_loaded_handler_id = focused_image.connect(
+				     "finished-loading", self._focus_loaded)
+		else:
+			self.loading_spinner.hide()
+			self.loading_spinner.stop()
+			
+	def _focus_loaded(self, image, error):
+		focused_image = self.avl.focus_image
+		if focused_image == image:
+			# Hide loading hints #
+			loading_ctx = self.statusbar.get_context_id("loading")
+			self.statusbar.pop(loading_ctx)
+			self.loading_spinner.hide()
+			self.loading_spinner.stop()
+			
+			# Show error in status bar #
+			if error:
+				message = dialog.Lines.Error(error)
+				self.statusbar.push(loading_ctx, message)
+				
+			# Refresh frame #
+			self._refresh_focus_frame()
+				
+		self._old_focused_image.disconnect(self._focus_loaded_handler_id)
+		self._focus_loaded_handler_id = None
+		
+	def _refresh_focus_frame(self):
+		if not self._focus_hint:
+			if self.auto_zoom_enabled:
+				self.auto_zoom()
+		
+			focus_frame = self.avl.focus_frame
+			if focus_frame:
+				self.imageview.adjust_to_frame(
+					 focus_frame, *self.app.default_position)
+					 
+			self._focus_hint = True
+			
+		self.refresh_transform()
+			
 	def __queue_refresh_index(self):
 		if not self.__idly_refresh_index_id:
 			self.__idly_refresh_index_id = GLib.idle_add(
@@ -1302,10 +1246,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def __idly_refresh_index(self):
 		self.__idly_refresh_index_id = None
 		self.refresh_index()
-	
-	def sort_images(self):
-		self.image_list.sort()
-			
+		
 	def get_enable_auto_sort(self):
 		return self.actions.get_action("sort-auto").get_active()
 	def set_enable_auto_sort(self, value):

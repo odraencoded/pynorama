@@ -68,12 +68,42 @@ class Rectangle:
 	def bottom(self):
 		return self.top + self.height
 	
+	@property
+	def area(self):
+		return self.width * self.height
+	
+	def overlaps_with(self, other):
+		''' Returns true if rectangle overlaps with other rectangle '''
+		return not (self.left >= other.left + other.width or
+		            self.top >= other.top + other.height or
+		            self.left + self.width < other.left or
+		            self.top + self.height < other.top)
+	
+	def __and__(self, other):
+		left = max(self.left, other.left)
+		top = max(self.top, other.top)
+		right = min(self.left + self.width, other.left + other.width)
+		bottom = min(self.top + self.height, other.top + other.height)
+		
+		width = max(right - left, 0)
+		height = max(bottom - top, 0)
+		
+		return Rectangle(left, top, width, height)
+	
+	def unbox_point(self, relative_point):
+		return add((self.left, self.top),
+		            multiply((self.width, self.height), relative_point))
+	
 	def to_tuple(self):
 		return self.left, self.top, self.width, self.height
 	
 	def copy(self):
 		return Rectangle(self.left, self.top, self.width, self.height)
-		
+	
+	def shift(self, displacement):
+		l, t = add((self.left, self.top), displacement)
+		return Rectangle(l, t, self.width, self.height)
+	
 	def spin(self, angle):
 		''' Basic trigonometrics '''
 		result = self.copy()
@@ -117,26 +147,26 @@ class Rectangle:
 		return result
 	
 	@staticmethod
-	def Union(*rectangles):
+	def Union(rectangles):
 		''' Rectangles! UNITE!!! '''
 		if rectangles:
-			first = True
-			t, l, r, b = 0,0,0,0
-			for a_rectangle in rectangles:
-				if a_rectangle:
-					if first:
-						t = a_rectangle.top
-						l = a_rectangle.left
-						b = a_rectangle.bottom
-						r = a_rectangle.right
-						first = False
-					else:
-						t = min(t, a_rectangle.top)
-						l = min(l, a_rectangle.left)
-						b = max(b, a_rectangle.bottom)
-						r = max(r, a_rectangle.right)
-					
-			return Rectangle(l, t, r - l, b - t)
-		
+			top = min((r.top for r in rectangles))
+			left = min((r.left for r in rectangles))
+			bottom = max((r.top + r.height for r in rectangles))
+			right = max((r.left + r.width for r in rectangles))
 		else:
-			return Rectangle()
+			top = left = bottom = right = 0
+			
+		return Rectangle(left, top, right - left, bottom - top)
+	
+	@staticmethod
+	def FromPoints(*points):
+		xs = [p[0] for p in points]
+		ys = [p[1] for p in points]
+		
+		left = min(xs)
+		right = max(xs)
+		top = min(ys)
+		bottom = max(ys)
+		
+		return Rectangle(left, top, right - left, bottom - top)
