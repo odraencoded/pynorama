@@ -426,10 +426,11 @@ class LayoutDirection:
 	Up = "up"
 	Down = "down"
 	
-class FrameStripLayout(AlbumLayout):
+class FrameStripLayout(GObject.Object, AlbumLayout):
 	''' Shows a strip of album images in a view '''
 	
 	def __init__(self, direction=LayoutDirection.Down):
+		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
 		
 		# Min number of pixels before and after the center image
@@ -439,23 +440,17 @@ class FrameStripLayout(AlbumLayout):
 		self.limit_after = 60
 		self.limit_before = 40
 		
-		self._direction = None
+		self.connect("notify::direction", self._direction_changed)
 		self.direction = direction
+	
+	direction = GObject.property(type=object)
+	
+	def _direction_changed(self, *data):
+		self._get_length, self._get_rect_distance, \
+		     self._place_before, self._place_after = \
+		          FrameStripLayout.DirectionMethods[self.direction]
 		
-	@property
-	def direction(self):
-		return self._direction
-		
-	@direction.setter
-	def direction(self, value):
-		if self._direction != value:
-			self._direction = value
-			
-			self._get_length, self._get_rect_distance, \
-			     self._place_before, self._place_after = \
-			          FrameStripLayout.DirectionMethods[value]
-			
-			self.refresh_subscribers.queue()
+		self.refresh_subscribers.queue()
 	
 	def update(self, avl):
 		self._reposition_frames(avl)
