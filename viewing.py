@@ -490,40 +490,67 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def do_size_allocate(self, allocation):
 		Gtk.DrawingArea.do_size_allocate(self, allocation)
 		self.__compute_adjustments()
-		
+	
+	class DrawState:
+		''' Caches a bunch of properties '''
+		def __init__(self, view):
+			self.view = view
+			self.magnification = view.get_magnification()
+			
+			self.rotation = view.get_rotation()
+			self.rad_rotation = self.rotation / 180 * math.pi
+			
+			self.hflip, self.vflip = self.flip = view.get_flip()
+			self.is_flipped = self.hflip or self.vflip
+			
+			self.magnify_interpolation = view.get_magnify_interpolation()
+			self.minify_interpolation = view.get_minify_interpolation()
+			
+			self.size = self.width, self.height = (
+				view.get_allocated_width(),
+				view.get_allocated_height()
+			)
+			
+		def get_interpolation_for_scale(self, scale):
+			if scale > 1:
+				return self.magnify_interpolation
+			elif scale < 1:
+				return self.minify_interpolation
+			else:
+				return None		
+	
 	def do_draw(self, cr):
 		''' Draws everything! '''
-		# Renders the BG. Not sure if it works
-		style = self.get_style_context()
-		size = self.get_allocated_width(), self.get_allocated_height()
-		Gtk.render_background(style, cr, 0, 0, *size)
-		
-		cr.save()
-		
 		if self.__obsolete_offset:
 			self.__compute_offset()
+		
+		drawstate = ImageView.DrawState(self)
+		
+		# Renders the BG. Not sure if it works
+		style = self.get_style_context()
+		Gtk.render_background(style, cr, 0, 0, *drawstate.size)
+		
+		cr.save()
 			
 		# Apply the zooooooom
-		zoooooom = self.get_magnification()
-		cr.scale(zoooooom, zoooooom)
+		cr.scale(drawstate.magnification, drawstate.magnification)
 		# Translate the offset
 		x, y = self.offset
 		cr.translate(-x, -y)
 		# Rotate the radians
 		rad = self.get_rotation() / 180 * math.pi
-		cr.rotate(rad)
+		cr.rotate(drawstate.rad_rotation)
 		# Flip the... thing
-		hflip, vflip = self.get_flip()
-		if hflip or vflip:
-			cr.scale(-1 if hflip else 1,
-			         -1 if vflip else 1)
+		if drawstate.is_flipped:
+			cr.scale(-1 if drawstate.hflip else 1,
+			         -1 if drawstate.vflip else 1)
 		# Yes, this supports multiple frames!
 		# No, we don't use that feature... not yet.
 		for a_frame in self.__frames:
 			cr.save()
 			try:
 				cr.translate(*a_frame.origin)
-				a_frame.draw(cr, self)
+				a_frame.draw(cr, drawstate)
 			
 			except Exception:
 				raise
@@ -531,7 +558,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			cr.restore()
 		
 		cr.restore()
-		Gtk.render_frame(style, cr, 0, 0, *size)
+		Gtk.render_frame(style, cr, 0, 0, *drawstate.size)
 		
 # --- Image frames related code down this line --- #
 
@@ -551,7 +578,7 @@ class ImageFrame(GObject.GObject):
 	def removed(self, view):
 		pass
 	
-	def draw(self, cr, view):
+	def draw(self, cr, drawstate):
 		raise NotImplementedError
 		
 	origin = GObject.property(type=GObject.TYPE_PYOBJECT)
@@ -562,15 +589,15 @@ class ImageSurfaceFrame(ImageFrame):
 		self.connect("notify::surface", self._surface_changed)
 		self.surface = surface
 	
-	def draw(self, cr, view):
+	def draw(self, cr, drawstate):
 		if self.surface:
 			offset = point.multiply(self.size, (-.5, -.5))
 			cr.set_source_surface(self.surface, *offset)
 			
 			# Set filter
 			a_pattern = cr.get_source()
-			zoom = view.get_magnification()
-			a_filter = view.get_interpolation_for_scale(zoom)
+			zoom = drawstate.magnification
+			a_filter = drawstate.get_interpolation_for_scale(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		
@@ -631,7 +658,7 @@ class AnimatedPixbufFrame(ImageFrame):
 			anim_handle = GLib.timeout_add(delay, self._advance_animation, view)
 			self._view_anim[view] = anim_iter, anim_handle
 	
-	def draw(self, cr, view):
+	def draw(self, cr, drawstate):
 		anim_iter, anim_handle = self._view_anim[view]
 		pixbuf = anim_iter.get_pixbuf()
 		if pixbuf:
@@ -640,8 +667,8 @@ class AnimatedPixbufFrame(ImageFrame):
 			
 			# Set filter
 			a_pattern = cr.get_source()
-			zoom = view.get_magnification()
-			a_filter = view.get_interpolation_for_scale(zoom)
+			zoom = drawstate.magnification
+			a_filter = drawstate.get_interpolation_for_scale(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		
