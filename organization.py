@@ -429,7 +429,8 @@ class LayoutDirection:
 class FrameStripLayout(GObject.Object, AlbumLayout):
 	''' Shows a strip of album images in a view '''
 	
-	def __init__(self, direction=LayoutDirection.Down, loop=False):
+	def __init__(self, direction=LayoutDirection.Down,
+	                   loop=False, margin=(0,0)):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
 		
@@ -442,12 +443,15 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		
 		self.connect("notify::direction", self._direction_changed)
 		self.connect("notify::loop", self._loop_changed)
+		self.connect("notify::margin", self._margin_changed)
 		
 		self.direction = direction
 		self.loop = loop
+		self.margin = margin
 	
-	direction = GObject.property(type=object)
-	loop = GObject.property(type=bool, default=False)
+	direction = GObject.property(type=object) # Direction of the strip
+	loop = GObject.property(type=bool, default=False) # Endless looping
+	margin = GObject.property(type=object) # Distance between two frames
 	
 	def _direction_changed(self, *data):
 		self._get_length, self._get_rect_distance, \
@@ -457,6 +461,9 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		self.refresh_subscribers.queue()
 	
 	def _loop_changed(self, *data):
+		self.refresh_subscribers.queue()
+	
+	def _margin_changed(self, *data):
 		self.refresh_subscribers.queue()
 	
 	def update(self, avl):
@@ -605,7 +612,10 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			br = avl.view.get_absolute_point((w, h))
 			absolute_view_rect = point.Rectangle.FromPoints(tl, tr, bl, br)
 			
+			current_index = avl.center_index
+			current_distance = None
 			frame_distances = []
+			margin_before, margin_after = self.margin
 			for i in range(len(avl.shown_frames)):
 				a_frame = avl.shown_frames[i]
 				if a_frame:
@@ -613,23 +623,33 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 					a_visible_rect = absolute_view_rect & a_rect
 					
 					if a_visible_rect.width and a_visible_rect.height:
-						a_distance = self._get_rect_distance(
+						margin = 0 if i == current_index \
+						           else -margin_before if i > current_index \
+						           else margin_after
+						           
+						a_distance = self._get_rect_distance(margin,
 						                  absolute_view_rect, a_rect)
-						                  												
+						
+						if i == current_index:
+							current_distance = a_distance
+							
 						frame_distances.append((i, a_distance))
 			
 			if frame_distances:
-				best_index = min(frame_distances, key=lambda v: v[1])[0]
-				best_image = avl.shown_images[best_index]
-				best_frame = avl.shown_frames[best_index]
+				best_index, best_distance = min(frame_distances,
+				                                key=lambda v: v[1])
+				                            
+				if current_distance is None or best_distance < current_distance:
+					best_image = avl.shown_images[best_index]
+					best_frame = avl.shown_frames[best_index]
 			
-				if avl.center_image is not best_image:
-					avl.center_index = best_index			
-					avl.center_image = best_image
-					avl.center_frame = best_frame
+					if avl.center_image is not best_image:
+						avl.center_index = best_index			
+						avl.center_image = best_image
+						avl.center_frame = best_frame
 				
-					avl.update_sides.queue()
-					avl.emit("focus-changed", best_image, True)
+						avl.update_sides.queue()
+						avl.emit("focus-changed", best_image, True)
 					
 	def _image_added(self, album, image, index, avl):
 		# Handles an iamge added to an album
@@ -784,12 +804,13 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			
 			before_count = avl.center_index
 			after_count = len(shown_images) - avl.center_index - 1
-			
+			margin_before, margin_after = self.margin
 			if after_count > self.limit_after:
 				# Remove images after center image
 				# if the count is over the limit
 				for i in range(after_count - self.limit_after):
-					avl.space_after -= self._get_length(shown_frames[-1])
+					a_length = self._get_length(shown_frames[-1])
+					avl.space_after -= a_length + margin_after
 					self._remove_image(avl, len(shown_frames) -1)
 				
 				after_count = self.limit_after
@@ -808,6 +829,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 				else:
 					# Remove images if there is no extra space
 					foremost_length = self._get_length(foremost_frame)
+					foremost_length += margin_after
 					while avl.space_after - foremost_length > \
 						  self.space_after \
 						  if foremost_frame \
@@ -816,12 +838,14 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 						avl.space_after -= foremost_length
 						foremost_frame = shown_frames[-1]
 						foremost_length = self._get_length(foremost_frame)
+						foremost_length += margin_after
 					
 			if before_count > self.limit_before:
 				# Remove images before center image
 				# if the count is over the limit
 				for i in range(before_count - self.limit_before):
-					avl.space_before -= self._get_length(shown_frames[0])
+					a_length = self._get_length(shown_frames[0])
+					avl.space_before -= a_length + margin_before
 					self._remove_image(avl, 0)
 					
 				before_count = self.limit_before
@@ -840,6 +864,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 				else:
 					# Remove images if there is no extra space
 					backmost_length = self._get_length(backmost_frame)
+					backmost_length += margin_before
 					while avl.space_before - backmost_length > \
 					      self.space_before \
 					      if backmost_frame \
@@ -848,6 +873,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 						avl.space_before -= backmost_length
 						backmost_frame = shown_frames[0]
 						backmost_length = self._get_length(backmost_frame)
+						backmost_length += margin_before
 						
 	def _refresh_frames(self, avl, image, overwrite=False):
 		# Create frames to represent an image
@@ -896,13 +922,16 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			shown_frames = avl.shown_frames
 			frame_count = len(shown_frames)
 			placement_data = (
-				(self._place_before, range(avl.center_index, -1, -1)),
-				(self._place_after, range(avl.center_index, frame_count))
+				(self._place_before, self.margin[0],
+				 range(avl.center_index, -1, -1)),
+				 
+				(self._place_after, self.margin[1],
+				 range(avl.center_index, frame_count))
 			)
 			
-			for a_coordinator, a_range in placement_data:
-				self._place_frames(
-				     a_coordinator, (shown_frames[j] for j in a_range))
+			for a_coordinator, a_margin, a_range in placement_data:
+				self._place_frames(a_coordinator, a_margin,
+				                   (shown_frames[j] for j in a_range))
 				
 	def _compute_lengths(self, avl):
 		# Recalculate the space used by images after and before the center image
@@ -912,12 +941,12 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			side_lengths = []
 			
 			for i in range(2):
-				a_side_range = side_ranges[i]
+				a_margin, a_side_range = self.margin[i], side_ranges[i]
 				a_side_length = 0
 				for j in a_side_range:
 					a_frame = avl.shown_frames[j]
 					if a_frame:
-						a_side_length += self._get_length(a_frame)
+						a_side_length += self._get_length(a_frame) + a_margin
 				
 				side_lengths.append(a_side_length)
 				
@@ -927,37 +956,37 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			avl.space_after = 0
 			avl.space_before = 0
 	
-	def _place_frames(self, coordinate_modifier, frames):
+	def _place_frames(self, coordinate_modifier, margin, frames):
 		previous_rect = None
 		for a_frame in frames:
 			if a_frame:
 				frame_rect = a_frame.rectangle
 				ox, oy = a_frame.origin
 				if previous_rect:
-					ox, oy = coordinate_modifier(previous_rect, 
+					ox, oy = coordinate_modifier(margin, previous_rect, 
 					                             ox, oy, frame_rect)
 					a_frame.origin = ox, oy
 					
 				previous_rect = frame_rect.shift((ox, oy))
 					
-	_CoordinateToRight = lambda p, x, y, r: (p.right - r.left, y)
-	_CoordinateToLeft = lambda p, x, y, r: (p.left - r.right, y)
-	_CoordinateToTop = lambda p, x, y, r: (x, p.top - r.bottom)
-	_CoordinateToBottom = lambda p, x, y, r: (x, p.bottom - r.top)
+	_CoordinateToRight = lambda m, p, x, y, r: (p.right - r.left + m, y)
+	_CoordinateToLeft = lambda m, p, x, y, r: (p.left - r.right - m, y)
+	_CoordinateToTop = lambda m, p, x, y, r: (x, p.top - r.bottom - m)
+	_CoordinateToBottom = lambda m, p, x, y, r: (x, p.bottom - r.top + m)
 	
 	_GetFrameWidth = lambda f: f.rectangle.width if f else 0
 	_GetFrameHeight = lambda f: f.rectangle.height if f else 0
 	
-	def _GetHorizontalRectDistance(view_rect, rect):
-		center = view_rect.left + view_rect.width / 2
-		dist_a = abs(rect.left - center) / view_rect.width
-		dist_b = abs(rect.left + rect.width - center) / view_rect.width
+	def _GetHorizontalRectDistance(offset, view_rect, rect):
+		center = view_rect.left + view_rect.width / 2 + offset
+		dist_a = abs(rect.left - center)
+		dist_b = abs(rect.left + rect.width - center)
 		return dist_a + dist_b
 		
-	def _GetVerticalRectDistance(view_rect, rect):
-		center = view_rect.top + view_rect.height / 2
-		dist_a = abs(rect.top - center) / view_rect.height
-		dist_b = abs(rect.top + rect.height - center) / view_rect.height
+	def _GetVerticalRectDistance(offset, view_rect, rect):
+		center = view_rect.top + view_rect.height / 2 + offset
+		dist_a = abs(rect.top - center)
+		dist_b = abs(rect.top + rect.height - center)
 		return dist_a + dist_b
 			
 	DirectionMethods = {
