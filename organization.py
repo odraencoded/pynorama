@@ -708,6 +708,11 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		
 		image.uses -= 1
 		
+		if image not in avl.shown_images:
+			load_handle_id = avl.load_handles.pop(image, None)
+			if load_handle_id:
+				image.disconnect(load_handle_id)
+		
 		if index < avl.center_index:
 			avl.center_index -= 1
 		
