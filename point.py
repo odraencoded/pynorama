@@ -72,6 +72,13 @@ class Rectangle:
 	def area(self):
 		return self.width * self.height
 	
+	def overlaps_with(self, other):
+		''' Returns true if rectangle overlaps with other rectangle '''
+		return not (self.left >= other.left + other.width or
+		            self.top >= other.top + other.height or
+		            self.left + self.width < other.left or
+		            self.top + self.height < other.top)
+	
 	def __and__(self, other):
 		left = max(self.left, other.left)
 		top = max(self.top, other.top)

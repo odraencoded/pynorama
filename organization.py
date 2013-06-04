@@ -620,9 +620,8 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 				a_frame = avl.shown_frames[i]
 				if a_frame:
 					a_rect = a_frame.rectangle.shift(a_frame.origin)
-					a_visible_rect = absolute_view_rect & a_rect
 					
-					if a_visible_rect.width and a_visible_rect.height:
+					if absolute_view_rect.overlaps_with(a_rect):
 						margin = 0 if i == current_index \
 						           else -margin_before if i > current_index \
 						           else margin_after
