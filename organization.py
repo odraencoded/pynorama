@@ -714,37 +714,43 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		self._insert_image(avl, 0, old_center_image)
 	
 	def _insert_image(self, avl, index, image):
+		''' Handles a image inserted in an album '''
 		avl.shown_images.insert(index, image)
 		avl.shown_frames.insert(index, None)
 		
 		image.uses += 1
 		
 		if not avl.center_image:
+			# If there is no center image, set it to the newly inserted one
 			avl.center_index = index
 			avl.center_image = image
 			avl.emit("focus-changed", image, False)
 		
 		elif index <= avl.center_index:
+			# Increment the center index because a frame was added before it
 			avl.center_index += 1
 		
 		self._load_frame(avl, image)
 	
 	def _remove_image(self, avl, index):
+		''' Handles a image removed from an album '''
 		image = avl.shown_images.pop(index)
 		frame = avl.shown_frames.pop(index)
 		
 		image.uses -= 1
 		
+		if frame: # Remove frame from view
+			avl.view.remove_frame(frame)
+		
 		if image not in avl.shown_images:
+			# If the image is no longer shown, remove the loading handler
 			load_handle_id = avl.load_handles.pop(image, None)
 			if load_handle_id:
 				image.disconnect(load_handle_id)
 		
-		if index < avl.center_index:
+		if avl.center_image and index < avl.center_index:
+			# Decrement the center index because a frame was removed before it
 			avl.center_index -= 1
-		
-		if frame:
-			avl.view.remove_frame(frame)
 	
 	def _append_image(self, avl, image):
 		self._insert_image(avl, len(avl.shown_images), image)
