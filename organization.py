@@ -244,7 +244,7 @@ class AlbumViewLayout(GObject.Object):
 	layout = GObject.property(type=object, default=None)
 	
 class AlbumLayout:
-	''' Layout for an album '''
+	''' Places images from an album into a view '''
 	def __init__(self):
 		self.__subscribers = set()
 		
@@ -301,7 +301,7 @@ class AlbumLayout:
 		pass
 		
 class SingleFrameLayout(AlbumLayout):
-	''' Shows a single album image in a view '''
+	''' Places a single album image in a view '''
 	
 	def start(self, avl):
 		avl.current_image = None
@@ -402,9 +402,6 @@ class SingleFrameLayout(AlbumLayout):
 			avl.removed_signal_id = avl.album.connect(
 			                        "image-removed", self._image_removed, avl)
 			                        
-	def _image_added(self, album, image, index, avl):
-		pass
-	
 	def _image_removed(self, album, image, index, avl):
 		if image == avl.current_image:
 			count = len(album)
@@ -427,10 +424,10 @@ class LayoutDirection:
 	Down = "down"
 	
 class FrameStripLayout(GObject.Object, AlbumLayout):
-	''' Shows a strip of album images in a view '''
+	''' Places a strip of album images, laid side by side, in a view '''
 	
 	def __init__(self, direction=LayoutDirection.Down,
-	                   loop=False, margin=(0,0)):
+	                   loop=False, margin=(0,0), alignment=0):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
 		
@@ -442,16 +439,30 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		self.limit_before = 40
 		
 		self.connect("notify::direction", self._direction_changed)
-		self.connect("notify::loop", self._loop_changed)
-		self.connect("notify::margin", self._margin_changed)
+		self.connect("notify::loop", self._placement_args_changed)
+		self.connect("notify::margin", self._placement_args_changed)
+		self.connect("notify::alignment", self._placement_args_changed)
 		
 		self.direction = direction
 		self.loop = loop
 		self.margin = margin
+		self.alignment=alignment
 	
-	direction = GObject.property(type=object) # Direction of the strip
-	loop = GObject.property(type=bool, default=False) # Endless looping
-	margin = GObject.property(type=object) # Distance between two frames
+	# What direction a fore image should be in relation to a hind image...
+	# or something like that
+	direction = GObject.property(type=object)
+	
+	# Whether to continue laying images to a side after finding
+	# the center image on that side
+	loop = GObject.property(type=bool, default=False)
+	
+	# Alignment for the parallel axis, 0.5..0.5 = left/right or top/bottom
+	alignment = GObject.property(type=float, default=0)
+	
+	# A tuple for the distance between two adjacent images.
+	# The first value is the margin for images before the center and the
+	# second values for images after the center
+	margin = GObject.property(type=object)
 	
 	def _direction_changed(self, *data):
 		self._get_length, self._get_rect_distance, \
@@ -460,12 +471,9 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		
 		self.refresh_subscribers.queue()
 	
-	def _loop_changed(self, *data):
+	def _placement_args_changed(self, *data):
 		self.refresh_subscribers.queue()
-	
-	def _margin_changed(self, *data):
-		self.refresh_subscribers.queue()
-	
+			
 	def update(self, avl):
 		self._reposition_frames(avl)
 		self._update_sides(avl)
@@ -922,7 +930,9 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 				avl.view.add_frame(new_frame)
 	
 	def _reposition_frames(self, avl):
-		# Place frames around the center frame of images around the center image
+		''' Place the frames of images around the center image 
+		    around the center frame '''
+		    
 		if avl.center_frame:
 			shown_frames = avl.shown_frames
 			frame_count = len(shown_frames)
@@ -939,7 +949,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 				                   (shown_frames[j] for j in a_range))
 				
 	def _compute_lengths(self, avl):
-		# Recalculate the space used by images after and before the center image
+		''' Recalculate the space used by frames around the center frame '''
 		if avl.center_frame:
 			side_ranges = (range(avl.center_index),
 			               range(avl.center_index + 1, len(avl.shown_frames)))
@@ -962,23 +972,35 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			avl.space_before = 0
 	
 	def _place_frames(self, coordinate_modifier, margin, frames):
+		''' Places a list of frames side by side '''
 		previous_rect = None
+		alignment = self.alignment
 		for a_frame in frames:
 			if a_frame:
 				frame_rect = a_frame.rectangle
 				ox, oy = a_frame.origin
 				if previous_rect:
-					ox, oy = coordinate_modifier(margin, previous_rect, 
-					                             ox, oy, frame_rect)
+					ox, oy = coordinate_modifier(alignment, margin,
+					                             previous_rect, frame_rect)
 					a_frame.origin = ox, oy
 					
 				previous_rect = frame_rect.shift((ox, oy))
-					
-	_CoordinateToRight = lambda m, p, x, y, r: (p.right - r.left + m, y)
-	_CoordinateToLeft = lambda m, p, x, y, r: (p.left - r.right - m, y)
-	_CoordinateToTop = lambda m, p, x, y, r: (x, p.top - r.bottom - m)
-	_CoordinateToBottom = lambda m, p, x, y, r: (x, p.bottom - r.top + m)
+				previous_rect.ox, previous_rect.oy = ox, oy
+				
+	# lambda args are
+	# alignment, margin, previous translated rectangle, current rectangle
+	_CoordinateToRight = \
+	lambda a, m, p, r: (p.right - r.left + m, p.oy + (p.height - r.height) * a)
 	
+	_CoordinateToLeft = \
+	lambda a, m, p, r: (p.left - r.right - m, p.oy + (p.height - r.height) * a)
+	
+	_CoordinateToTop = \
+	lambda a, m, p, r: (p.ox + (p.width - r.width) * a, p.top - r.bottom - m)
+	
+	_CoordinateToBottom = \
+	lambda a, m, p, r: (p.ox + (p.width - r.width) * a, p.bottom - r.top + m)
+	                      
 	_GetFrameWidth = lambda f: f.rectangle.width if f else 0
 	_GetFrameHeight = lambda f: f.rectangle.height if f else 0
 	
