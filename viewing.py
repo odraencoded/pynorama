@@ -55,6 +55,10 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		# There are two interpolation settings: Zoom out and zoom in
 		self.minify_interpolation = cairo.FILTER_BILINEAR
 		self.magnify_interpolation = cairo.FILTER_NEAREST
+		
+		self.round_full_pixel_offset = False
+		self.round_sub_pixel_offset = True
+		
 		self.__hadjustment = self.__vadjustment = None
 		self.__hadjust_signal = self.__vadjust_signal = None
 		self.frame_signals = dict()
@@ -66,7 +70,11 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		             self.__interpolation_changed)
 		self.connect("notify::magnify-interpolation",
                      self.__interpolation_changed)
-		
+		self.connect("notify::round-full-pixel-offset",
+		             self.__interpolation_changed)
+		self.connect("notify::round-sub-pixel-offset",
+                     self.__interpolation_changed)
+                     
 	def add_frame(self, *frames):
 		''' Adds one or more pictures to the gallery '''
 		for a_frame in frames:
@@ -330,6 +338,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			self.set_minify_interpolation(value)
 			
 	# --- basic properties down this line --- #
+	# TODO: Remove get_/set_
 	def get_hadjustment(self):
 		return self.__hadjustment
 	def get_vadjustment(self):
@@ -402,9 +411,17 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	rotation = GObject.property(type=float, default=0)
 	flip = GObject.property(type=GObject.TYPE_PYOBJECT)
 	
-	minify_interpolation = GObject.property(type=GObject.TYPE_INT)
-	magnify_interpolation = GObject.property(type=GObject.TYPE_INT)
+	minify_interpolation = GObject.property(type=int, default=1)
+	magnify_interpolation = GObject.property(type=int, default=1)
 	
+	# This options rounds the offset for drawing while zoomed in so
+	# that panning pixels appear to be locked to a pixel grid
+	round_full_pixel_offset = GObject.property(type=bool, default=False)
+	# This option rounds the offset for drawing while zoomed out so
+	# that panning doesn't shift pixels into a different subpixel interpolation,
+	# reducing tearing
+	round_sub_pixel_offset = GObject.property(type=bool, default=True)
+		
 	# --- computing stuff down this line --- #	
 	
 	def __compute_adjustments(self):
@@ -495,8 +512,21 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		''' Caches a bunch of properties '''
 		def __init__(self, view):
 			self.view = view
-			self.magnification = view.get_magnification()
+			self.magnification = zoom = view.get_magnification()
 			
+			ox, oy = view.offset
+			if(zoom > 1 and view.round_full_pixel_offset):
+				# Round pixel offset, removing pixel fractions from it
+				ox, oy = math.floor(ox), math.floor(oy)
+				
+			if(zoom < 1 and view.round_sub_pixel_offset):
+				# Round offset to match pixels shown on display using
+				# inverse magnification
+				invzoom = 1 / zoom
+				ox, oy = ox // invzoom * invzoom, oy // invzoom * invzoom
+				
+			self.offset = ox, oy
+			self.translation = -ox, -oy
 			self.rotation = view.get_rotation()
 			self.rad_rotation = self.rotation / 180 * math.pi
 			
@@ -535,10 +565,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		# Apply the zooooooom
 		cr.scale(drawstate.magnification, drawstate.magnification)
 		# Translate the offset
-		x, y = self.offset
-		cr.translate(-x, -y)
+		cr.translate(*drawstate.translation)
 		# Rotate the radians
-		rad = self.get_rotation() / 180 * math.pi
 		cr.rotate(drawstate.rad_rotation)
 		# Flip the... thing
 		if drawstate.is_flipped:
