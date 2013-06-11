@@ -56,6 +56,7 @@ class MouseAdapter(GObject.GObject):
 		self.__widget_handler_ids = None
 		self.__ice_cubes = 0
 		self.__motion_from_outside = 2
+		self.__pressure_from_outside = True
 		
 		if widget:
 			self.set_widget(widget)
@@ -144,6 +145,8 @@ class MouseAdapter(GObject.GObject):
 	
 	def _mouse_enter(self, *data):
 		self.__motion_from_outside = 2
+		if not self.__pressure:
+			self.__pressure_from_outside = True
 								
 	def _mouse_motion(self, widget, data):
 		# Motion events are handled idly
@@ -154,6 +157,8 @@ class MouseAdapter(GObject.GObject):
 			
 			if self.__motion_from_outside:
 				self.__motion_from_outside -= 1
+				if not self.__motion_from_outside:
+					self.__pressure_from_outside = False
 			
 			self.__delayed_motion_id = GLib.idle_add(
 			                                self.__delayed_motion, widget,
@@ -165,14 +170,15 @@ class MouseAdapter(GObject.GObject):
 		if not self.is_frozen:
 			# You got to love tuple comparation
 			if self.__from_point != self.__current_point:
-				for button, pressure in self.__pressure.items():
-					if pressure == 1:
-						self.__pressure[button] = 2
-						self.emit("start-dragging",
-						          self.__current_point, button)
+				if not self.__pressure_from_outside:
+					for button, pressure in self.__pressure.items():
+						if pressure == 1:
+							self.__pressure[button] = 2
+							self.emit("start-dragging",
+								      self.__current_point, button)
 						
-					if pressure:
-						self.emit("pression", self.__current_point, button)
+						if pressure:
+							self.emit("pression", self.__current_point, button)
 						
 				if not self.__motion_from_outside:
 					self.emit("motion", self.__current_point, self.__from_point)
