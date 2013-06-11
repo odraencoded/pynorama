@@ -427,7 +427,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 	''' Places a strip of album images, laid side by side, in a view '''
 	
 	def __init__(self, direction=LayoutDirection.Down,
-	                   loop=False, margin=(0,0), alignment=0):
+	                   loop=False, repeat=False, margin=(0,0), alignment=0):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
 		
@@ -439,12 +439,14 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		self.limit_before = 40
 		
 		self.connect("notify::direction", self._direction_changed)
+		self.connect("notify::repeat", self._placement_args_changed)
 		self.connect("notify::loop", self._placement_args_changed)
 		self.connect("notify::margin", self._placement_args_changed)
 		self.connect("notify::alignment", self._placement_args_changed)
 		
 		self.direction = direction
 		self.loop = loop
+		self.repeat = repeat
 		self.margin = margin
 		self.alignment=alignment
 	
@@ -454,6 +456,10 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 	
 	# Whether to continue laying images to a side after finding
 	# the center image on that side
+	repeat = GObject.property(type=bool, default=False)
+	
+	# Whether to add the last image of an album before the first image and
+	# vice versa
 	loop = GObject.property(type=bool, default=False)
 	
 	# Alignment for the parallel axis, 0.5..0.5 = left/right or top/bottom
@@ -552,7 +558,12 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 				
 			else:
 				new_image = avl.album.next(avl.center_image)
+				if not self.loop and new_image is avl.album[0]:
+					self._clear_images(avl)
+					new_index = 0
+					
 				avl.center_index = avl.center_frame = avl.center_image = None
+				
 				self._insert_image(avl, new_index, new_image)
 				
 			avl.update_sides.queue()
@@ -568,7 +579,11 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 				
 			else:
 				new_image = avl.album.previous(avl.center_image)
+				if not self.loop and new_image is avl.album[-1]:
+					self._clear_images(avl)
+				
 				avl.center_index = avl.center_frame = avl.center_image = None
+				
 				self._insert_image(avl, 0, new_image)
 				
 			avl.update_sides.queue()
@@ -800,7 +815,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			shown_frames, shown_images = avl.shown_frames, avl.shown_images
 			
 			# Removes the center image from around the center frame
-			if not self.loop:
+			if not self.repeat:
 				for i in range(avl.center_index -1, -1, -1):
 					if shown_images[i] is center_image:
 						for j in range(i + 1):
@@ -836,10 +851,17 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 				if avl.space_after < self.space_after:
 					if foremost_frame:
 						foremost_image = shown_images[-1]
-						beyond_foremost_image = avl.album.next(foremost_image)
-						if self.loop or \
-						   beyond_foremost_image is not center_image:
-							self._append_image(avl, beyond_foremost_image)
+						new_image = avl.album.next(foremost_image)
+						
+						valid_insert = True
+						if not self.repeat:
+							valid_insert = new_image is not center_image
+						
+						if valid_insert and not self.loop:
+							valid_insert = new_image is not avl.album[0]
+							
+						if valid_insert:
+							self._append_image(avl, new_image)
 						
 				else:
 					# Remove images if there is no extra space
@@ -871,11 +893,18 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 				if avl.space_before < self.space_before:	
 					if backmost_frame:
 						backmost_image = shown_images[0]
-						beyond_backmost_image = \
-						       avl.album.previous(backmost_image)
-						if self.loop or \
-						   beyond_backmost_image is not center_image:
-							self._prepend_image(avl, beyond_backmost_image)
+						new_image = avl.album.previous(backmost_image)
+						
+						valid_insert = True
+						if not self.repeat:
+							valid_insert = new_image is not center_image
+						
+						if valid_insert and not self.loop:
+							valid_insert = new_image is not avl.album[-1]
+							
+						if valid_insert:
+							self._prepend_image(avl, new_image)
+							
 				else:
 					# Remove images if there is no extra space
 					backmost_length = self._get_length(backmost_frame)
