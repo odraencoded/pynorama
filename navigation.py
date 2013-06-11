@@ -26,6 +26,7 @@ class MouseAdapter(GObject.GObject):
 	             Gdk.EventMask.BUTTON_RELEASE_MASK |
 	             Gdk.EventMask.SCROLL_MASK |
 	             Gdk.EventMask.SMOOTH_SCROLL_MASK |
+	             Gdk.EventMask.ENTER_NOTIFY_MASK |
 	             Gdk.EventMask.POINTER_MOTION_MASK |
 	             Gdk.EventMask.POINTER_MOTION_HINT_MASK)
 	
@@ -54,6 +55,7 @@ class MouseAdapter(GObject.GObject):
 		self.__delayed_motion_id = None
 		self.__widget_handler_ids = None
 		self.__ice_cubes = 0
+		self.__motion_from_outside = 2
 		
 		if widget:
 			self.set_widget(widget)
@@ -81,6 +83,7 @@ class MouseAdapter(GObject.GObject):
 					widget.connect("button-press-event", self._button_press),
 					widget.connect("button-release-event", self._button_release),
 					widget.connect("scroll-event", self._mouse_scroll),
+					widget.connect("enter-notify-event", self._mouse_enter),
 					widget.connect("motion-notify-event", self._mouse_motion),
 				]
 				
@@ -138,6 +141,9 @@ class MouseAdapter(GObject.GObject):
 			
 			if got_delta:
 				self.emit("scroll", point, (xd, yd))
+	
+	def _mouse_enter(self, *data):
+		self.__motion_from_outside = 2
 								
 	def _mouse_motion(self, widget, data):
 		# Motion events are handled idly
@@ -145,7 +151,10 @@ class MouseAdapter(GObject.GObject):
 		if not self.__delayed_motion_id:
 			if not self.__from_point:
 				self.__from_point = self.__current_point
-				
+			
+			if self.__motion_from_outside:
+				self.__motion_from_outside -= 1
+			
 			self.__delayed_motion_id = GLib.idle_add(
 			                                self.__delayed_motion, widget,
 			                                priority=MouseAdapter.IdlePriority)
@@ -164,8 +173,10 @@ class MouseAdapter(GObject.GObject):
 						
 					if pressure:
 						self.emit("pression", self.__current_point, button)
-				
-				self.emit("motion", self.__current_point, self.__from_point)
+						
+				if not self.__motion_from_outside:
+					self.emit("motion", self.__current_point, self.__from_point)
+					
 				for button, pressure in self.__pressure.items():
 					if pressure == 2:
 						self.emit("drag",
