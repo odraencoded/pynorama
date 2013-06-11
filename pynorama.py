@@ -925,18 +925,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.set_view_rotation(0)
 	
 	def auto_zoom(self):
-		''' Zooms automatically!
-			For future reference on auto zoom mode:
-			  "fit" = magnify based on the largest side
-			  "fill" = magnify based on the smallest side
-			  "width" = magnify based on width
-			  "height" = magnify based on height '''
+		''' Zooms automatically! '''
 		
-		frame = self.avl.focus_frame	  
+		frame = self.avl.focus_frame
 		if frame and (self.auto_zoom_magnify or self.auto_zoom_minify):
-			'''side_name = ["smallest", "width",
-			             "height", "largest"][self.auto_zoom_mode]'''
-			
 			new_zoom = self.imageview.zoom_for_size(
 			                      frame.size, self.auto_zoom_mode)
 			                      
