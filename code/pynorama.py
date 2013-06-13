@@ -28,7 +28,7 @@ from loading import DirectoryLoader
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
-	Version = "v0.2.1"
+	Version = "v0.2.2"
 	
 	def __init__(self):
 		Gtk.Application.__init__(self)
