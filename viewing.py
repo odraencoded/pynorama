@@ -519,7 +519,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 				# Round pixel offset, removing pixel fractions from it
 				ox, oy = math.floor(ox), math.floor(oy)
 				
-			if(zoom < 1 and view.round_sub_pixel_offset):
+			if(zoom != 1 and view.round_sub_pixel_offset):
 				# Round offset to match pixels shown on display using
 				# inverse magnification
 				invzoom = 1 / zoom
