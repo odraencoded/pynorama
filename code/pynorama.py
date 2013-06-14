@@ -445,14 +445,19 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		self.avl.connect("focus-changed", self._focus_changed)
 		
+		# Load preferences
 		preferences.load_into_window(self)
 		
+		# Refresh status widgets
 		self.refresh_transform()
 		self.refresh_index()
 		self.refresh_interp()
 		
 	def setup_actions(self):
 		self.manager = Gtk.UIManager()
+		self.manager.connect("connect-proxy",
+		                     lambda ui, a, w: self.connect_to_statusbar(a, w))
+		
 		self.accelerators = self.manager.get_accel_group()
 		self.add_accel_group(self.accelerators)
 		self.actions = Gtk.ActionGroup("pynorama")
@@ -698,8 +703,32 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.actions.add_action(an_action)
 			else:
 				self.actions.add_action_with_accel(an_action, an_accel)
-		
+				
 	# --- event handling down this line --- #
+	def connect_to_statusbar(self, action, proxy):
+		''' Connects an action's widget proxy enter-notify-event to show the
+		    action tooltip on the statusbar when the widget is hovered '''
+		    
+		try:
+			# Connect select/deselect events
+			proxy.connect("select", self._tooltip_to_statusbar, action)
+			proxy.connect("deselect", self._pop_tooltip_from_statusbar)
+			
+		except TypeError: # Not a menu item
+			pass
+			
+	def _tooltip_to_statusbar(self, proxy, action):
+		''' Pushes a proxy action tooltip to the statusbar '''
+		tooltip = action.get_tooltip()
+		if tooltip:
+			context_id = self.statusbar.get_context_id("tooltip")
+			self.statusbar.pop(context_id)
+			self.statusbar.push(context_id, tooltip)
+			
+	def _pop_tooltip_from_statusbar(self, *data):
+		context_id = self.statusbar.get_context_id("tooltip")
+		self.statusbar.pop(context_id)
+		
 	def __ordering_mode_changed(self, radioaction, current):
 		#TODO: Use GObject.bind_property_with_closure for this
 		sort_value = current.get_current_value()
