@@ -1,6 +1,6 @@
 # coding=utf-8
 
-''' dialog.py has contains functions to message the user '''
+''' notification.py has contains functions to message the user '''
 
 ''' ...and this file is part of Pynorama.
     

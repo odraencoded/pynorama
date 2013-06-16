@@ -22,7 +22,7 @@ import gc, math, random, os, sys
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
-import organization, navigation, loading, preferences, viewing, dialog
+import organization, navigation, loading, preferences, viewing, notification
 from viewing import ZoomMode
 from loading import DirectoryLoader
 DND_URI_LIST, DND_IMAGE = range(2)
@@ -192,7 +192,7 @@ class ImageViewer(Gtk.Application):
 				unlisted_thing = self.memory.unlisted_stuff.pop()
 				if unlisted_thing.is_loading or unlisted_thing.on_memory:
 					unlisted_thing.unload()
-					dialog.log(dialog.Lines.Unloaded(unlisted_thing))
+					notification.log(notification.Lines.Unloaded(unlisted_thing))
 					
 			while self.memory.unused_stuff:
 				unused_thing = self.memory.unused_stuff.pop()
@@ -200,7 +200,7 @@ class ImageViewer(Gtk.Application):
 				if unused_thing.on_disk:
 					if unused_thing.is_loading or unused_thing.on_memory:
 						unused_thing.unload()
-						dialog.log(dialog.Lines.Unloaded(unused_thing))
+						notification.log(notification.Lines.Unloaded(unused_thing))
 						
 			gc.collect()
 			
@@ -208,16 +208,16 @@ class ImageViewer(Gtk.Application):
 			requested_thing = self.memory.requested_stuff.pop()
 			if not (requested_thing.is_loading or requested_thing.on_memory):
 				requested_thing.load()
-				dialog.log(dialog.Lines.Loading(requested_thing))
+				notification.log(notification.Lines.Loading(requested_thing))
 				
 		return False
 		
 	def log_loading_finish(self, thing, error):
 		if error:
-			dialog.log(dialog.Lines.Error(error))
+			notification.log(notification.Lines.Error(error))
 			
 		elif thing.on_memory:
-			dialog.log(dialog.Lines.Loaded(thing))
+			notification.log(notification.Lines.Loaded(thing))
 	
 	def open_files_for_album(self, album, loader=None, files=None, uris=None,
 	                         replace=False, search=False, silent=False,
@@ -287,7 +287,7 @@ class ImageViewer(Gtk.Application):
 			message = _("There were problems opening the following files:")
 			columns = [_("File"), _("Error")]
 			
-			dialog.alert_list(message, problem_list, columns)
+			notification.alert_list(message, problem_list, columns)
 			
 	def open_context_images(self, context, files, loader, sort_method=None):
 		''' Opens files in a loader, sort the result with sort_method and
@@ -1216,7 +1216,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				
 				# Show error in status bar #
 				if focused_image.error:
-					message = dialog.Lines.Error(focused_image.error)
+					message = notification.Lines.Error(focused_image.error)
 					self.statusbar.push(loading_ctx, message)
 					
 				# Refresh frame #
@@ -1224,7 +1224,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			
 			else:				
 				# Show loading hints #
-				message = dialog.Lines.Loading(focused_image)
+				message = notification.Lines.Loading(focused_image)
 				self.statusbar.push(loading_ctx, message)
 				self.loading_spinner.show()
 				self.loading_spinner.start() # ~like a record~
@@ -1246,7 +1246,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			
 			# Show error in status bar #
 			if error:
-				message = dialog.Lines.Error(error)
+				message = notification.Lines.Error(error)
 				self.statusbar.push(loading_ctx, message)
 				
 			# Refresh frame #
