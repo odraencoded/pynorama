@@ -563,6 +563,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				 _("A good interpolation filter"), None),
 				("interp-best", _("St_ronger Filte_r"),
 				 _("The best interpolation filter avaiable"), None),
+			 # Layout submenu
+			("layout", _("_Layout"), _("Album layout settings"), None),
+			("layout-configure", _("_Configure..."),
+			 _("Shows a dialog to configure the current album layout"), None),
 			# Interface submenu
 			("interface", _("_Interface"),
 			 _("This window settings"), None),
@@ -622,6 +626,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"flip-v" : (lambda data: self.flip_view(True),),
 			"transform-reset" : (lambda data: self.reset_view_transform(),),
 			"interp-nearest" : (self.change_interp,), # For group
+			"layout-configure" : (self.show_layout_dialog,),
 			"ui-toolbar" : (self.change_interface,),
 			"ui-statusbar" : (self.change_interface,),
 			"ui-scrollbar-top" : (self.change_scrollbars,),
@@ -1155,6 +1160,29 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def file_open(self, widget, data=None):
 		self.app.open_image_dialog(self.image_list, self)
 		
+	def show_layout_dialog(self, *data):
+		''' Shows a dialog with the layout settings widget '''
+		flags = Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT
+		try:
+			widget = self.layout.create_settings_widget()
+			
+		except Exception:
+			message = _("Could not create layout settings dialog!")
+			dialog = Gtk.MessageDialog(self, flags,
+			             Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
+			             message)
+			             
+			notification.log_exception(message)
+			
+		else:
+			dialog = Gtk.Dialog(_("Layout Settings"), self,
+			         flags, (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
+			         
+			dialog.get_content_area().pack_start(widget, True, True, 0)
+			
+		dialog.run()
+		dialog.destroy()
+		
 	''' Methods after this comment are actually kind of a big deal.
 	    Do not rename them. '''
 	
@@ -1438,6 +1466,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				<menuitem action="interp-best" />
 			</menu>
 			<separator />
+			<menu action="layout">
+				<separator />
+				<menuitem action="layout-configure" />
+			</menu>
 			<menu action="interface">
 				<menuitem action="ui-toolbar" />
 				<menuitem action="ui-statusbar" />

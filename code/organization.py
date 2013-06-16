@@ -181,6 +181,7 @@ class SortingKeys:
 		return image.get_metadata().height
 
 from gi.repository import Gtk
+from gettext import gettext as _
 import point, viewing
 
 class AlbumViewLayout(GObject.Object):
@@ -251,6 +252,9 @@ class AlbumLayout:
 		self.refresh_subscribers = utility.IdlyMethod(self.refresh_subscribers)
 		self.refresh_subscribers.priority = GLib.PRIORITY_HIGH + 20
 		
+		# Set this value to true if the layout has a settings dialog
+		self.has_settings_widget = False
+		
 	def subscribe(self, avl):
 		self.__subscribers.add(avl)
 		
@@ -299,6 +303,10 @@ class AlbumLayout:
 	def update(self, avl):
 		''' Propagate changes in a layout property to an avl '''
 		pass
+		
+	def create_settings_widget(self):
+		''' Creates a widget for configuring the layout '''
+		raise TypeError
 		
 class SingleFrameLayout(AlbumLayout):
 	''' Places a single album image in a view '''
@@ -430,6 +438,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 	                   loop=False, repeat=False, margin=(0,0), alignment=0):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
+		self.has_settings_dialog = True
 		
 		# Min number of pixels before and after the center image
 		self.space_after = 3840
@@ -449,37 +458,10 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		self.repeat = repeat
 		self.margin = margin
 		self.alignment=alignment
-	
-	# What direction a fore image should be in relation to a hind image...
-	# or something like that
-	direction = GObject.property(type=object)
-	
-	# Whether to continue laying images to a side after finding
-	# the center image on that side
-	repeat = GObject.property(type=bool, default=False)
-	
-	# Whether to add the last image of an album before the first image and
-	# vice versa
-	loop = GObject.property(type=bool, default=False)
-	
-	# Alignment for the parallel axis, 0.5..0.5 = left/right or top/bottom
-	alignment = GObject.property(type=float, default=0)
-	
-	# A tuple for the distance between two adjacent images.
-	# The first value is the margin for images before the center and the
-	# second values for images after the center
-	margin = GObject.property(type=object)
-	
-	def _direction_changed(self, *data):
-		self._get_length, self._get_rect_distance, \
-		     self._place_before, self._place_after = \
-		          FrameStripLayout.DirectionMethods[self.direction]
 		
-		self.refresh_subscribers.queue()
-	
-	def _placement_args_changed(self, *data):
-		self.refresh_subscribers.queue()
-			
+	def create_settings_widget(self):
+		return FrameStripLayout.SettingsWidget(self)
+		
 	def update(self, avl):
 		self._reposition_frames(avl)
 		self._update_sides(avl)
@@ -595,7 +577,41 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		self._clear_images(avl)
 		avl.center_index = avl.center_image = avl.center_frame = None
 		self._insert_image(avl, 0, image)
+	
+	#-- Properties down this line --#
+	
+	''' What direction a fore image should be in relation to a hind image...
+	    or something like that '''
+	direction = GObject.property(type=str, default="down")
+	
+	''' Whether to continue laying images to a side after finding
+	    the center image on that side '''
+	repeat = GObject.property(type=bool, default=False)
+	
+	''' Whether to add the last image of an album before the first image and
+	    vice versa '''
+	loop = GObject.property(type=bool, default=False)
+	
+	''' Alignment for the parallel axis, 0.5..0.5 = left/right or top/bottom '''
+	alignment = GObject.property(type=float, default=0)
+	
+	''' A tuple for the distance between two adjacent images.
+	    The first value is the margin for images before the center and the
+	    second values for images after the center '''
+	margin = GObject.property(type=object)
+	
+	#-- Implementation detail down this line --#
+	
+	def _direction_changed(self, *data):
+		self._get_length, self._get_rect_distance, \
+		     self._place_before, self._place_after = \
+		          FrameStripLayout.DirectionMethods[self.direction]
 		
+		self.refresh_subscribers.queue()
+	
+	def _placement_args_changed(self, *data):
+		self.refresh_subscribers.queue()
+	
 	def _view_changed(self, avl, *data):
 		# Handler for album changes in avl
 		if avl.old_view is not None:
@@ -1057,3 +1073,66 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		LayoutDirection.Down : (_GetFrameHeight, _GetVerticalRectDistance,
 		                        _CoordinateToTop, _CoordinateToBottom)
 	}
+	
+	class SettingsWidget(Gtk.Box):
+		''' A widget for configuring a FrameStripLayout '''
+		def __init__(self, layout):
+			Gtk.Box.__init__(self)
+			self.set_orientation(Gtk.Orientation.VERTICAL)
+			
+			self.layout = layout
+			
+			# Create direction widgets
+			direction_line = Gtk.Box(Gtk.Orientation.HORIZONTAL, 20)
+			direction_label = Gtk.Label(_("Strip direction"))
+			direction_model = Gtk.ListStore(str, str)
+			
+			direction_model.append([LayoutDirection.Up, _("Up")])
+			direction_model.append([LayoutDirection.Right, _("Right")])
+			direction_model.append([LayoutDirection.Down, _("Down")])
+			direction_model.append([LayoutDirection.Left, _("Left")])
+			
+			# Create combobox
+			direction_selector = Gtk.ComboBox.new_with_model(direction_model)
+			direction_selector.set_id_column(0)
+			
+			# Add text renderer
+			text_renderer = Gtk.CellRendererText()
+			direction_selector.pack_start(text_renderer, True)
+			direction_selector.add_attribute(text_renderer, "text", 1)
+			
+			# Pack direction widgets
+			direction_line.pack_start(direction_label, False, True, 0)
+			direction_line.pack_end(direction_selector, False, True, 0)
+			
+			# Loop checkbox
+			label = _("Loop album")
+			loop_button = Gtk.CheckButton.new_with_label(label)
+			
+			# Repeat checkbox
+			label = _("Repeat album")
+			repeat_button = Gtk.CheckButton.new_with_label(label)
+						
+			# Bind properties
+			binding_flags = GObject.BindingFlags
+			flags = binding_flags.BIDIRECTIONAL | binding_flags.SYNC_CREATE
+			self.layout.bind_property("direction", direction_selector,
+			                          "active-id", flags)
+			                          
+			self.layout.bind_property("loop", loop_button,
+			                          "active", flags)
+			
+			self.layout.bind_property("repeat", repeat_button,
+			                          "active", flags)
+			
+			# This is a special GUI bind, you can't really repeat 
+			# the album without looping around it
+			loop_button.bind_property("active", repeat_button,
+			                          "sensitive", binding_flags.SYNC_CREATE)
+			                          
+			# Pack lines
+			self.pack_start(direction_line, False, False, 0)
+			self.pack_start(loop_button, False, False, 0)
+			self.pack_start(repeat_button, False, False, 0)
+			
+			self.show_all()	
