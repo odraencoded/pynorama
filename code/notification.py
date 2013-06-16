@@ -20,10 +20,12 @@
 def log(message):
 	print(message)
 
-import sys
+from traceback import print_exc
 def log_exception(heading):
+	print("=" * 60)
 	print(heading)
-	for info_part in sys.exc_info(): print(info_part)
+	print("-" * 60)
+	print_exc()
 	
 from gi.repository import Gtk
 
