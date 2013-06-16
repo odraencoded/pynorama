@@ -1154,21 +1154,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 								
 	def file_open(self, widget, data=None):
 		self.app.open_image_dialog(self.image_list, self)
-			
-	def imageview_scrolling(self, widget, data=None):
-		anchor = self.imageview.get_pointer()
 		
-		if data.direction == Gdk.ScrollDirection.UP:
-			self.zoom_view(1)
-			#self.change_zoom(1, anchor)
-			
-		elif data.direction == Gdk.ScrollDirection.DOWN:
-			self.zoom_view(-1)
-			#self.change_zoom(-1, anchor)
-					
-		# Makes the scrolled window not scroll, I hope
-		return True
-	
 	''' Methods after this comment are actually kind of a big deal.
 	    Do not rename them. '''
 	
