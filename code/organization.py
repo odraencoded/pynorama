@@ -431,7 +431,7 @@ class LayoutDirection:
 	Up = "up"
 	Down = "down"
 	
-class FrameStripLayout(GObject.Object, AlbumLayout):
+class ImageStripLayout(GObject.Object, AlbumLayout):
 	''' Places a strip of album images, laid side by side, in a view '''
 	
 	def __init__(self, direction=LayoutDirection.Down,
@@ -458,7 +458,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		self.limit_before, self.limit_after = limit
 		
 	def create_settings_widget(self):
-		return FrameStripLayout.SettingsWidget(self)
+		return ImageStripLayout.SettingsWidget(self)
 		
 	def update(self, avl):
 		self._reposition_frames(avl)
@@ -612,7 +612,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 	def _direction_changed(self, *data):
 		self._get_length, self._get_rect_distance, \
 		     self._place_before, self._place_after = \
-		          FrameStripLayout.DirectionMethods[self.direction]
+		          ImageStripLayout.DirectionMethods[self.direction]
 		
 		self.refresh_subscribers.queue()
 	
@@ -1087,7 +1087,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 	}
 	
 	class SettingsWidget(Gtk.Box):
-		''' A widget for configuring a FrameStripLayout '''
+		''' A widget for configuring a ImageStripLayout '''
 		def __init__(self, layout):
 			Gtk.Box.__init__(self)
 			self.set_orientation(Gtk.Orientation.VERTICAL)

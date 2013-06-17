@@ -438,7 +438,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.drag_dest_set_target_list(target_list)
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
-		self.layout = organization.FrameStripLayout()
+		self.layout = organization.ImageStripLayout()
 		self.avl = organization.AlbumViewLayout(album=self.image_list,
 		                                        layout=self.layout,
 		                                        view=self.imageview)
