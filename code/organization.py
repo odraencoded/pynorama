@@ -435,17 +435,11 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 	''' Places a strip of album images, laid side by side, in a view '''
 	
 	def __init__(self, direction=LayoutDirection.Down,
-	                   loop=False, repeat=False, margin=(0,0), alignment=0):
+	                   loop=False, repeat=False, alignment=0,
+	                   margin=(0, 0), space=(2560, 3840), limit=(40, 60)):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
 		self.has_settings_dialog = True
-		
-		# Min number of pixels before and after the center image
-		self.space_after = 3840
-		self.space_before = 2560
-		# Max number of images, has priority over min number of pixesl
-		self.limit_after = 60
-		self.limit_before = 40
 		
 		self.connect("notify::direction", self._direction_changed)
 		self.connect("notify::repeat", self._placement_args_changed)
@@ -454,10 +448,14 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		self.connect("notify::alignment", self._placement_args_changed)
 		
 		self.direction = direction
+		
 		self.loop = loop
 		self.repeat = repeat
-		self.margin = margin
 		self.alignment=alignment
+		
+		self.margin_before, self.margin_after = margin
+		self.space_before, self.space_after = space
+		self.limit_before, self.limit_after = limit
 		
 	def create_settings_widget(self):
 		return FrameStripLayout.SettingsWidget(self)
@@ -595,10 +593,19 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 	''' Alignment for the parallel axis, 0.5..0.5 = left/right or top/bottom '''
 	alignment = GObject.property(type=float, default=0)
 	
-	''' A tuple for the distance between two adjacent images.
-	    The first value is the margin for images before the center and the
-	    second values for images after the center '''
-	margin = GObject.property(type=object)
+	''' Distance between two adjacent images '''
+	margin_after = GObject.property(type=int, default=0)
+	margin_before = GObject.property(type=int, default=0)
+	
+	''' Target for the number of pixels before or after the center image.
+	    The space will be at least these values except when a limit is hit '''	
+	space_before = GObject.property(type=int, default=2560)
+	space_after = GObject.property(type=int, default=3840)
+	
+	''' Limit for the number of images placed after
+	    and before the center image '''
+	limit_before = GObject.property(type=int, default=40)
+	limit_after = GObject.property(type=int, default=60)
 	
 	#-- Implementation detail down this line --#
 	
@@ -654,7 +661,7 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			current_index = avl.center_index
 			current_distance = None
 			frame_distances = []
-			margin_before, margin_after = self.margin
+			margin_before, margin_after = self.margin_before, self.margin_after
 			for i in range(len(avl.shown_frames)):
 				a_frame = avl.shown_frames[i]
 				if a_frame:
@@ -827,11 +834,17 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 	def _update_sides(self, avl):
 		# Adds or removes images at either side
 		if avl.center_frame:
+			# Cache some properties
+			margin_before, margin_after = self.margin_before, self.margin_after
+			space_before, space_after = self.space_before, self.space_after
+			limit_before, limit_after = self.limit_before, self.limit_after
+			loop, repeat = self.repeat, self.loop
+			
 			center_image = avl.center_image
 			shown_frames, shown_images = avl.shown_frames, avl.shown_images
 			
 			# Removes the center image from around the center frame
-			if not self.repeat:
+			if not repeat:
 				for i in range(avl.center_index -1, -1, -1):
 					if shown_images[i] is center_image:
 						for j in range(i + 1):
@@ -850,30 +863,30 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			
 			before_count = avl.center_index
 			after_count = len(shown_images) - avl.center_index - 1
-			margin_before, margin_after = self.margin
-			if after_count > self.limit_after:
+						
+			if after_count > limit_after:
 				# Remove images after center image
 				# if the count is over the limit
-				for i in range(after_count - self.limit_after):
+				for i in range(after_count - limit_after):
 					a_length = self._get_length(shown_frames[-1])
 					avl.space_after -= a_length + margin_after
 					self._remove_image(avl, len(shown_frames) -1)
 				
-				after_count = self.limit_after
+				after_count = limit_after
 			
-			if	after_count < self.limit_after:
+			if	after_count < limit_after:
 				foremost_frame = shown_frames[-1]
 				# Add an image if there is extra space
-				if avl.space_after < self.space_after:
+				if avl.space_after < space_after:
 					if foremost_frame:
 						foremost_image = shown_images[-1]
 						new_image = avl.album.next(foremost_image)
 						
 						valid_insert = True
-						if not self.repeat:
+						if not repeat:
 							valid_insert = new_image is not center_image
 						
-						if valid_insert and not self.loop:
+						if valid_insert and not loop:
 							valid_insert = new_image is not avl.album[0]
 							
 						if valid_insert:
@@ -884,9 +897,8 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 					foremost_length = self._get_length(foremost_frame)
 					foremost_length += margin_after
 					while avl.space_after - foremost_length > \
-						  self.space_after \
-						  if foremost_frame \
-						  else avl.space_after > self.space_after:
+						  space_after if foremost_frame \
+						  else avl.space_after > space_after:
 						self._remove_image(avl, len(shown_frames) -1)
 						avl.space_after -= foremost_length
 						foremost_frame = shown_frames[-1]
@@ -896,26 +908,26 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			if before_count > self.limit_before:
 				# Remove images before center image
 				# if the count is over the limit
-				for i in range(before_count - self.limit_before):
+				for i in range(before_count - limit_before):
 					a_length = self._get_length(shown_frames[0])
 					avl.space_before -= a_length + margin_before
 					self._remove_image(avl, 0)
 					
 				before_count = self.limit_before
 				
-			if	before_count < self.limit_before:
+			if	before_count < limit_before:
 				backmost_frame = shown_frames[0]
 				# Add an image if there is extra space
-				if avl.space_before < self.space_before:	
+				if avl.space_before < space_before:	
 					if backmost_frame:
 						backmost_image = shown_images[0]
 						new_image = avl.album.previous(backmost_image)
 						
 						valid_insert = True
-						if not self.repeat:
+						if not repeat:
 							valid_insert = new_image is not center_image
 						
-						if valid_insert and not self.loop:
+						if valid_insert and not loop:
 							valid_insert = new_image is not avl.album[-1]
 							
 						if valid_insert:
@@ -926,9 +938,8 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 					backmost_length = self._get_length(backmost_frame)
 					backmost_length += margin_before
 					while avl.space_before - backmost_length > \
-					      self.space_before \
-					      if backmost_frame \
-						  else avl.space_before > self.space_before:
+					      space_before if backmost_frame \
+						  else avl.space_before > space_before:
 						self._remove_image(avl, 0)
 						avl.space_before -= backmost_length
 						backmost_frame = shown_frames[0]
@@ -984,10 +995,10 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 			shown_frames = avl.shown_frames
 			frame_count = len(shown_frames)
 			placement_data = (
-				(self._place_before, self.margin[0],
+				(self._place_before, self.margin_before,
 				 range(avl.center_index, -1, -1)),
 				 
-				(self._place_after, self.margin[1],
+				(self._place_after, self.margin_after,
 				 range(avl.center_index, frame_count))
 			)
 			
@@ -1000,10 +1011,11 @@ class FrameStripLayout(GObject.Object, AlbumLayout):
 		if avl.center_frame:
 			side_ranges = (range(avl.center_index),
 			               range(avl.center_index + 1, len(avl.shown_frames)))
+			margins = [self.margin_before, self.margin_after]
 			side_lengths = []
 			
 			for i in range(2):
-				a_margin, a_side_range = self.margin[i], side_ranges[i]
+				a_margin, a_side_range = margins[i], side_ranges[i]
 				a_side_length = 0
 				for j in a_side_range:
 					a_frame = avl.shown_frames[j]
