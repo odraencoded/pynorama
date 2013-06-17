@@ -451,7 +451,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		
 		self.loop = loop
 		self.repeat = repeat
-		self.alignment=alignment
+		self.alignment = alignment
 		
 		self.margin_before, self.margin_after = margin
 		self.space_before, self.space_after = space
@@ -461,8 +461,8 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		return ImageStripLayout.SettingsWidget(self)
 		
 	def update(self, avl):
+		self._update_sides(avl)		
 		self._reposition_frames(avl)
-		self._update_sides(avl)
 		
 	def start(self, avl):
 		avl.center_index = avl.center_frame = avl.center_image = None
@@ -838,13 +838,31 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 			margin_before, margin_after = self.margin_before, self.margin_after
 			space_before, space_after = self.space_before, self.space_after
 			limit_before, limit_after = self.limit_before, self.limit_after
-			loop, repeat = self.repeat, self.loop
+			loop, repeat = self.loop, self.repeat
 			
 			center_image = avl.center_image
 			shown_frames, shown_images = avl.shown_frames, avl.shown_images
+			album = avl.album
 			
-			# Removes the center image from around the center frame
-			if not repeat:
+			if not loop:
+				first_image = album[0]
+				for i in range(avl.center_index, 0, -1):
+					if shown_images[i] is first_image:
+						for j in range(i):
+							self._remove_image(avl, 0)
+							
+						break
+						
+				last_image = album[-1]
+				for i in range(avl.center_index, len(shown_images)):
+					if shown_images[i] is last_image:
+						for j in range(len(shown_images) - i - 1):
+							self._remove_image(avl, i + 1)
+							
+						break
+						
+			elif not repeat:
+				# Removes the center image from around the center frame
 				for i in range(avl.center_index -1, -1, -1):
 					if shown_images[i] is center_image:
 						for j in range(i + 1):
@@ -874,20 +892,20 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 				
 				after_count = limit_after
 			
-			if	after_count < limit_after:
+			if after_count < limit_after:
 				foremost_frame = shown_frames[-1]
 				# Add an image if there is extra space
 				if avl.space_after < space_after:
 					if foremost_frame:
 						foremost_image = shown_images[-1]
-						new_image = avl.album.next(foremost_image)
+						new_image = album.next(foremost_image)
 						
 						valid_insert = True
 						if not repeat:
 							valid_insert = new_image is not center_image
 						
 						if valid_insert and not loop:
-							valid_insert = new_image is not avl.album[0]
+							valid_insert = new_image is not album[0]
 							
 						if valid_insert:
 							self._append_image(avl, new_image)
@@ -921,14 +939,14 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 				if avl.space_before < space_before:	
 					if backmost_frame:
 						backmost_image = shown_images[0]
-						new_image = avl.album.previous(backmost_image)
+						new_image = album.previous(backmost_image)
 						
 						valid_insert = True
 						if not repeat:
 							valid_insert = new_image is not center_image
 						
 						if valid_insert and not loop:
-							valid_insert = new_image is not avl.album[-1]
+							valid_insert = new_image is not album[-1]
 							
 						if valid_insert:
 							self._prepend_image(avl, new_image)
