@@ -439,12 +439,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
 		self.layout_dialog = None
-		self.layout = organization.ImageStripLayout()
 		self.avl = organization.AlbumViewLayout(album=self.image_list,
-		                                        layout=self.layout,
 		                                        view=self.imageview)
 		
+		self.avl.connect("notify::layout", self._layout_changed)
 		self.avl.connect("focus-changed", self._focus_changed)
+		
+		self.avl.layout = organization.ImageStripLayout()
 		
 		# Load preferences
 		preferences.load_into_window(self)
@@ -1168,9 +1169,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.layout_dialog.present()
 			
 		else:
+			layout = self.avl.layout
 			flags = Gtk.DialogFlags
 			try:
-				widget = self.layout.create_settings_widget()
+				widget = layout.create_settings_widget()
 			
 			except Exception:
 				message = _("Could not create layout settings dialog!")
@@ -1239,6 +1241,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def _album_order_changed(self, album):
 		self.__queue_refresh_index()
 	
+	def _layout_changed(self, *args):
+		layout = self.avl.layout
+		# Destroy a possibly open layout settings dialog
+		if self.layout_dialog:
+			self.layout_dialog.destroy()
+			self.layout_dialog = None
+			
+		# Turn "configure" menu item insensitive if the layout
+		# doesn't have a settings widget
+		configure = self.actions.get_action("layout-configure")
+		configure.set_sensitive(layout.has_settings_widget)
+		
 	def _focus_changed(self, avl, focused_image, hint):
 		if self._focus_loaded_handler_id:
 			self._old_focused_image.disconnect(self._focus_loaded_handler_id)
