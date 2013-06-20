@@ -310,7 +310,7 @@ class AlbumLayout:
 		''' Creates a widget for configuring the layout '''
 		raise TypeError
 		
-class SingleFrameLayout(AlbumLayout):
+class SingleImageLayout(AlbumLayout):
 	''' Places a single album image in a view '''
 	
 	def start(self, avl):
