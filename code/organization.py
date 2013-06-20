@@ -195,7 +195,7 @@ class AlbumViewLayout(GObject.Object):
 		"focus-changed" : (GObject.SIGNAL_RUN_FIRST, None, [object, bool])
 	}
     
-	def __init__(self, album, view, layout):
+	def __init__(self, album=None, view=None, layout=None):
 		GObject.Object.__init__(self)
 		self.__is_clean = True
 		self.__old_view = self.__old_album = self.__old_layout = None
