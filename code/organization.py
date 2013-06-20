@@ -1,3 +1,5 @@
+# coding=utf-8
+
 ''' organization.py contains code about collections of images. '''
 
 ''' ...and this file is part of Pynorama.
@@ -444,7 +446,12 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		self.connect("notify::direction", self._direction_changed)
 		self.connect("notify::repeat", self._placement_args_changed)
 		self.connect("notify::loop", self._placement_args_changed)
-		self.connect("notify::margin", self._placement_args_changed)
+		self.connect("notify::space-before", self._placement_args_changed)
+		self.connect("notify::space-after", self._placement_args_changed)
+		self.connect("notify::limit-before", self._placement_args_changed)
+		self.connect("notify::limit-after", self._placement_args_changed)
+		self.connect("notify::margin-before", self._placement_args_changed)
+		self.connect("notify::margin-after", self._placement_args_changed)
 		self.connect("notify::alignment", self._placement_args_changed)
 		
 		self.direction = direction
@@ -1104,17 +1111,24 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		                        _CoordinateToTop, _CoordinateToBottom)
 	}
 	
-	class SettingsWidget(Gtk.Box):
+	class SettingsWidget(Gtk.Notebook):
 		''' A widget for configuring a ImageStripLayout '''
 		def __init__(self, layout):
-			Gtk.Box.__init__(self)
-			self.set_orientation(Gtk.Orientation.VERTICAL)
+			Gtk.Notebook.__init__(self)
 			
-			self.layout = layout
+			self.layout = layout	
+			line_args = {
+				"orientation": Gtk.Orientation.HORIZONTAL,
+				"spacing": 24
+			}
+						
+			#-- Create direction widgets --#
+			label = _("Image strip direction")
+			direction_label = Gtk.Label(label)
+			direction_tooltip = _('''\
+The images that come after the center image are placed \
+towards this direction''')
 			
-			# Create direction widgets
-			direction_line = Gtk.Box(Gtk.Orientation.HORIZONTAL, 20)
-			direction_label = Gtk.Label(_("Strip direction"))
 			direction_model = Gtk.ListStore(str, str)
 			
 			direction_model.append([LayoutDirection.Up, _("Up")])
@@ -1122,47 +1136,222 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 			direction_model.append([LayoutDirection.Down, _("Down")])
 			direction_model.append([LayoutDirection.Left, _("Left")])
 			
-			# Create combobox
+			#-- Create combobox --#
 			direction_selector = Gtk.ComboBox.new_with_model(direction_model)
 			direction_selector.set_id_column(0)
+			direction_selector.set_tooltip_text(direction_tooltip)
 			
-			# Add text renderer
+			#-- Add text renderer --#
 			text_renderer = Gtk.CellRendererText()
 			direction_selector.pack_start(text_renderer, True)
 			direction_selector.add_attribute(text_renderer, "text", 1)
 			
-			# Pack direction widgets
-			direction_line.pack_start(direction_label, False, True, 0)
-			direction_line.pack_end(direction_selector, False, True, 0)
+			#-- Alignment --#
+			label = _("Alignment")
 			
-			# Loop checkbox
-			label = _("Loop album")
+			alignment_label = Gtk.Label(label)
+			alignment_adjust = Gtk.Adjustment(0, -.5, .5, .1, .25)
+			alignment_scale = Gtk.Scale(adjustment=alignment_adjust)
+			alignment_scale.set_draw_value(False)
+			
+			#-- Loop checkbox --#
+			label = _("Loop around the album")
+			loop_tooltip = _('''\
+Place the first image of an album after the last, and vice versa''')
 			loop_button = Gtk.CheckButton.new_with_label(label)
+			loop_button.set_tooltip_text(loop_tooltip)
 			
-			# Repeat checkbox
-			label = _("Repeat album")
+			#-- Repeat checkbox --#
+			label = _("Repeat the album images")
+			repeat_tooltip = _('''\
+In albums with few, small images, repeat those images indefinetely''')
 			repeat_button = Gtk.CheckButton.new_with_label(label)
+			repeat_button.set_tooltip_text(repeat_tooltip)
+			
+			#-- Pixel margin --#
+			margin_tooltip = _('''Margin means distance''')
+
+			label = _("Margin between images before center")
+			margin_before_label = Gtk.Label(label)
+			margin_before_adjust = Gtk.Adjustment(0, 0, 512, 8, 64)
+			margin_before_entry = Gtk.SpinButton(
+			                          adjustment=margin_before_adjust)
+			margin_before_entry.set_tooltip_text(margin_tooltip)
+			
+			label = _("Margin between images after center")
+			margin_after_label = Gtk.Label(label)
+			margin_after_adjust = Gtk.Adjustment(0, 0, 512, 8, 64)
+			margin_after_entry = Gtk.SpinButton(adjustment=margin_after_adjust)
+			margin_after_entry.set_tooltip_text(margin_tooltip)
+			
+			#-- Performance stuff --#
+			label = _('''\
+These settings affect how many images are laid out at the same time.
+If you are having performance problems, consider decreasing these values.''')
+			performance_label = Gtk.Label(label)
 						
+			#-- Pixel target --#
+			space_tooltip = _('''A good value is around twice your \
+screen height or width, depending on the strip direction''')
+
+			label = _("Pixels to fill before center")
+			space_before_label = Gtk.Label(label)
+			space_before_adjust = Gtk.Adjustment(0, 0, 8192, 32, 256)
+			space_before_entry = Gtk.SpinButton(adjustment=space_before_adjust)
+			space_before_entry.set_tooltip_text(space_tooltip)
+			
+			label = _("Pixels to fill after center")
+			space_after_label = Gtk.Label(label)
+			space_after_adjust = Gtk.Adjustment(0, 0, 8192, 32, 256)
+			space_after_entry = Gtk.SpinButton(adjustment=space_after_adjust)
+			space_after_entry.set_tooltip_text(space_tooltip)
+			
+			# Count limits
+			limits_tooltip = _('''\
+This is only useful if the images being laid out \
+are too small to breach the pixel count limit''')
+						
+			label = _("Image limit before center")
+			limit_before_label = Gtk.Label(label)
+			limit_before_adjust = Gtk.Adjustment(0, 0, 512, 1, 10)
+			limit_before_entry = Gtk.SpinButton(adjustment=limit_before_adjust)
+			limit_before_entry.set_tooltip_text(limits_tooltip)
+			
+			label = _("Image limit after center")
+			limit_after_label = Gtk.Label(label)
+			limit_after_adjust = Gtk.Adjustment(0, 0, 512, 1, 10)
+			limit_after_entry = Gtk.SpinButton(adjustment=limit_after_adjust)
+			limit_after_entry.set_tooltip_text(limits_tooltip)
+			
 			# Bind properties
+			direction_selector.connect("changed",
+			                           self._refresh_marks, alignment_scale)
 			binding_flags = GObject.BindingFlags
 			flags = binding_flags.BIDIRECTIONAL | binding_flags.SYNC_CREATE
 			self.layout.bind_property("direction", direction_selector,
 			                          "active-id", flags)
+			                          
+			self.layout.bind_property("alignment", alignment_adjust,
+			                          "value", flags)
 			                          
 			self.layout.bind_property("loop", loop_button,
 			                          "active", flags)
 			
 			self.layout.bind_property("repeat", repeat_button,
 			                          "active", flags)
-			
+			                          
+			self.layout.bind_property("margin-before", margin_before_adjust,
+			                          "value", flags)
+			self.layout.bind_property("margin-after", margin_after_adjust,
+			                          "value", flags)
+			                          			
+			self.layout.bind_property("limit-before", limit_before_adjust,
+			                          "value", flags)
+			self.layout.bind_property("limit-after", limit_after_adjust,
+			                          "value", flags)
+			self.layout.bind_property("space-before", space_before_adjust,
+			                          "value", flags)
+			self.layout.bind_property("space-after", space_after_adjust,
+			                          "value", flags)
+			                          
 			# This is a special GUI bind, you can't really repeat 
 			# the album without looping around it
 			loop_button.bind_property("active", repeat_button,
 			                          "sensitive", binding_flags.SYNC_CREATE)
 			                          
-			# Pack lines
-			self.pack_start(direction_line, False, False, 0)
-			self.pack_start(loop_button, False, False, 0)
-			self.pack_start(repeat_button, False, False, 0)
+			# Add tabs, pack lines
+			def add_tab(self, label):
+				gtk_label = Gtk.Label(label)
+				box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+				box.set_border_width(24)
+				self.append_page(box, gtk_label)
+				return box
 			
-			self.show_all()	
+			left_aligned_labels = [
+				direction_label, 
+				margin_before_label, margin_after_label,
+				performance_label,
+				space_before_label, space_after_label,
+				limit_before_label, limit_after_label
+			]
+			for label in left_aligned_labels:
+				label.set_alignment(0, .5)
+				
+			alignment_label.set_alignment(0, 0)
+			direction_label.set_hexpand(True)
+			space_before_label.set_hexpand(True)
+			performance_label.set_line_wrap(True)
+			
+			appearance_grid = Gtk.Grid()
+			appearance_grid.set_row_spacing(12)
+			appearance_grid.set_column_spacing(24)
+			
+			appearance_grid.attach(direction_label, 0, 0, 1, 1)
+			appearance_grid.attach(direction_selector, 1, 0, 1, 1)
+			
+			appearance_grid.attach(alignment_label, 0, 1, 1, 1)
+			appearance_grid.attach(alignment_scale, 1, 1, 1, 1)
+			
+			appearance_grid.attach(Gtk.Separator(), 0, 2, 2, 1)
+			
+			appearance_grid.attach(margin_before_label, 0, 3, 1, 1)
+			appearance_grid.attach(margin_before_entry, 1, 3, 1, 1)
+			appearance_grid.attach(margin_after_label, 0, 4, 1, 1)
+			appearance_grid.attach(margin_after_entry, 1, 4, 1, 1)
+			
+			appearance_grid.attach(Gtk.Separator(), 0, 5, 2, 1)
+			
+			loop_line = Gtk.Box(**line_args)
+			loop_line.pack_start(loop_button, False, True, 0)
+			loop_line.pack_start(repeat_button, False, True, 0)
+			
+			appearance_grid.attach(loop_line, 0, 6, 2, 1)
+			
+			performance_grid = Gtk.Grid()
+			performance_grid.set_row_spacing(12)
+			performance_grid.set_column_spacing(24)
+			
+			performance_grid.attach(performance_label, 0, 0, 2, 1)
+			performance_grid.attach(Gtk.Separator(), 0, 1, 2, 1)
+			
+			performance_grid.attach(space_before_label, 0, 2, 1, 1)
+			performance_grid.attach(space_before_entry, 1, 2, 1, 1)
+			performance_grid.attach(space_after_label, 0, 3, 1, 1)
+			performance_grid.attach(space_after_entry, 1, 3, 1, 1)
+			performance_grid.attach(Gtk.Separator(), 0, 4, 2, 1)
+			
+			performance_grid.attach(limit_before_label, 0, 5, 1, 1)
+			performance_grid.attach(limit_before_entry, 1, 5, 1, 1)
+			performance_grid.attach(limit_after_label, 0, 6, 1, 1)
+			performance_grid.attach(limit_after_entry, 1, 6, 1, 1)
+			
+			appearance_alignment = Gtk.Alignment()
+			appearance_alignment.set_padding(12, 12, 24, 24)
+			appearance_alignment.add(appearance_grid)
+			
+			performance_alignment = Gtk.Alignment()
+			performance_alignment.set_padding(12, 12, 24, 24)
+			performance_alignment.add(performance_grid)
+			
+			label = _("Appearance")
+			appearance_label = Gtk.Label(label)
+			self.append_page(appearance_alignment, appearance_label)
+			
+			label = _("Performance")
+			performance_label = Gtk.Label(label)
+			self.append_page(performance_alignment, performance_label)
+			
+			self.show_all()
+			
+		def _refresh_marks(self, combobox, scale):
+			scale.clear_marks()
+			active_id = combobox.get_active_id()
+			if active_id in ("left", "right"):
+				scale.add_mark(-.5, Gtk.PositionType.BOTTOM, _("Top"))
+				scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Middle"))
+				scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Bottom"))
+					
+			else:
+				scale.add_mark(-.5, Gtk.PositionType.BOTTOM, _("Left"))
+				scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Center"))
+				scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Right"))

@@ -438,6 +438,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.drag_dest_set_target_list(target_list)
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
+		self.layout_dialog = None
 		self.layout = organization.ImageStripLayout()
 		self.avl = organization.AlbumViewLayout(album=self.image_list,
 		                                        layout=self.layout,
@@ -1162,26 +1163,41 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def show_layout_dialog(self, *data):
 		''' Shows a dialog with the layout settings widget '''
-		flags = Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT
-		try:
-			widget = self.layout.create_settings_widget()
-			
-		except Exception:
-			message = _("Could not create layout settings dialog!")
-			dialog = Gtk.MessageDialog(self, flags,
-			             Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
-			             message)
-			             
-			notification.log_exception(message)
+		
+		if self.layout_dialog:
+			self.layout_dialog.present()
 			
 		else:
-			dialog = Gtk.Dialog(_("Layout Settings"), self,
-			         flags, (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
-			         
-			dialog.get_content_area().pack_start(widget, True, True, 0)
+			flags = Gtk.DialogFlags
+			try:
+				widget = self.layout.create_settings_widget()
 			
-		dialog.run()
-		dialog.destroy()
+			except Exception:
+				message = _("Could not create layout settings dialog!")
+				dialog = Gtk.MessageDialog(self,
+				             flags.MODAL | flags.DESTROY_WITH_PARENT,
+					         Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
+					         message)
+					         
+				notification.log_exception(message)
+				dialog.run()
+				dialog.destroy()
+			
+			else:
+				dialog = Gtk.Dialog(_("Layout Settings"), self,
+					     flags.DESTROY_WITH_PARENT,
+					     (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
+			
+				content_area = dialog.get_content_area()
+				content_area.pack_start(widget, True, True, 0)
+				
+				dialog.connect("response", self._layout_dialog_response)
+				dialog.present()
+				self.layout_dialog = dialog
+				
+	def _layout_dialog_response(self, *data):
+		self.layout_dialog.destroy()
+		self.layout_dialog = None
 		
 	''' Methods after this comment are actually kind of a big deal.
 	    Do not rename them. '''
