@@ -441,7 +441,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	                   margin=(0, 0), space=(2560, 3840), limit=(40, 60)):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
-		self.has_settings_dialog = True
+		self.has_settings_widget = True
 		
 		self.connect("notify::direction", self._direction_changed)
 		self.connect("notify::repeat", self._placement_args_changed)
