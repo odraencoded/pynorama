@@ -687,7 +687,7 @@ class AnimatedPixbufFrame(ImageFrame):
 			self._view_anim[view] = anim_iter, anim_handle
 	
 	def draw(self, cr, drawstate):
-		anim_iter, anim_handle = self._view_anim[view]
+		anim_iter, anim_handle = self._view_anim[drawstate.view]
 		pixbuf = anim_iter.get_pixbuf()
 		if pixbuf:
 			offset = point.multiply(self.size, (-.5, -.5))
