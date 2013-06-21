@@ -1,0 +1,21 @@
+---
+layout: default
+author: Leonardo Augusto Pereira
+---
+<p>Pynorama is <em>just</em> an image viewer, avaiable on any platform with <a href="http://www.gtk.org/">Gtk3</a> and <a href="http://www.python.org/">python3</a> ports.
+
+{% if site.posts | size > 0 %}
+<ol reversed id="post-list">
+	{% for post in site.posts %}
+	<li><article class="post">
+		<header class="some-bar post-header">
+			<a href="{{ site.url }}{{ post.url }}"><time class="post-date" datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date_to_long_string }}</time></a>
+			<h2><a href="{{ site.url }}{{ post.url }}">{{ post.title }}</a></h2>
+		</header>
+		
+{{ post.content }}
+
+	</article>
+	{% endfor %}
+</ol>
+{% endif %}

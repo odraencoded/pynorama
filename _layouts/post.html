@@ -1,0 +1,14 @@
+{% include meta.html %}
+{% include header.html %}
+
+<article class="post">
+	<header class="some-bar post-header">
+		<time class="post-date" datetime="{{ page.date | date_to_xmlschema }}">{{ page.date | date_to_long_string }}</time>
+		<h2>{{ page.title }}</h2>
+	</header>
+	
+{{ content }}
+
+</article>
+
+{% include footer.html %}

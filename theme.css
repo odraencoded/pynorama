@@ -1,0 +1,98 @@
+html {
+	background-color: #fffefd;
+	color: #320;
+	margin: 0px 60px 20px;
+	min-width: 380px;
+}
+body {
+	max-width: 900px;
+	margin: 0 auto;
+	padding: 20px 40px 20px;
+}
+body > header, .post-header {
+	margin: 0px -40px 30px
+}
+#headline-group {
+	height: 59px;
+	display: inline-block;
+	text-align: right;
+}
+#headline { font: italic bold xx-large /1em sans-serif; }
+#headline > a { color: inherit; }
+#tagline { display: block; }
+
+#logo {
+	background-image: url("logo.png");
+	position: relative;
+	float: left;
+	width: 128px;
+	height: 128px;
+	margin: -10px 20px 10px -40px;
+}
+
+#navbar {
+	border-bottom-left-radius: 30px;
+	padding-left: 88px;
+}
+
+#post-list, #post-list > li {
+	display: block;
+	padding: 0;
+}
+
+#post-list > li {
+	margin: 50px 0px;
+}
+
+body > footer {
+	text-align: center;
+}
+
+a {
+	color: #d53;
+	text-decoration: none;
+}
+a:hover {
+	color: #eb0;
+	text-decoration: underline;
+}
+a:active { outline: none; }
+nav a { font-weight: bold; }
+
+h1, h2 {
+	padding: 0; margin: 0;
+	font-style: italic;
+}
+
+.bar-list {
+	display: block;
+	margin: 0;
+	padding: 0;
+}
+
+.bar-list > li {
+	display: inline-block;
+	margin-right: 40px;
+}
+
+.some-bar {
+	border-bottom: 5px solid #840;
+	text-shadow: 1px 1px rgba(255, 255, 255, 0.5);
+	padding: 10px 20px;
+}
+
+.some-bar a {
+	text-decoration: none;
+}
+.post-header {
+	position: relative;
+	padding-right: 160px;
+}
+.post-date {
+	display: block;
+	position: absolute;
+	right: 20px;
+	bottom: 10px;
+	font-size: 90%;
+	text-align: right;
+}
