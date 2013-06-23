@@ -208,23 +208,23 @@ class AlbumViewLayout(GObject.Object):
 	
 	@property	
 	def focus_image(self):
-		return self.layout.get_focus_image(self)
+		return self.__old_layout.get_focus_image(self)
 	
 	@property
 	def focus_frame(self):
-		return self.layout.get_focus_frame(self)
+		return self.__old_layout.get_focus_frame(self)
 	
 	def go_index(self, index):
-		self.layout.go_image(self, self.album[index])
+		self.__old_layout.go_image(self, self.album[index])
 		
 	def go_image(self, image):
-		self.layout.go_image(self, image)
+		self.__old_layout.go_image(self, image)
 	
 	def go_next(self):
-		self.layout.go_next(self)
+		self.__old_layout.go_next(self)
 	
 	def go_previous(self):
-		self.layout.go_previous(self)
+		self.__old_layout.go_previous(self)
 	
 	def clean(self):
 		if not self.__is_clean:
@@ -232,7 +232,9 @@ class AlbumViewLayout(GObject.Object):
 			self.__is_clean = True
 	
 	def _layout_changed(self, *data):
+		focus_image = None
 		if self.__old_layout:
+			focus_image = self.focus_image
 			self.__old_layout.unsubscribe(self)
 			self.clean()
 		
@@ -241,6 +243,7 @@ class AlbumViewLayout(GObject.Object):
 			self.__is_clean = False
 			self.layout.start(self)
 			self.layout.subscribe(self)
+			self.go_image(focus_image)
 		
 	album = GObject.property(type=object, default=None)
 	view = GObject.property(type=object, default=None)
@@ -1355,3 +1358,31 @@ are too small to breach the pixel count limit''')
 				scale.add_mark(-.5, Gtk.PositionType.BOTTOM, _("Left"))
 				scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Center"))
 				scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Right"))
+
+
+#--- Making the built-in layouts avaiable ---#
+from extending import LayoutOption
+
+# Setup single image layout option
+SingleImageLayout.Option = LayoutOption(
+	codename="single-image",
+	name=_("Single Image"),
+	description=_("Shows a single image")
+)
+
+SingleImageLayout.Option.create_layout = SingleImageLayout
+
+
+# Setup image strip layout option
+ImageStripLayout.Option = LayoutOption(
+	codename="image-strip",
+	name=_("Image Strip"),
+	description=_("Shows many images side by side")
+)
+
+ImageStripLayout.Option.create_layout = ImageStripLayout
+
+
+# Append options
+LayoutOption.List.append(SingleImageLayout.Option)
+LayoutOption.List.append(ImageStripLayout.Option)

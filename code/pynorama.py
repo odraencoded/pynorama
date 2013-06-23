@@ -22,6 +22,7 @@ import gc, math, random, os, sys
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
+import extending
 import organization, navigation, loading, preferences, viewing, notification
 from viewing import ZoomMode
 from loading import DirectoryLoader
@@ -438,6 +439,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.drag_dest_set_target_list(target_list)
 		self.imageview.connect("drag-data-received", self.dragged_data)
 		
+		# Setup layout stuff
 		self.layout_dialog = None
 		self.avl = organization.AlbumViewLayout(album=self.image_list,
 		                                        view=self.imageview)
@@ -445,7 +447,44 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.avl.connect("notify::layout", self._layout_changed)
 		self.avl.connect("focus-changed", self._focus_changed)
 		
-		self.avl.layout = organization.ImageStripLayout()
+		
+		# Build layout menu
+		self.layout_options_merge_ids = dict()
+		optionList = extending.LayoutOption.List
+		
+		previous_action = None
+		for an_index in reversed(range(len(optionList))):
+			an_option = optionList[an_index]
+			a_merge_id = self.manager.new_merge_id()
+			
+			# create action
+			an_action_name = "layout-option-" + an_option.codename
+			an_action = Gtk.RadioAction(an_action_name, an_option.name,
+			                            an_option.description,
+			                            None, an_index)
+			                            
+			if previous_action:
+				an_action.join_group(previous_action)
+			previous_action = an_action
+				
+			self.actions.add_action(an_action)
+			
+			# Insert UI
+			self.manager.add_ui(
+				a_merge_id,
+				"/ui/menubar/view/layout/",
+				an_action_name, # the item name
+				an_action_name, # the action name
+				Gtk.UIManagerItemType.MENUITEM,
+				True
+			)
+			
+			self.layout_options_merge_ids[an_option] = a_merge_id
+		
+		if previous_action:
+			previous_action.connect("changed", self._layout_option_changed)
+			previous_action.set_current_value(0)
+		
 		
 		# Load preferences
 		preferences.load_into_window(self)
@@ -772,7 +811,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def __sort_changed(self, *data):
 		if not self.image_list.autosort:
 			self.image_list.sort()
-			
+	
+	
+	def _layout_option_changed(self, radio_action, current_action):
+		option_list = extending.LayoutOption.List
+		current_option = option_list[current_action.get_current_value()]
+		self.avl.layout = current_option.create_layout()
+
+	
 	def magnification_changed(self, widget, data=None):
 		self.refresh_interp()
 		self.auto_zoom_zoom_modified = True
