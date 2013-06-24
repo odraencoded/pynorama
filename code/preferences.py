@@ -141,6 +141,7 @@ class Dialog(Gtk.Dialog):
 		Settings.set_double("zoom-effect", zoom_effect)
 		Settings.set_int("rotation-effect", rotation_effect)
 
+
 def LoadForApp(app):
 	default_h = Settings.get_double("start-horizontal-position")
 	default_v = Settings.get_double("start-vertical-position")
@@ -149,93 +150,69 @@ def LoadForApp(app):
 	app.spin_effect = Settings.get_int("rotation-effect")
 
 
-# TODO: Use enums, seriously.
 def LoadForWindow(window):
 	window.sort_automatically = Settings.get_boolean("sort-auto")
 	window.reverse_ordering = Settings.get_boolean("sort-reverse")
 	window.toolbar_visible = Settings.get_boolean("interface-toolbar")
 	window.statusbar_visible = Settings.get_boolean("interface-statusbar")
 	
-	sort_mode_str = Settings.get_string("sort-mode")
-	sort_mode = ["By Name", "By Characters",
-	                 "By Modification Date",
-	                 "By File Size", "By Image Size",
-	                 "By Image Width", "By Image Height"].index(sort_mode_str)
-
-	hscrollbar_str = Settings.get_string("interface-horizontal-scrollbar")
-	vscrollbar_str = Settings.get_string("interface-vertical-scrollbar")
-	hscrollbar = ["Hidden", "Top Side", "Bottom Side"].index(hscrollbar_str)
-	vscrollbar = ["Hidden", "Left Side", "Right Side"].index(vscrollbar_str)
-	interp_min_str = Settings.get_string("interpolation-minify")
-	interp_mag_str = Settings.get_string("interpolation-magnify")
-	interp_dict = {"Nearest Neighbour" : cairo.FILTER_NEAREST,
-	               "Bilinear Interpolation" : cairo.FILTER_BILINEAR,
-	               "Faster Filter" : cairo.FILTER_FAST,
-	               "Better Filter" : cairo.FILTER_GOOD,
-	               "Stronger Filter" : cairo.FILTER_BEST }
-	interp_min = interp_dict.get(interp_min_str, cairo.FILTER_BILINEAR)
-	interp_mag = interp_dict.get(interp_mag_str, cairo.FILTER_NEAREST)
+	window.ordering_mode = Settings.get_enum("sort-mode")
+	
+	hscrollbar = Settings.get_enum("interface-horizontal-scrollbar")
+	vscrollbar = Settings.get_enum("interface-vertical-scrollbar")
+	window.hscrollbar_placement = hscrollbar
+	window.vscrollbar_placement = vscrollbar
+	
+	interp_min_enum = Settings.get_enum("interpolation-minify")
+	interp_mag_enum = Settings.get_enum("interpolation-magnify")
+	interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
+	              cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
+	interp_min = interp_map[interp_min_enum]
+	interp_mag = interp_map[interp_mag_enum]
 	
 	auto_zoom = Settings.get_boolean("auto-zoom")
 	auto_zoom_minify = Settings.get_boolean("auto-zoom-minify")
 	auto_zoom_magnify = Settings.get_boolean("auto-zoom-magnify")
-	auto_zoom_mode_str = Settings.get_string("auto-zoom-mode")
-	auto_zoom_mode = ["Fill Window",
-	                  "Match Width",
-	                  "Match Height",
-	                  "Fit Image"].index(auto_zoom_mode_str)
+	auto_zoom_mode = Settings.get_enum("auto-zoom-mode")
 	
-	window.ordering_mode = sort_mode
-	window.hscrollbar_placement = hscrollbar
-	window.vscrollbar_placement = vscrollbar
 	window.set_interpolation(interp_min, interp_mag)
 	window.set_auto_zoom_mode(auto_zoom_mode)
 	window.set_auto_zoom(auto_zoom, auto_zoom_minify, auto_zoom_magnify)
-	
+
+
 def SaveFromWindow(window):
 	Settings.set_boolean("sort-auto", window.sort_automatically)
 	Settings.set_boolean("sort-reverse", window.reverse_ordering)
 	Settings.set_boolean("interface-toolbar", window.toolbar_visible)
 	Settings.set_boolean("interface-statusbar", window.statusbar_visible)
 	
-	sort_mode = window.ordering_mode
-	sort_mode_str = ["By Name", "By Characters",
-	                 "By Modification Date",
-	                 "By File Size", "By Image Size",
-	                 "By Image Width", "By Image Height"][sort_mode]
-	                 
+	Settings.set_enum("sort-mode", window.ordering_mode)
+	
 	hscrollbar = window.hscrollbar_placement
 	vscrollbar = window.vscrollbar_placement
-	hscrollbar_str = ["Hidden", "Top Side", "Bottom Side"][hscrollbar]
-	vscrollbar_str = ["Hidden", "Left Side", "Right Side"][vscrollbar]
+	Settings.set_enum("interface-horizontal-scrollbar", hscrollbar)
+	Settings.set_enum("interface-vertical-scrollbar", vscrollbar)
+	
 	interp_min, interp_mag = window.get_interpolation()
-	interp_dict = { cairo.FILTER_NEAREST : "Nearest Neighbour",
-	                cairo.FILTER_BILINEAR : "Bilinear Interpolation",
-	                cairo.FILTER_FAST : "Faster Filter",
-	                cairo.FILTER_GOOD : "Better Filter",
-	                cairo.FILTER_BEST : "Stronger Filter" }
-	interp_min_str = interp_dict.get(interp_min, "Bilinear Interpolation")
-	interp_mag_str = interp_dict.get(interp_mag, "Nearest Neighbour")
+	interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
+	              cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
+	interp_min_enum = interp_map.index(interp_min)
+	interp_mag_enum = interp_map.index(interp_mag)
+	
 	auto_zoom, auto_zoom_minify, auto_zoom_magnify = window.get_auto_zoom()
 	auto_zoom_mode = window.get_auto_zoom_mode()
-	auto_zoom_mode_str = ["Fill Window",
-	                  "Match Width",
-	                  "Match Height",
-	                  "Fit Image"][auto_zoom_mode]
-	                  
-	Settings.set_string("sort-mode", sort_mode_str)
+	
 	Settings.set_boolean("auto-zoom", auto_zoom)
 	Settings.set_boolean("auto-zoom-minify", auto_zoom_minify)
 	Settings.set_boolean("auto-zoom-magnify", auto_zoom_magnify)
-	Settings.set_string("auto-zoom-mode", auto_zoom_mode_str)
-	Settings.set_string("interface-horizontal-scrollbar", hscrollbar_str)
-	Settings.set_string("interface-vertical-scrollbar", vscrollbar_str)
-	Settings.set_string("interpolation-minify", interp_min_str)
-	Settings.set_string("interpolation-magnify", interp_mag_str)
+	Settings.set_enum("auto-zoom-mode", auto_zoom_mode)
+	Settings.set_enum("interpolation-minify", interp_min_enum)
+	Settings.set_enum("interpolation-magnify", interp_mag_enum)
 	
 	fullscreen = window.get_fullscreen()
 	Settings.set_boolean("start-fullscreen", fullscreen)
-	
+
+
 class PointScale(Gtk.DrawingArea):
 	''' A widget like a Gtk.HScale and Gtk.VScale together. '''
 	def __init__(self, hrange, vrange):

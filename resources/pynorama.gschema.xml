@@ -1,5 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
+	<enum id="com.example.pynorama.ordering-modes">
+		<value nick="By Name" value="0"/>
+		<value nick="By Characters" value="1"/>
+		<value nick="By Modification Date" value="2"/>
+		<value nick="By File Size" value="3"/>
+		<value nick="By Image Size" value="4"/>
+		<value nick="By Image Width" value="5"/>
+		<value nick="By Image Height" value="6"/>
+	</enum>
+	
+	<enum id="com.example.pynorama.vertical-placement">
+		<value nick="Bottom Side" value="2"/>
+		<value nick="Top Side" value="1"/>
+		<value nick="Hidden" value="0"/>
+	</enum>
+	
+	<enum id="com.example.pynorama.horizontal-placement">
+		<value nick="Right Side" value="2"/>
+		<value nick="Left Side" value="1"/>
+		<value nick="Hidden" value="0"/>
+	</enum>
+	
+	<enum id="com.example.pynorama.interpolation-filters">
+		<value nick="Nearest Neighbour" value="0"/>
+		<value nick="Bilinear Interpolation" value="1"/>
+		<value nick="Faster Filter" value="2"/>
+		<value nick="Better Filter" value="3"/>
+		<value nick="Stronger Filter" value="4"/>
+	</enum>
+	
+	<enum id="com.example.pynorama.zoom-modes">
+		<value nick="Fill Window" value="0"/>
+		<value nick="Match Width" value="1"/>
+		<value nick="Match Height" value="2"/>
+		<value nick="Fit Image" value="3"/>
+	</enum>
+	
 	<schema id="com.example.pynorama" path="/com/example/pynorama/">
 		<key name="start-horizontal-position" type="d">
 			<summary>Horizontal scrollbar position after loading an image</summary>
@@ -29,17 +66,8 @@
 			<summary>Sort images in reverse order</summary>
 			<default>false</default>
 		</key>
-		<key name="sort-mode" type="s">
+		<key name="sort-mode" enum="com.example.pynorama.ordering-modes">
 			<summary>How images should be ordered</summary>
-			<choices>
-				<choice value="By Name" />
-				<choice value="By Characters" />
-				<choice value="By Modification Date" />
-				<choice value="By File Size" />
-				<choice value="By Image Size" />
-				<choice value="By Image Width" />
-				<choice value="By Image Height" />
-			</choices>
 			<default>"By Name"</default>
 		</key>
 		<key name="auto-zoom" type="b">
@@ -57,39 +85,19 @@
 			<description>If this is disabled images will not be magnified to match the auto-zoom-mode</description>
 			<default>false</default>
 		</key>
-		<key name="auto-zoom-mode" type="s">
+		<key name="auto-zoom-mode" enum="com.example.pynorama.zoom-modes">
 			<summary>Automatic zoom mode</summary>
 			<description>Rule to use for adjusting images.</description>
-			<choices>
-				<choice value="Fit Image" />
-				<choice value="Fill Window" />
-				<choice value="Match Width" />
-				<choice value="Match Height" />
-			</choices>
 			<default>"Fill Window"</default>
 		</key>
-		<key name="interpolation-minify" type="s">
+		<key name="interpolation-minify" enum="com.example.pynorama.interpolation-filters">
 			<summary>Interpolation filter for minified images</summary>
 			<description>The interpolation filter used in images made smaller than they originally were</description>
-			<choices>
-				<choice value="Nearest Neighbour" />
-				<choice value="Bilinear Interpolation" />
-				<choice value="Faster Filter" />
-				<choice value="Better Filter" />
-				<choice value="Stronger Filter" />
-			</choices>
 			<default>"Nearest Neighbour"</default>
 		</key>
-		<key name="interpolation-magnify" type="s">
+		<key name="interpolation-magnify" enum="com.example.pynorama.interpolation-filters">
 			<summary>Interpolation filter for magnified images</summary>
 			<description>The interpolation filter used in images made bigger than they originally were</description>
-			<choices>
-				<choice value="Nearest Neighbour" />
-				<choice value="Bilinear Interpolation" />
-				<choice value="Faster Filter" />
-				<choice value="Better Filter" />
-				<choice value="Stronger Filter" />
-			</choices>
 			<default>"Bilinear Interpolation"</default>
 		</key>
 		<key name="interface-toolbar" type="b">
@@ -102,22 +110,12 @@
 			<description>Whether to display the statusbar with the status in the window</description>
 			<default>true</default>
 		</key>
-		<key name="interface-horizontal-scrollbar" type="s">
+		<key name="interface-horizontal-scrollbar" enum="com.example.pynorama.vertical-placement">
 			<summary>Horizontal scrollbar placement in the window</summary>
-			<choices>
-				<choice value="Bottom Side" />
-				<choice value="Top Side" />
-				<choice value="Hidden" />
-			</choices>
 			<default>"Bottom Side"</default>
 		</key>
-		<key name="interface-vertical-scrollbar" type="s">
+		<key name="interface-vertical-scrollbar" enum="com.example.pynorama.horizontal-placement">
 			<summary>Vertical scrollbar placement in the window</summary>
-			<choices>
-				<choice value="Right Side" />
-				<choice value="Left Side" />
-				<choice value="Hidden" />
-			</choices>
 			<default>"Right Side"</default>
 		</key>
 		<key name="start-fullscreen" type="b">
