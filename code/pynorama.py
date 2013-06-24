@@ -46,7 +46,7 @@ class ImageViewer(Gtk.Application):
 	def do_startup(self):
 		Gtk.Application.do_startup(self)
 		
-		preferences.load_into_app(self)
+		preferences.LoadForApp(self)
 		
 		drag_handler = navigation.DragHandler(-1)
 		hover_handler = navigation.HoverHandler(0.2)
@@ -329,7 +329,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self._focus_loaded_handler_id = None
 		self._old_focused_image = None
 		self.go_new = False
-		self.ordering_modes = [
+		self.ordering_modes_map = [
 			organization.SortingKeys.ByName,
 			organization.SortingKeys.ByCharacters,
 			organization.SortingKeys.ByFileDate,
@@ -338,11 +338,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			organization.SortingKeys.ByImageWidth,
 			organization.SortingKeys.ByImageHeight
 		]
-		self.active_ordering = organization.SortingKeys.ByName
 		self.image_list = organization.Album()
 		self.image_list.connect("image-added", self._image_added)
 		self.image_list.connect("image-removed", self._image_removed)
 		self.image_list.connect("order-changed", self._album_order_changed)
+		
 		# Set clipboard
 		self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
 		
@@ -353,13 +353,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		# Setup actions
 		self.setup_actions()
-		
-		self.image_list.bind_property(
-		     "reverse", self.actions.get_action("sort-reverse"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
-		self.image_list.bind_property(
-		     "autosort", self.actions.get_action("sort-auto"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
 		
 		self.manager.add_ui_from_string(ViewerWindow.ui_description)
 		self.menubar = self.manager.get_widget("/menubar")
@@ -486,8 +479,42 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			previous_action.set_current_value(0)
 		
 		
+		# Bind properties
+		self.bind_property("sort-automatically", self.image_list,
+		                   "autosort", GObject.BindingFlags.BIDIRECTIONAL)
+		self.bind_property("reverse-ordering", self.image_list,
+		                   "reverse", GObject.BindingFlags.BIDIRECTIONAL)
+		self.bind_property("toolbar-visible", self.toolbar,
+		                   "visible", GObject.BindingFlags.BIDIRECTIONAL)
+		self.bind_property("statusbar-visible", self.statusbarboxbox,
+		                   "visible", GObject.BindingFlags.BIDIRECTIONAL)
+		self.bind_property(
+		     "reverse-ordering", self.actions.get_action("sort-reverse"),
+		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		self.bind_property(
+		     "sort-automatically", self.actions.get_action("sort-auto"),
+		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		self.bind_property(
+		     "ordering-mode", self.actions.get_action("sort-name"),
+		     "current-value", GObject.BindingFlags.BIDIRECTIONAL)
+		
+		self.bind_property(
+		     "toolbar-visible", self.actions.get_action("ui-toolbar"),
+		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		self.bind_property(
+		     "statusbar-visible", self.actions.get_action("ui-statusbar"),
+		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		
+		self.connect("notify::vscrollbar-placement",
+		             self._changed_scrollbars)
+		self.connect("notify::hscrollbar-placement",
+		             self._changed_scrollbars)
+		self.connect("notify::ordering-mode",
+		             self._changed_ordering_mode)
+		
+		
 		# Load preferences
-		preferences.load_into_window(self)
+		preferences.LoadForWindow(self)
 		
 		# Refresh status widgets
 		self.refresh_transform()
@@ -645,7 +672,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"paste" : (self.pasted_data,),
 			"sort" : (lambda data: self.image_list.sort(),),
 			"sort-reverse" : (self.__sort_changed,),
-			"sort-name" : (self.__ordering_mode_changed,), # For group
 			"remove" : (self.handle_remove,),
 			"clear" : (self.handle_clear,),
 			"quit" : (lambda data: self.destroy(),),
@@ -668,12 +694,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"transform-reset" : (lambda data: self.reset_view_transform(),),
 			"interp-nearest" : (self.change_interp,), # For group
 			"layout-configure" : (self.show_layout_dialog,),
-			"ui-toolbar" : (self.change_interface,),
-			"ui-statusbar" : (self.change_interface,),
-			"ui-scrollbar-top" : (self.change_scrollbars,),
-			"ui-scrollbar-bottom" : (self.change_scrollbars,),
-			"ui-scrollbar-right" : (self.change_scrollbars,),
-			"ui-scrollbar-left" : (self.change_scrollbars,),
+			"ui-scrollbar-top" : (self._toggled_hscroll,),
+			"ui-scrollbar-bottom" : (self._toggled_hscroll,),
+			"ui-scrollbar-left" : (self._toggled_vscroll,),
+			"ui-scrollbar-right" : (self._toggled_vscroll,),
 			"ui-keep-above" : (self.toggle_keep_above,),
 			"ui-keep-below" : (self.toggle_keep_below,),
 			"preferences" : (lambda data:
@@ -683,6 +707,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		}
 		
 		sort_group, interp_group, zoom_mode_group = [], [], []
+		hscroll_group, vscroll_group = [], []
+		
 		toggleable_actions = {
 			"sort-auto" : None,
 			"sort-reverse" : None,
@@ -708,13 +734,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"interp-best" : (cairo.FILTER_BEST, interp_group),
 			"ui-statusbar" : None,
 			"ui-toolbar" :None,
-			"ui-keep-above" : None,
-			"ui-keep-below" : None,
-			# The values seem inverted because... reasons
 			"ui-scrollbar-top" : None,
 			"ui-scrollbar-bottom" : None,
+			"ui-scrollbar-left" : None,
 			"ui-scrollbar-right" : None,
-			"ui-scrollbar-left" : None
+			"ui-keep-above" : None,
+			"ui-keep-below" : None,
 		}
 		
 		accel_actions = {
@@ -773,7 +798,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.actions.add_action(an_action)
 			else:
 				self.actions.add_action_with_accel(an_action, an_accel)
-				
+
+		
 	# --- event handling down this line --- #
 	def connect_to_statusbar(self, action, proxy):
 		''' Connects an action's widget proxy enter-notify-event to show the
@@ -799,20 +825,86 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		context_id = self.statusbar.get_context_id("tooltip")
 		self.statusbar.pop(context_id)
 		
-	def __ordering_mode_changed(self, radioaction, current):
+	def _changed_ordering_mode(self, *data):
 		#TODO: Use GObject.bind_property_with_closure for this
-		sort_value = current.get_current_value()
-		self.active_ordering = self.ordering_modes[sort_value]
-	
-		self.image_list.comparer = self.active_ordering
+		self.image_list.comparer = self.ordering_modes_map[self.ordering_mode]
 		if not self.image_list.autosort:
 			self.image_list.sort()
+
 		
 	def __sort_changed(self, *data):
 		if not self.image_list.autosort:
 			self.image_list.sort()
-	
-	
+
+
+	def _toggled_vscroll(self, action, *data):
+		left = self.actions.get_action("ui-scrollbar-left")
+		right = self.actions.get_action("ui-scrollbar-right")
+		if left.get_active() and right.get_active():
+			if action is left:
+				right.set_active(False)
+				
+			else:
+				left.set_active(False)
+				
+		new_value = 2 if right.get_active() else 1 if left.get_active() else 0
+		if new_value != self.vscrollbar_placement:
+			self.vscrollbar_placement = new_value
+		
+	def _toggled_hscroll(self, action, *data):
+		top = self.actions.get_action("ui-scrollbar-top")
+		bottom = self.actions.get_action("ui-scrollbar-bottom")
+		if top.get_active() and bottom.get_active():
+			if action is top:
+				bottom.set_active(False)
+				
+			else:
+				top.set_active(False)
+		
+		new_value = 2 if bottom.get_active() else 1 if top.get_active() else 0
+		if new_value != self.hscrollbar_placement:
+			self.hscrollbar_placement = new_value
+
+
+	def _changed_scrollbars(self, *data):
+		h = self.hscrollbar_placement
+		v = self.vscrollbar_placement
+		
+		# Refresh actions
+		left = self.actions.get_action("ui-scrollbar-left")
+		right = self.actions.get_action("ui-scrollbar-right")
+		top = self.actions.get_action("ui-scrollbar-top")
+		bottom = self.actions.get_action("ui-scrollbar-bottom")
+		left.set_active(v == 1)
+		right.set_active(v == 2)
+		top.set_active(h == 1)
+		bottom.set_active(h == 2)
+		
+		# Update scrollbars
+		hpolicy = Gtk.PolicyType.NEVER if h == 0 else Gtk.PolicyType.AUTOMATIC
+		vpolicy = Gtk.PolicyType.NEVER if v == 0 else Gtk.PolicyType.AUTOMATIC
+		
+		# This placement is the placement of the scrolled window 
+		# child widget in comparison to the scrollbars.
+		# Basically everything is inverted and swapped.
+		if h == 2:
+			# horizontal scrollbar at bottom
+			if v == 2:
+				# vertical scrollbar at right
+				placement = Gtk.CornerType.TOP_LEFT
+			else:
+				placement = Gtk.CornerType.TOP_RIGHT
+				
+		else:
+			if v == 2:
+				placement = Gtk.CornerType.BOTTOM_LEFT
+			else:
+				placement = Gtk.CornerType.BOTTOM_RIGHT
+		
+		self.view_scroller.set_policy(hpolicy, vpolicy)
+		self.view_scroller.set_placement(placement)
+
+
 	def _layout_option_changed(self, radio_action, current_action):
 		option_list = extending.LayoutOption.List
 		current_option = option_list[current_action.get_current_value()]
@@ -1064,12 +1156,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			magnification = self.imageview.get_magnification()
 			self.imageview.set_interpolation_for_scale(magnification,
 			                                           interpolation)
-			
-	def change_interface(self, *data):
-		show_tools = self.actions.get_action("ui-toolbar").get_active()
-		show_status = self.actions.get_action("ui-statusbar").get_active()
-		self.toolbar.set_visible(show_tools)		
-		self.statusbarboxbox.set_visible(show_status)		
+	
 	
 	def toggle_keep_above(self, *data):
 		keep_above = self.actions.get_action("ui-keep-above")
@@ -1087,49 +1174,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			
 		self.set_keep_below(keep_below.get_active())
 		
-	def change_scrollbars(self, *data):
-		get_active = lambda name: self.actions.get_action(name).get_active()
-		current_placement = self.view_scroller.get_placement()
-		
-		top_active = get_active("ui-scrollbar-top")
-		bottom_active = get_active("ui-scrollbar-bottom")
-		if top_active and bottom_active:
-			if current_placement == Gtk.CornerType.TOP_LEFT or \
-			   current_placement == Gtk.CornerType.TOP_RIGHT:
-				self.actions.get_action("ui-scrollbar-bottom").set_active(False)
-			else:
-				self.actions.get_action("ui-scrollbar-top").set_active(False)
-			return
-			
-		elif top_active or bottom_active:
-			hpolicy = Gtk.PolicyType.AUTOMATIC
-		else:
-			hpolicy = Gtk.PolicyType.NEVER
-		
-		left_active = get_active("ui-scrollbar-left")
-		right_active = get_active("ui-scrollbar-right")
-		if left_active and right_active:
-			if current_placement == Gtk.CornerType.TOP_LEFT or \
-			   current_placement == Gtk.CornerType.BOTTOM_LEFT:
-				self.actions.get_action("ui-scrollbar-right").set_active(False)
-			else:
-				self.actions.get_action("ui-scrollbar-left").set_active(False)
-			return
-			
-		elif left_active or right_active:
-			vpolicy = Gtk.PolicyType.AUTOMATIC
-		else:
-			vpolicy = Gtk.PolicyType.NEVER
-						
-		if top_active:
-			placement = Gtk.CornerType.BOTTOM_RIGHT if left_active \
-			            else Gtk.CornerType.BOTTOM_LEFT
-		else:
-			placement = Gtk.CornerType.TOP_RIGHT if left_active \
-			            else Gtk.CornerType.TOP_LEFT
-		        
-		self.view_scroller.set_policy(hpolicy, vpolicy)
-		self.view_scroller.set_placement(placement)
 			
 	def toggle_fullscreen(self, data=None):
 		# This simply tries to fullscreen / unfullscreen
@@ -1265,7 +1309,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.set_title(_("Pynorama"))
 			
 	def do_destroy(self, *data):
-		preferences.set_from_window(self)
+		preferences.SaveFromWindow(self)
 		self.avl.clean()
 		return Gtk.Window.do_destroy(self)
 		
@@ -1381,16 +1425,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def __idly_refresh_index(self):
 		self.__idly_refresh_index_id = None
 		self.refresh_index()
-		
-	def get_enable_auto_sort(self):
-		return self.actions.get_action("sort-auto").get_active()
-	def set_enable_auto_sort(self, value):
-		self.actions.get_action("sort-auto").set_active(value)
-		
-	def get_reverse_sort(self):
-		return self.actions.get_action("sort-reverse").get_active()
-	def set_reverse_sort(self, value):
-		self.actions.get_action("sort-reverse").set_active(value)
+	
+	#--- Properties down this line ---#
+	
+	sort_automatically = GObject.Property(type=bool, default=True)
+	ordering_mode = GObject.Property(type=int, default=0)
+	reverse_ordering = GObject.Property(type=bool, default=False)
+	
+	toolbar_visible = GObject.Property(type=bool, default=True)
+	statusbar_visible = GObject.Property(type=bool, default=True)
+	
+	hscrollbar_placement = GObject.Property(type=int, default=1) 
+	vscrollbar_placement = GObject.Property(type=int, default=1) 
 	
 	def get_auto_zoom(self):
 		enabled = self.actions.get_action("auto-zoom-enable").get_active()
@@ -1408,11 +1454,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def set_auto_zoom_mode(self, mode):
 		self.actions.get_action("auto-zoom-fit").set_current_value(mode)
 	
-	def get_sort_mode(self):
-		return self.actions.get_action("sort-name").get_current_value()
-	def set_sort_mode(self, value):
-		self.actions.get_action("sort-name").set_current_value(value)
-	
 	def get_interpolation(self):
 		return (self.imageview.get_minify_interpolation(),
 		        self.imageview.get_magnify_interpolation())
@@ -1420,50 +1461,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.imageview.set_minify_interpolation(minify)
 		self.imageview.set_magnify_interpolation(magnify)
 		self.refresh_interp()
-	
-	def get_toolbar_visible(self):
-		return self.toolbar.get_visible()
-	def set_toolbar_visible(self, value):
-		self.actions.get_action("ui-toolbar").set_active(value)
-		self.toolbar.set_visible(value)
-		
-	def get_statusbar_visible(self):
-		return self.statusbarboxbox.get_visible()
-	def set_statusbar_visible(self, value):
-		self.actions.get_action("ui-statusbar").set_active(value)
-		self.statusbarboxbox.set_visible(value)
-	
-	def get_hscrollbar_placement(self):
-		top = self.actions.get_action("ui-scrollbar-top").get_active()
-		bottom = self.actions.get_action("ui-scrollbar-bottom").get_active()
-		return 2 if bottom else 1 if top else 0
-	
-	def set_hscrollbar_placement(self, value):
-		if value == 2:
-			self.actions.get_action("ui-scrollbar-bottom").set_active(True)
-		elif value == 1:
-			self.actions.get_action("ui-scrollbar-top").set_active(True)
-		else:
-			self.actions.get_action("ui-scrollbar-top").set_active(False)
-			self.actions.get_action("ui-scrollbar-bottom").set_active(False)
-		
-		self.change_scrollbars()
-	
-	def get_vscrollbar_placement(self):
-		left = self.actions.get_action("ui-scrollbar-left").get_active()
-		right = self.actions.get_action("ui-scrollbar-right").get_active()
-		return 2 if right else 1 if left else 0
-	
-	def set_vscrollbar_placement(self, value):
-		if value == 2:
-			self.actions.get_action("ui-scrollbar-right").set_active(True)
-		elif value == 1:
-			self.actions.get_action("ui-scrollbar-left").set_active(True)
-		else:
-			self.actions.get_action("ui-scrollbar-left").set_active(False)
-			self.actions.get_action("ui-scrollbar-right").set_active(False)
-			
-		self.change_scrollbars()
 		
 	def get_fullscreen(self):
 		return self.actions.get_action("fullscreen").get_active()
