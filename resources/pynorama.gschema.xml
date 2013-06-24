@@ -122,5 +122,9 @@
 			<summary>Start image viewer in fullscreen</summary>
 			<default>false</default>
 		</key>
+		<key name="layout-codename" type="s">
+			<summary>Identifier of the layout used for placing images in the viewer</summary>
+			<default>"single-image"</default>
+		</key>
 	</schema>
 </schemalist>

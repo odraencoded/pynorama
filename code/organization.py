@@ -259,6 +259,7 @@ class AlbumLayout:
 		
 		# Set this value to true if the layout has a settings dialog
 		self.has_settings_widget = False
+		self.source_option = None
 		
 	def subscribe(self, avl):
 		self.__subscribers.add(avl)
@@ -316,6 +317,11 @@ class AlbumLayout:
 class SingleImageLayout(AlbumLayout):
 	''' Places a single album image in a view '''
 	
+	def __init__(self):
+		AlbumLayout.__init__(self)
+		self.source_option = SingleImageLayout.Option
+
+
 	def start(self, avl):
 		avl.current_image = None
 		avl.current_frame = None
@@ -445,6 +451,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
 		self.has_settings_widget = True
+		self.source_option = ImageStripLayout.Option
 		
 		self.connect("notify::direction", self._direction_changed)
 		self.connect("notify::repeat", self._placement_args_changed)

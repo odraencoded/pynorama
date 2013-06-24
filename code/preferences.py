@@ -19,7 +19,7 @@
 from gi.repository import Gio, GLib, Gtk, Gdk, GObject
 from gettext import gettext as _
 import cairo, math
-import navigation
+import extending
 
 Settings = Gio.Settings("com.example.pynorama")
 
@@ -178,7 +178,14 @@ def LoadForWindow(window):
 	window.set_interpolation(interp_min, interp_mag)
 	window.set_auto_zoom_mode(auto_zoom_mode)
 	window.set_auto_zoom(auto_zoom, auto_zoom_minify, auto_zoom_magnify)
-
+	
+	layout_codename = Settings.get_string("layout-codename")
+	
+	option_list = extending.LayoutOption.List
+	for an_option in option_list:
+		if an_option.codename == layout_codename:
+			window.layout_option = an_option
+			break
 
 def SaveFromWindow(window):
 	Settings.set_boolean("sort-auto", window.sort_automatically)
@@ -211,7 +218,14 @@ def SaveFromWindow(window):
 	
 	fullscreen = window.get_fullscreen()
 	Settings.set_boolean("start-fullscreen", fullscreen)
-
+	
+	try:
+		layout_codename = window.layout_option.codename
+	except Exception:
+		pass
+		
+	else:
+		Settings.set_string("layout-codename", window.layout_option.codename)
 
 class PointScale(Gtk.DrawingArea):
 	''' A widget like a Gtk.HScale and Gtk.VScale together. '''

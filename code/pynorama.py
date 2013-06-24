@@ -445,7 +445,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.layout_options_merge_ids = dict()
 		optionList = extending.LayoutOption.List
 		
-		previous_action = None
+		other_option = self.actions.get_action("layout-other-option")
+		other_option.connect("changed", self._layout_option_chosen)
+		
 		for an_index in reversed(range(len(optionList))):
 			an_option = optionList[an_index]
 			a_merge_id = self.manager.new_merge_id()
@@ -456,10 +458,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			                            an_option.description,
 			                            None, an_index)
 			                            
-			if previous_action:
-				an_action.join_group(previous_action)
-			previous_action = an_action
-				
+			an_action.join_group(other_option)
 			self.actions.add_action(an_action)
 			
 			# Insert UI
@@ -473,12 +472,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			)
 			
 			self.layout_options_merge_ids[an_option] = a_merge_id
-		
-		if previous_action:
-			previous_action.connect("changed", self._layout_option_changed)
-			previous_action.set_current_value(0)
-		
-		
+
+
 		# Bind properties
 		self.bind_property("sort-automatically", self.image_list,
 		                   "autosort", GObject.BindingFlags.BIDIRECTIONAL)
@@ -505,15 +500,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		     "statusbar-visible", self.actions.get_action("ui-statusbar"),
 		     "active", GObject.BindingFlags.BIDIRECTIONAL)
 		
-		self.connect("notify::vscrollbar-placement",
-		             self._changed_scrollbars)
-		self.connect("notify::hscrollbar-placement",
-		             self._changed_scrollbars)
-		self.connect("notify::ordering-mode",
-		             self._changed_ordering_mode)
-		
+		self.connect("notify::vscrollbar-placement", self._changed_scrollbars)
+		self.connect("notify::hscrollbar-placement", self._changed_scrollbars)
+		self.connect("notify::ordering-mode", self._changed_ordering_mode)
+		self.connect("notify::layout-option", self._changed_layout_option)
 		
 		# Load preferences
+		other_option.set_current_value(0)
 		preferences.LoadForWindow(self)
 		
 		# Refresh status widgets
@@ -548,10 +541,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			     ("sort-reverse", _("_Reverse Order"),
 			      _("Reverts the image order"), None),
 				("sort-name", _("By _Name"),
-				 _("Compares filenames and number sequences but not dots"), None),
+				 _("Compares filenames and number sequences but not dots"),
+				 None),
 				("sort-char", _("By _Characters"),
 				 _("Only compares characters in filenames"),
-				   None),
+				 None),
 				("sort-file-date", _("By _Modification Date"),
 				 _("Compares dates when images were last modified"), None),
 				("sort-file-size", _("By _File Size"),
@@ -633,8 +627,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				 _("The best interpolation filter avaiable"), None),
 			 # Layout submenu
 			("layout", _("_Layout"), _("Album layout settings"), None),
-			("layout-configure", _("_Configure..."),
-			 _("Shows a dialog to configure the current album layout"), None),
+				("layout-other-option","", "", None),
+				("layout-configure", _("_Configure..."),
+				 _("Shows a dialog to configure the current album layout"),
+				 None),
 			# Interface submenu
 			("interface", _("_Interface"),
 			 _("This window settings"), None),
@@ -732,6 +728,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"interp-fast" : (cairo.FILTER_FAST, interp_group),
 			"interp-good" : (cairo.FILTER_GOOD, interp_group),
 			"interp-best" : (cairo.FILTER_BEST, interp_group),
+			"layout-other-option" : (-1, []),
 			"ui-statusbar" : None,
 			"ui-toolbar" :None,
 			"ui-scrollbar-top" : None,
@@ -836,7 +833,58 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if not self.image_list.autosort:
 			self.image_list.sort()
 
+	def _layout_option_chosen(self, radio_action, current_action):
+		''' Sets the layout-option property from the menu choices '''
+		current_value = current_action.get_current_value()
+		
+		if current_value >= 0:
+			self.layout_option = extending.LayoutOption.List[current_value]
 
+	
+	def _changed_layout_option(self, *data):
+		''' layout-option handler '''
+		current_layout = self.avl.layout
+		if not current_layout \
+		   or current_layout.source_option != self.layout_option:
+			self.avl.layout = self.layout_option.create_layout()
+
+
+	def _layout_changed(self, *args):
+		''' Handles a layout change in the avl  '''
+		layout = self.avl.layout
+		
+		try:
+			if self.layout_option != layout.source_option:
+				self.layout_option = layout.source_option
+				
+		except Exception:
+			pass
+			
+		# Refresh the layout options
+		option_list = extending.LayoutOption.List
+		other_option = self.actions.get_action("layout-other-option")
+		try:
+			option_index = option_list.index(layout.source_option)
+			
+		except Exception:
+			# The layout is not on the index, so we do something with the menu
+			other_option.set_current_value(-1)
+			
+		else:
+			# The layout is on the index, so we update the menu
+			other_option.set_current_value(option_index)
+			
+		# Destroy a possibly open layout settings dialog
+		if self.layout_dialog:
+			self.layout_dialog.destroy()
+			self.layout_dialog = None
+			
+		# Turn "configure" menu item insensitive if the layout
+		# doesn't have a settings widget
+		configure = self.actions.get_action("layout-configure")
+		configure.set_sensitive(layout.has_settings_widget)
+	
+		
 	def _toggled_vscroll(self, action, *data):
 		left = self.actions.get_action("ui-scrollbar-left")
 		right = self.actions.get_action("ui-scrollbar-right")
@@ -850,6 +898,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		new_value = 2 if right.get_active() else 1 if left.get_active() else 0
 		if new_value != self.vscrollbar_placement:
 			self.vscrollbar_placement = new_value
+	
 		
 	def _toggled_hscroll(self, action, *data):
 		top = self.actions.get_action("ui-scrollbar-top")
@@ -903,12 +952,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		self.view_scroller.set_policy(hpolicy, vpolicy)
 		self.view_scroller.set_placement(placement)
-
-
-	def _layout_option_changed(self, radio_action, current_action):
-		option_list = extending.LayoutOption.List
-		current_option = option_list[current_action.get_current_value()]
-		self.avl.layout = current_option.create_layout()
 
 	
 	def magnification_changed(self, widget, data=None):
@@ -1330,19 +1373,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def _album_order_changed(self, album):
 		self.__queue_refresh_index()
-	
-	def _layout_changed(self, *args):
-		layout = self.avl.layout
-		# Destroy a possibly open layout settings dialog
-		if self.layout_dialog:
-			self.layout_dialog.destroy()
-			self.layout_dialog = None
-			
-		# Turn "configure" menu item insensitive if the layout
-		# doesn't have a settings widget
-		configure = self.actions.get_action("layout-configure")
-		configure.set_sensitive(layout.has_settings_widget)
-		
+
+
 	def _focus_changed(self, avl, focused_image, hint):
 		if self._focus_loaded_handler_id:
 			self._old_focused_image.disconnect(self._focus_loaded_handler_id)
@@ -1434,9 +1466,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	
 	toolbar_visible = GObject.Property(type=bool, default=True)
 	statusbar_visible = GObject.Property(type=bool, default=True)
-	
 	hscrollbar_placement = GObject.Property(type=int, default=1) 
-	vscrollbar_placement = GObject.Property(type=int, default=1) 
+	vscrollbar_placement = GObject.Property(type=int, default=1)
+	
+	layout_option = GObject.Property(type=object)
 	
 	def get_auto_zoom(self):
 		enabled = self.actions.get_action("auto-zoom-enable").get_active()
