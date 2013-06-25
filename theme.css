@@ -103,14 +103,17 @@ h1, h2 {
 }
 .change-list {
 	margin: 0;
+	list-style: none;
 	padding: 0px 20px;
 }
 
-.change-list > dd + dt {
-	margin-top: 25px;
+.change-list > li {
+	padding: 0 0 0 20px;
+	margin: 25px 0;
 }
 
-.change-list > dd {
-	margin: 0;
-	padding: 0 0 0 20px;
+.change-list > li > .summary {
+	margin: 0 0 0 -20px;
+	font-size: medium;
+	font-weight: normal;
 }
