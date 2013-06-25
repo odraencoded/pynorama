@@ -22,6 +22,13 @@
 		<value nick="Hidden" value="0"/>
 	</enum>
 	
+	<enum id="com.example.pynorama.directions">
+		<value nick="Up" value="0"/>
+		<value nick="Right" value="1"/>
+		<value nick="Down" value="2"/>
+		<value nick="Left" value="3"/>
+	</enum>
+	
 	<enum id="com.example.pynorama.interpolation-filters">
 		<value nick="Nearest Neighbour" value="0"/>
 		<value nick="Bilinear Interpolation" value="1"/>
@@ -125,6 +132,52 @@
 		<key name="layout-codename" type="s">
 			<summary>Identifier of the layout used for placing images in the viewer</summary>
 			<default>"single-image"</default>
+		</key>
+	</schema>
+	
+	<enum id="com.example.pynorama.layouts.image-strip.loop-modes">
+		<value nick="Don't Loop" value="0"/>
+		<value nick="Loop Album" value="1"/>
+		<value nick="Repeat Images Endlessly" value="2"/>
+	</enum>
+	
+	<schema id="com.example.pynorama.layouts.image-strip" path="/com/example/pynorama/layouts/image-strip/">
+		<key name="appearance-alignment" type="d">
+			<summary>Image alignment in the perpendicular axis</summary>
+			<range min="-0.5" max="0.5" />
+			<default>0</default>
+		</key>
+		<key name="appearance-direction" enum="com.example.pynorama.directions">
+			<summary>Direction of the image strip</summary>
+			<default>"Down"</default>
+		</key>
+		<key name="appearance-loop-mode" enum="com.example.pynorama.layouts.image-strip.loop-modes">
+			<summary>Whether the layout creates and endless loop</summary>
+			<default>"Don't Loop"</default>
+		</key>
+		<key name="margin-before-center" type="d">
+			<summary>Margin between images before the center</summary>
+			<default>0</default>
+		</key>
+		<key name="margin-after-center" type="d">
+			<summary>Margin between images after the center</summary>
+			<default>0</default>
+		</key>
+		<key name="space-before-center" type="d">
+			<summary>Pixels to fill before the center</summary>
+			<default>2560</default>
+		</key>
+		<key name="space-after-center" type="d">
+			<summary>Pixels to fill after the center</summary>
+			<default>3840</default>
+		</key>
+		<key name="limit-before-center" type="i">
+			<summary>Image limit before the center</summary>
+			<default>40</default>
+		</key>
+		<key name="limit-after-center" type="i">
+			<summary>Image limit after the center</summary>
+			<default>60</default>
 		</key>
 	</schema>
 </schemalist>

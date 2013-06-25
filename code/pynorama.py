@@ -1306,7 +1306,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			flags = Gtk.DialogFlags
 			try:
 				widget = layout.create_settings_widget()
-			
+				widget.connect("destroy", self._layout_widget_destroyed, layout)
+				
 			except Exception:
 				message = _("Could not create layout settings dialog!")
 				dialog = Gtk.MessageDialog(self,
@@ -1329,11 +1330,17 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				dialog.connect("response", self._layout_dialog_response)
 				dialog.present()
 				self.layout_dialog = dialog
-				
+
+
+	def _layout_widget_destroyed(self, widget, layout):
+		layout.save_preferences()
+
+
 	def _layout_dialog_response(self, *data):
 		self.layout_dialog.destroy()
 		self.layout_dialog = None
-		
+
+	
 	''' Methods after this comment are actually kind of a big deal.
 	    Do not rename them. '''
 	
@@ -1351,11 +1358,22 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		else:
 			self.set_title(_("Pynorama"))
 			
+	
 	def do_destroy(self, *data):
+		# Saves this window preferences
 		preferences.SaveFromWindow(self)
+		try:
+			# Tries to save the layout preferences
+			self.avl.layout.save_preferences()
+			
+		except Exception:
+			pass
+		
+		# Clean up the avl
 		self.avl.clean()
 		return Gtk.Window.do_destroy(self)
 		
+	
 	def _image_added(self, album, image, index):
 		image.lists += 1
 		self.__queue_refresh_index()

@@ -182,7 +182,7 @@ class SortingKeys:
 	def ByImageHeight(image):
 		return image.get_metadata().height
 
-from gi.repository import Gtk
+from gi.repository import Gtk, Gio
 from gettext import gettext as _
 import point, viewing
 
@@ -261,12 +261,15 @@ class AlbumLayout:
 		self.has_settings_widget = False
 		self.source_option = None
 		
+
 	def subscribe(self, avl):
 		self.__subscribers.add(avl)
 		
+
 	def unsubscribe(self, avl):
 		self.__subscribers.discard(avl)
 		
+
 	def refresh_subscribers(self):
 		''' Layouts should call this or queue_refresh for
 		    propagating changes in the layout properites '''
@@ -279,41 +282,57 @@ class AlbumLayout:
 	def get_focus_image(self, avl):
 		''' Returns the image in focus '''
 		raise NotImplementedError
+
 	
 	def get_focus_frame(self, avl):
 		''' Returns the frame in focus '''
 		raise NotImplementedError
 				
+
 	def go_image(self, avl, image):
 		''' Lays out an image '''
 		raise NotImplementedError
 	
+
 	def go_next(self, avl):
 		focus = avl.focus_image
 		next_image = avl.album.next(focus)
 		avl.go_image(next_image)
 	
+
 	def go_previous(self, avl):
 		focus = avl.focus_image
 		previous_image = avl.album.previous(focus)
 		avl.go_image(previous_image)		
 		
+
 	def start(self, avl):
 		''' Set any initial variables in an AlbumViewLayout '''
 		pass
 		
+
 	def clean(self, avl):
 		''' Reverse whatever was done at start '''
 		pass
 	
+
 	def update(self, avl):
 		''' Propagate changes in a layout property to an avl '''
 		pass
 		
+
 	def create_settings_widget(self):
 		''' Creates a widget for configuring the layout '''
 		raise TypeError
-		
+
+
+	def save_preferences(self):
+		''' Saves the layout settings as the layout preferred values for
+		    new layouts of this type.
+		    Layout implementations without settings may ignore this. '''
+		pass
+
+
 class SingleImageLayout(AlbumLayout):
 	''' Places a single album image in a view '''
 	
@@ -436,12 +455,16 @@ class SingleImageLayout(AlbumLayout):
 	def _image_loaded(self, image, error, avl):
 		self._refresh_frame(avl)
 
+
 class LayoutDirection:
 	Left = "left"
 	Right = "right"
 	Up = "up"
 	Down = "down"
 	
+	Enum = [Up, Right, Down, Left]
+
+
 class ImageStripLayout(GObject.Object, AlbumLayout):
 	''' Places a strip of album images, laid side by side, in a view '''
 	
@@ -1121,6 +1144,48 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		                        _CoordinateToTop, _CoordinateToBottom)
 	}
 	
+	# TODO: Get another ID for this
+	Preferences = Gio.Settings("com.example.pynorama.layouts.image-strip")
+
+	@staticmethod
+	def FromPreferences():
+		''' Creates a ImageStripLayout with the preferred values '''
+		preferences = ImageStripLayout.Preferences
+		loop_mode = preferences.get_enum("appearance-loop-mode")
+		direction_value = preferences.get_enum("appearance-direction")
+		kwargs = {
+			"alignment" : preferences.get_double("appearance-alignment"),
+			"direction" : LayoutDirection.Enum[direction_value],
+			"loop" : loop_mode >= 1,
+			"repeat" : loop_mode == 2,
+			"margin" : (preferences.get_double("margin-before-center"),
+			            preferences.get_double("margin-after-center")),
+			"space" : (preferences.get_double("space-before-center"),
+			           preferences.get_double("space-after-center")),
+			"limit" : (preferences.get_int("limit-before-center"),
+			           preferences.get_int("limit-after-center"))
+		}
+		return ImageStripLayout(**kwargs)
+
+
+	def save_preferences(self):
+		preferences = ImageStripLayout.Preferences
+		preferences.set_double("appearance-alignment", self.alignment)
+		
+		direction_enum = LayoutDirection.Enum.index(self.direction)
+		preferences.set_enum("appearance-direction", direction_enum)
+		
+		loop_mode = (2 if self.repeat else 1) if self.loop else 0
+		preferences.set_enum("appearance-loop-mode", loop_mode)
+		
+		preferences.set_double("margin-before-center", self.margin_before)
+		preferences.set_double("margin-after-center", self.margin_after)
+		preferences.set_double("space-before-center", self.space_before)
+		preferences.set_double("space-after-center", self.space_after)
+		preferences.set_int("limit-before-center", self.limit_before)
+		preferences.set_int("limit-after-center", self.limit_after)
+
+
 	class SettingsWidget(Gtk.Notebook):
 		''' A widget for configuring a ImageStripLayout '''
 		def __init__(self, layout):
@@ -1365,7 +1430,7 @@ are too small to breach the pixel count limit''')
 				scale.add_mark(-.5, Gtk.PositionType.BOTTOM, _("Left"))
 				scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Center"))
 				scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Right"))
-
+				
 
 #--- Making the built-in layouts avaiable ---#
 from extending import LayoutOption
@@ -1387,7 +1452,7 @@ ImageStripLayout.Option = LayoutOption(
 	description=_("Shows many images side by side")
 )
 
-ImageStripLayout.Option.create_layout = ImageStripLayout
+ImageStripLayout.Option.create_layout = ImageStripLayout.FromPreferences
 
 
 # Append options
