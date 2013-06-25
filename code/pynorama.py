@@ -354,9 +354,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Setup actions
 		self.setup_actions()
 		
-		self.manager.add_ui_from_string(ViewerWindow.ui_description)
-		self.menubar = self.manager.get_widget("/menubar")
-		self.toolbar = self.manager.get_widget("/toolbar")
+		self.uimanager.add_ui_from_string(ViewerWindow.ui_description)
+		self.menubar = self.uimanager.get_widget("/menubar")
+		self.toolbar = self.uimanager.get_widget("/toolbar")
 		# Make the toolbar look primary
 		toolbar_style = self.toolbar.get_style_context()
 		toolbar_style.add_class(Gtk.STYLE_CLASS_PRIMARY_TOOLBAR)
@@ -452,7 +452,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		other_option.connect("changed", self._layout_option_chosen)
 		
 		for an_index, an_option in enumerate(optionList):
-			a_merge_id = self.manager.new_merge_id()
+			a_merge_id = self.uimanager.new_merge_id()
 			
 			# create action
 			an_action_name = "layout-option-" + an_option.codename
@@ -464,7 +464,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.actions.add_action(an_action)
 			
 			# Insert UI
-			self.manager.add_ui(
+			self.uimanager.add_ui(
 				a_merge_id,
 				"/ui/menubar/view/layout/layout-options",
 				an_action_name, # the item name
@@ -517,14 +517,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.refresh_interp()
 		
 	def setup_actions(self):
-		self.manager = Gtk.UIManager()
-		self.manager.connect("connect-proxy",
+		self.uimanager = Gtk.UIManager()
+		self.uimanager.connect("connect-proxy",
 		                     lambda ui, a, w: self.connect_to_statusbar(a, w))
 		
-		self.accelerators = self.manager.get_accel_group()
+		self.accelerators = self.uimanager.get_accel_group()
 		self.add_accel_group(self.accelerators)
 		self.actions = Gtk.ActionGroup("pynorama")
-		self.manager.insert_action_group(self.actions)
+		self.uimanager.insert_action_group(self.actions)
 		
 		action_params = [
 		# File Menu
@@ -888,22 +888,22 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		# Remove previosly merged ui from the menu
 		if self._layout_action_group:
-			self.manager.remove_action_group(self._layout_action_group)
-			self.manager.remove_ui(self._layout_ui_merge_id)
+			self.uimanager.remove_action_group(self._layout_action_group)
+			self.uimanager.remove_ui(self._layout_ui_merge_id)
 			self._layout_ui_merge_id = None
 		
 		# Merge ui from layout
 		self._layout_action_group = layout.ui_action_group
 		if self._layout_action_group:
-			self.manager.insert_action_group(self._layout_action_group, -1)
-			merge_id = self.manager.new_merge_id()
+			self.uimanager.insert_action_group(self._layout_action_group, -1)
+			merge_id = self.uimanager.new_merge_id()
 			try:
-				layout.add_ui(self.manager, merge_id)
+				layout.add_ui(self.uimanager, merge_id)
 				
 			except Exception:
 				notification.log_exception("Error adding layout UI")
 				self._layout_action_group = None
-				self.manager.remove_ui(merge_id)
+				self.uimanager.remove_ui(merge_id)
 				
 			else:
 				self._layout_ui_merge_id = merge_id
