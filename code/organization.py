@@ -1181,14 +1181,14 @@ In albums with few, small images, repeat those images indefinetely''')
 			#-- Pixel margin --#
 			margin_tooltip = _('''Margin means distance''')
 
-			label = _("Margin between images before center")
+			label = _("Margin between images before the center")
 			margin_before_label = Gtk.Label(label)
 			margin_before_adjust = Gtk.Adjustment(0, 0, 512, 8, 64)
 			margin_before_entry = Gtk.SpinButton(
 			                          adjustment=margin_before_adjust)
 			margin_before_entry.set_tooltip_text(margin_tooltip)
 			
-			label = _("Margin between images after center")
+			label = _("Margin between images after the center")
 			margin_after_label = Gtk.Label(label)
 			margin_after_adjust = Gtk.Adjustment(0, 0, 512, 8, 64)
 			margin_after_entry = Gtk.SpinButton(adjustment=margin_after_adjust)
@@ -1204,13 +1204,13 @@ If you are having performance problems, consider decreasing these values.''')
 			space_tooltip = _('''A good value is around twice your \
 screen height or width, depending on the strip direction''')
 
-			label = _("Pixels to fill before center")
+			label = _("Pixels to fill before the center")
 			space_before_label = Gtk.Label(label)
 			space_before_adjust = Gtk.Adjustment(0, 0, 8192, 32, 256)
 			space_before_entry = Gtk.SpinButton(adjustment=space_before_adjust)
 			space_before_entry.set_tooltip_text(space_tooltip)
 			
-			label = _("Pixels to fill after center")
+			label = _("Pixels to fill after the center")
 			space_after_label = Gtk.Label(label)
 			space_after_adjust = Gtk.Adjustment(0, 0, 8192, 32, 256)
 			space_after_entry = Gtk.SpinButton(adjustment=space_after_adjust)
@@ -1221,13 +1221,13 @@ screen height or width, depending on the strip direction''')
 This is only useful if the images being laid out \
 are too small to breach the pixel count limit''')
 						
-			label = _("Image limit before center")
+			label = _("Image limit before the center")
 			limit_before_label = Gtk.Label(label)
 			limit_before_adjust = Gtk.Adjustment(0, 0, 512, 1, 10)
 			limit_before_entry = Gtk.SpinButton(adjustment=limit_before_adjust)
 			limit_before_entry.set_tooltip_text(limits_tooltip)
 			
-			label = _("Image limit after center")
+			label = _("Image limit after the center")
 			limit_after_label = Gtk.Label(label)
 			limit_after_adjust = Gtk.Adjustment(0, 0, 512, 1, 10)
 			limit_after_entry = Gtk.SpinButton(adjustment=limit_after_adjust)
