@@ -7,10 +7,10 @@ html {
 body {
 	max-width: 900px;
 	margin: 0 auto;
-	padding: 20px 40px 20px;
+	padding: 20px 0 20px 40px;
 }
 body > header, .post-header {
-	margin: 0px -40px 30px
+	margin: 0 0 30px -40px
 }
 #headline-group {
 	height: 59px;
@@ -95,4 +95,22 @@ h1, h2 {
 	bottom: 10px;
 	font-size: 90%;
 	text-align: right;
+}
+
+.change-version {
+	padding: 10px;
+	border-bottom: 2px solid #840;
+}
+.change-list {
+	margin: 0;
+	padding: 0px 20px;
+}
+
+.change-list > dd + dt {
+	margin-top: 25px;
+}
+
+.change-list > dd {
+	margin: 0;
+	padding: 0 0 0 20px;
 }
