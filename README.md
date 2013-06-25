@@ -6,7 +6,7 @@ Pynorama is an image viewer. It *views* images.
 Features
 --------
 
-As of version v0.2.2 pynorama is able to
+As of version v0.2.3 pynorama is able to
 
 * Load and display multiple images at once
 * Find images in a directory and load them
