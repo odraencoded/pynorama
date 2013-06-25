@@ -500,6 +500,8 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		self.connect("notify::margin-before", self._placement_args_changed)
 		self.connect("notify::margin-after", self._placement_args_changed)
 		self.connect("notify::alignment", self._placement_args_changed)
+		self.connect("notify::loop", self._loop_changed)
+		self.connect("notify::repeat", self._repeat_changed)
 		
 		self.direction = direction
 		
@@ -675,6 +677,15 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	
 	def _placement_args_changed(self, *data):
 		self.refresh_subscribers.queue()
+	
+	# These two handlers keep loop/repeat synced
+	def _loop_changed(self, *data):
+		if not self.loop and self.repeat:
+			self.repeat = False
+			
+	def _repeat_changed(self, *data):
+		if self.repeat and not self.loop:
+			self.loop = True
 	
 	def _view_changed(self, avl, *data):
 		# Handler for album changes in avl
@@ -1345,11 +1356,6 @@ are too small to breach the pixel count limit''')
 			                          "value", flags)
 			self.layout.bind_property("space-after", space_after_adjust,
 			                          "value", flags)
-			                          
-			# This is a special GUI bind, you can't really repeat 
-			# the album without looping around it
-			loop_button.bind_property("active", repeat_button,
-			                          "sensitive", binding_flags.SYNC_CREATE)
 			                          
 			# Add tabs, pack lines
 			def add_tab(self, label):
