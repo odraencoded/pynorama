@@ -257,9 +257,16 @@ class AlbumLayout:
 		self.refresh_subscribers = utility.IdlyMethod(self.refresh_subscribers)
 		self.refresh_subscribers.priority = GLib.PRIORITY_HIGH + 20
 		
+		# This value should be the extending.LayoutOption the layout came from
+		self.source_option = None
+		
 		# Set this value to true if the layout has a settings dialog
 		self.has_settings_widget = False
-		self.source_option = None
+		
+		# Set this to a Gtk.ActionGroup to include custom menu items
+		# into the ViewerWindow uimanager. You also have to implement
+		# the add_ui method in that case.
+		self.ui_action_group = None
 		
 
 	def subscribe(self, avl):
@@ -331,8 +338,15 @@ class AlbumLayout:
 		    new layouts of this type.
 		    Layout implementations without settings may ignore this. '''
 		pass
-
-
+	
+	
+	def add_ui(self, uimanager, merge_id):
+		''' Adds ui into the uimanager using the specified merge_id.
+		    This is only called if the ui_action_group is not None, in which
+		    case ui_action_group is added automatically by the ViewerWindow. '''
+		
+		raise NotImplementedError
+		
 class SingleImageLayout(AlbumLayout):
 	''' Places a single album image in a view '''
 	
@@ -496,6 +510,9 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		self.margin_before, self.margin_after = margin
 		self.space_before, self.space_after = space
 		self.limit_before, self.limit_after = limit
+		
+		self.setup_actions()
+				
 		
 	def create_settings_widget(self):
 		return ImageStripLayout.SettingsWidget(self)
@@ -1430,8 +1447,130 @@ are too small to breach the pixel count limit''')
 				scale.add_mark(-.5, Gtk.PositionType.BOTTOM, _("Left"))
 				scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Center"))
 				scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Right"))
+	
+	
+	def add_ui(self, uimanager, merge_id):
+		placeholder_path = "/ui/menubar/view/layout/layout-configure-menu"
+		
+		direction_name = "image-strip-layout-direction"
+		uimanager.add_ui(merge_id, placeholder_path,
+		                 direction_name, direction_name,
+		                 Gtk.UIManagerItemType.MENU, False)
+		ui_list = [
+			(placeholder_path, [
+				"image-strip-layout-loop",
+				"image-strip-layout-repeat",
+			]),
+			(placeholder_path + "/image-strip-layout-direction", [
+				"image-strip-layout-direction-up",
+				"image-strip-layout-direction-right",
+				"image-strip-layout-direction-down",
+				"image-strip-layout-direction-left",
+			]),
+		]
+		
+		def add_some_ui(path, name):
+			pass
+		
+		for a_path, a_name_list in ui_list:
+			for a_name in a_name_list:
+				uimanager.add_ui(merge_id, a_path, a_name, a_name,
+					             Gtk.UIManagerItemType.MENUITEM, False)
+		
+	def setup_actions(self):
+		actions = self.ui_action_group = Gtk.ActionGroup("image-strip-layout")
+		
+		def direction_chosen(action, current_action, self):
+			current_value = current_action.get_current_value()
+			new_value = LayoutDirection.Enum[current_value]
+			if self.direction != new_value:
+				self.direction = new_value
 				
-
+		def direction_changed(self, something, some_action):
+			direction_value = LayoutDirection.Enum.index(self.direction)
+			some_action.set_current_value(direction_value)
+			
+		
+		action_params = [
+			("image-strip-layout-loop", _("Loop Album"),
+			 _("Place the first image of an album after the last, " + 
+			   "and vice versa"), None),
+			("image-strip-layout-repeat", _("Repeat Images"),
+			 _("In albums with few, small images, " +
+			   "repeat those images indefinetely"), None),
+			("image-strip-layout-direction", _("Direction"),
+			 _("Choose which direction are images placed toward"), None),
+			("image-strip-layout-direction-up", _("Up"),
+			 _("Places images one atop another"), None),
+			("image-strip-layout-direction-right", _("Right"),
+			 _("Places images one at right of another"), None),
+			("image-strip-layout-direction-down", _("Down"),
+			 _("Places images one under another"), None),
+			("image-strip-layout-direction-left", _("Left"),
+			 _("Places images one at left of another"), None)
+		]
+		
+		signaling_params = {
+			"image-strip-layout-direction-up" : (direction_chosen, self)
+		}
+		
+		loop_group, direction_group = [], []
+		
+		toggleable_actions = {
+			"image-strip-layout-loop" : None,
+			"image-strip-layout-repeat" : None,
+			"image-strip-layout-direction-up" : (0, direction_group),
+			"image-strip-layout-direction-right" : (1, direction_group),
+			"image-strip-layout-direction-down" : (2, direction_group),
+			"image-strip-layout-direction-left" : (3, direction_group),
+		}
+		
+		for name, label, tip, stock in action_params:
+			some_signal_params = signaling_params.get(name, None)
+			if name in toggleable_actions:
+				# Toggleable actions :D
+				group_data = toggleable_actions[name]
+				if group_data is None:
+					# No group data = ToggleAction
+					signal_name = "toggled"
+					an_action = Gtk.ToggleAction(name, label, tip, stock)
+				else:
+					# Group data = RadioAction
+					signal_name = "changed"
+					radio_value, group_list = group_data
+					an_action = Gtk.RadioAction(name, label, tip, stock,
+					                            radio_value)
+					# Join the group of last radioaction in the list
+					if group_list:
+						an_action.join_group(group_list[-1])
+					group_list.append(an_action)
+			else:
+				# Non-rare kind of action
+				signal_name = "activate"
+				an_action = Gtk.Action(name, label, tip, stock)
+			
+			# Set signal
+			if some_signal_params:
+				an_action.connect(signal_name, *some_signal_params)
+			
+			# Add to action group
+			actions.add_action(an_action)
+		
+		loop_action = actions.get_action("image-strip-layout-loop")
+		repeat_action = actions.get_action("image-strip-layout-repeat")
+		
+		binding_flags = GObject.BindingFlags
+		flags = binding_flags.BIDIRECTIONAL | binding_flags.SYNC_CREATE
+		
+		self.bind_property("loop", loop_action, "active", flags)
+		self.bind_property("repeat", repeat_action, "active", flags)
+		
+		up_option = actions.get_action("image-strip-layout-direction-up")
+		self.connect("notify::direction", direction_changed, up_option)
+		direction_value = LayoutDirection.Enum.index(self.direction)
+		up_option.set_current_value(direction_value)
+		
+		
 #--- Making the built-in layouts avaiable ---#
 from extending import LayoutOption
 

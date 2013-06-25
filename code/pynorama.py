@@ -442,7 +442,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		
 		# Build layout menu
-		self.layout_options_merge_ids = dict()
+		self._layout_action_group = None
+		self._layout_ui_merge_id = None
+		
+		self._layout_options_merge_ids = dict()
 		optionList = extending.LayoutOption.List
 		
 		other_option = self.actions.get_action("layout-other-option")
@@ -470,7 +473,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				False
 			)
 			
-			self.layout_options_merge_ids[an_option] = a_merge_id
+			self._layout_options_merge_ids[an_option] = a_merge_id
 
 
 		# Bind properties
@@ -882,7 +885,29 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# doesn't have a settings widget
 		configure = self.actions.get_action("layout-configure")
 		configure.set_sensitive(layout.has_settings_widget)
-	
+		
+		# Remove previosly merged ui from the menu
+		if self._layout_action_group:
+			self.manager.remove_action_group(self._layout_action_group)
+			self.manager.remove_ui(self._layout_ui_merge_id)
+			self._layout_ui_merge_id = None
+		
+		# Merge ui from layout
+		self._layout_action_group = layout.ui_action_group
+		if self._layout_action_group:
+			self.manager.insert_action_group(self._layout_action_group, -1)
+			merge_id = self.manager.new_merge_id()
+			try:
+				layout.add_ui(self.manager, merge_id)
+				
+			except Exception:
+				notification.log_exception("Error adding layout UI")
+				self._layout_action_group = None
+				self.manager.remove_ui(merge_id)
+				
+			else:
+				self._layout_ui_merge_id = merge_id
+		
 		
 	def _toggled_vscroll(self, action, *data):
 		left = self.actions.get_action("ui-scrollbar-left")
@@ -1518,7 +1543,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def set_fullscreen(self, value):
 		self.actions.get_action("fullscreen").set_active(value)
 	
-	ui_description = '''<ui>
+	ui_description = '''\
+<ui>
 	<menubar>
 		<menu action="file">
 			<menuitem action="open" />
@@ -1593,6 +1619,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				<placeholder name="layout-options"/>
 				<separator />
 				<menuitem action="layout-configure" />
+				<separator />
+				<placeholder name="layout-configure-menu"/>
 			</menu>
 			<menu action="interface">
 				<menuitem action="ui-toolbar" />
