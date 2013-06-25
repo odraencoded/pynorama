@@ -448,8 +448,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		other_option = self.actions.get_action("layout-other-option")
 		other_option.connect("changed", self._layout_option_chosen)
 		
-		for an_index in reversed(range(len(optionList))):
-			an_option = optionList[an_index]
+		for an_index, an_option in enumerate(optionList):
 			a_merge_id = self.manager.new_merge_id()
 			
 			# create action
@@ -464,11 +463,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			# Insert UI
 			self.manager.add_ui(
 				a_merge_id,
-				"/ui/menubar/view/layout/",
+				"/ui/menubar/view/layout/layout-options",
 				an_action_name, # the item name
 				an_action_name, # the action name
 				Gtk.UIManagerItemType.MENUITEM,
-				True
+				False
 			)
 			
 			self.layout_options_merge_ids[an_option] = a_merge_id
@@ -1591,6 +1590,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			</menu>
 			<separator />
 			<menu action="layout">
+				<placeholder name="layout-options"/>
 				<separator />
 				<menuitem action="layout-configure" />
 			</menu>
