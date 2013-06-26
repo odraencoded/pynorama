@@ -166,7 +166,24 @@ class ImageViewer(Gtk.Application):
 			return windows[0]
 		else:
 			# Create a window and return it
-			a_window = ViewerWindow(self)
+			try:
+				a_window = ViewerWindow(self)
+			
+			except Exception:
+				# Doing this because I'm tired of ending up with a
+				# frozen process when an exception occurs in the 
+				# ViewerWindow constructor. Meaning a_window it doesn't get set
+				# and thus a window not shown, but since the ApplicationWindow
+				# constructor comes before any errors it gets added to the
+				# application windows list, and the application will not quit
+				# while the list is not empty.</programmerrage>
+				notification.log("\nCould not create the first window\n")
+				windows = self.get_windows()
+				if len(windows) > 0:
+					self.remove_window(windows[0])
+					
+				raise
+				
 			a_window.show()
 			image_view = a_window.imageview
 			image_view.mouse_adapter = navigation.MouseAdapter(image_view)
