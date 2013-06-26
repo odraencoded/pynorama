@@ -12,7 +12,7 @@ Features
 * Supports zooming, spinning and flipping images
 * Supports panning, zooming and spinning images _with the mouse_
 * Opens directories, dropped files, pasted images, even from the internet
-* Navigates through multiple opened images, can display multiples images at once
+* Navigates through multiple opened images, can display multiple images at once
 * Has _six_ automatic zoom options, including fit and fill
 * Can hide scrollbars, statusbar and toolbar
 * Comes with really, *really* many menu items
