@@ -3,24 +3,20 @@ pynorama
 
 Pynorama is an image viewer. It *views* images.
 
+![a screenshot](http://i.imgur.com/vaXdV9C.png)
+![another screenshot](http://i.imgur.com/HcmHecj.png)
+
 Features
 --------
 
-As of version v0.2.3 pynorama is able to
-
-* Load and display multiple images at once
-* Find images in a directory and load them
-* Open images dragged into the window 
-* Open images pasted from the clipboard
-* Navigate through multiple images
-* Pan continuously through a set of images
-* Sort images by name, modification date or size
-* Zoom, rotate and flip images
-* Zoom, rotate and pan images using the mouse
-* Automatically zoom an image to fit or fill the window
-* Change how images are interpolated
-* Display or hide the scrollbars, toolbar and statusbar
-* Enter and leave fullscreen
+* Supports zooming, spinning and flipping images
+* Supports panning, zooming and spinning images _with the mouse_
+* Opens directories, dropped files, pasted images, even from the internet
+* Navigates through multiple opened images, can display multiples images at once
+* Has _six_ automatic zoom options, including fit and fill
+* Can hide scrollbars, statusbar and toolbar
+* Comes with really, *really* many menu items
+* Hardware accelerated
 
 Things to Know
 --------------
@@ -34,15 +30,19 @@ The default mouse behaviour is:
 - Drag the middle button to stretch the image
 - Scroll the scroll wheel to scroll the image
 
-There is currently __no build system__ for the application.
+### Installing
 
-### Requirements
+Pynorama requires a python3 interpreter, Gtk3, Cairo and
+GObject introspection bindings. Debian users can get the packages required with
+`apt-get install libgtk-3-0 python3 python3-gi python3-gi-cairo python3-cairo`
 
-Pynorama requires a python3 interpreter, Gtk3 and gobject introspection modules.
-Including `python3-gi-cairo`. Kind of important.
-It also requires `resources/pynorama.gschema.xml` to be installed and compiled.
+You can install Pynorama using autotools with the command
+`./configure && make && make install`
 
-Good luck with that.
+If there is no configure script, you can create it using
+`aclocal && autoconf && automake --add-missing`
+
+And then use the autotools command above to install Pynorama.
 
 ### License
 
