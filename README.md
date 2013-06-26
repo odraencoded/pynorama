@@ -40,7 +40,7 @@ You can install Pynorama using autotools with the command
 `./configure && make && make install`
 
 If there is no configure script, you can create it using
-`aclocal && autoconf && automake --add-missing`
+`aclocal && autoconf && automake --foreign --add-missing`
 
 And then use the autotools command above to install Pynorama.
 
