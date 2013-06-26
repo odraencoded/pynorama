@@ -1,0 +1,15 @@
+#!/usr/bin/python3
+# coding=utf-8
+
+# Insert pynorama directory into path so we can find it's modules
+import sys
+sys.path.insert(1, "@pynoramadir@")
+
+from pynorama import ImageViewer as just_an_image_viewer
+# Set package stuff
+just_an_image_viewer.Version = "v@PACKAGE_VERSION@"
+just_an_image_viewer.DataDirectory = "@pkgdatadir@"
+
+# START!!!
+application = just_an_image_viewer()
+application.run(sys.argv)
