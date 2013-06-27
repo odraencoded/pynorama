@@ -483,7 +483,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	''' Places a strip of album images, laid side by side, in a view '''
 	
 	def __init__(self, direction=LayoutDirection.Down,
-	                   loop=False, repeat=False, alignment=0,
+	                   loop=False, repeat=False, alignment=.5,
 	                   margin=(0, 0), space=(2560, 3840), limit=(40, 60)):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
@@ -649,8 +649,8 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	    vice versa '''
 	loop = GObject.property(type=bool, default=False)
 	
-	''' Alignment for the parallel axis, 0.5..0.5 = left/right or top/bottom '''
-	alignment = GObject.property(type=float, default=0)
+	''' Alignment for the perpendicular axis, 0..1 = left/right or top/bottom '''
+	alignment = GObject.property(type=float, default=.5)
 	
 	''' Distance between two adjacent images '''
 	margin_after = GObject.property(type=int, default=0)
@@ -1125,7 +1125,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 				frame_rect = a_frame.rectangle
 				ox, oy = a_frame.origin
 				if previous_rect:
-					ox, oy = coordinate_modifier(alignment, margin,
+					ox, oy = coordinate_modifier(alignment	, margin,
 					                             previous_rect, frame_rect)
 					a_frame.origin = ox, oy
 					
@@ -1135,17 +1135,21 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	# lambda args are
 	# alignment, margin, previous translated rectangle, current rectangle
 	_CoordinateToRight = \
-	lambda a, m, p, r: (p.right - r.left + m, p.oy + (p.height - r.height) * a)
+	lambda a, m, p, r: (p.right - r.left + m,
+	                    p.top - r.top + (p.height - r.height) * a)
 	
 	_CoordinateToLeft = \
-	lambda a, m, p, r: (p.left - r.right - m, p.oy + (p.height - r.height) * a)
+	lambda a, m, p, r: (p.left - r.right - m,
+	                    p.top - r.top + (p.height - r.height) * a)
 	
 	_CoordinateToTop = \
-	lambda a, m, p, r: (p.ox + (p.width - r.width) * a, p.top - r.bottom - m)
+	lambda a, m, p, r: (p.left - r.left + (p.width - r.width) * a,
+	                    p.top - r.bottom - m)
 	
 	_CoordinateToBottom = \
-	lambda a, m, p, r: (p.ox + (p.width - r.width) * a, p.bottom - r.top + m)
-	                      
+	lambda a, m, p, r: (p.left - r.left + (p.width - r.width) * a,
+	                    p.bottom - r.top + m)
+	                    
 	_GetFrameWidth = lambda f: f.rectangle.width if f else 0
 	_GetFrameHeight = lambda f: f.rectangle.height if f else 0
 	
@@ -1253,7 +1257,7 @@ towards this direction''')
 			label = _("Alignment")
 			
 			alignment_label = Gtk.Label(label)
-			alignment_adjust = Gtk.Adjustment(0, -.5, .5, .1, .25)
+			alignment_adjust = Gtk.Adjustment(.5, 0, 1, .1, .25)
 			alignment_scale = Gtk.Scale(adjustment=alignment_adjust)
 			alignment_scale.set_draw_value(False)
 			
@@ -1445,14 +1449,14 @@ are too small to breach the pixel count limit''')
 			scale.clear_marks()
 			active_id = combobox.get_active_id()
 			if active_id in ("left", "right"):
-				scale.add_mark(-.5, Gtk.PositionType.BOTTOM, _("Top"))
-				scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Middle"))
-				scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Bottom"))
+				scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Top"))
+				scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Middle"))
+				scale.add_mark(1, Gtk.PositionType.BOTTOM, _("Bottom"))
 					
 			else:
-				scale.add_mark(-.5, Gtk.PositionType.BOTTOM, _("Left"))
-				scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Center"))
-				scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Right"))
+				scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Left"))
+				scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Center"))
+				scale.add_mark(1, Gtk.PositionType.BOTTOM, _("Right"))
 	
 	
 	def add_ui(self, uimanager, merge_id):
