@@ -61,6 +61,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		self.magnification = 1
 		self.rotation = 0
 		self.flipping = False, False
+		self.alignment_point = 0.5, 0.5
 		
 		# These are the two interpolation settings, one is used for
 		# minification and another for magnification.
@@ -366,7 +367,15 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	@flipping.setter
 	def flipping(self, value):
 		self.horizontal_flip, self.vertical_flip = value
-			
+	
+	@property
+	def alignment_point(self):
+		return self.alignment_x, self.alignment_y
+	
+	@alignment_point.setter
+	def alignment_point(self, value):
+		self.alignment_x, self.alignment_y = value
+	
 	# --- basic properties down this line --- #	
 	def get_hadjustment(self):
 		return self._hadjustment
@@ -420,6 +429,10 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	vscroll_policy = GObject.property(type=Gtk.ScrollablePolicy,
 	                                  default=Gtk.ScrollablePolicy.NATURAL)
 	                                  
+	
+	alignment_x = GObject.property(type=float, default=.5)
+	alignment_y = GObject.property(type=float, default=.5)
+	
 	magnification = GObject.property(type=float, default=1)
 	rotation = GObject.property(type=float, default=0)
 	horizontal_flip = GObject.property(type=bool, default=False)
@@ -484,7 +497,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			if diff > 0:
 				x = hadjust.get_value()
 			else:
-				x = lower + diff / 2
+				x = lower + diff * self.alignment_x
 								
 		vadjust = self.get_vadjustment()
 		if vadjust:
@@ -494,7 +507,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			if diff > 0:
 				y = vadjust.get_value()
 			else:
-				y = lower + diff / 2
+				y = lower + diff * self.alignment_y
 				
 		self._obsolete_offset = False
 		self.offset = x, y
