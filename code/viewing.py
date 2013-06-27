@@ -64,6 +64,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		self.connect("notify::magnification", self._matrix_changed)
 		self.connect("notify::rotation", self._matrix_changed)
 		self.connect("notify::flip", self._matrix_changed)
+		self.connect("notify::alignment-x", self._matrix_changed)
+		self.connect("notify::alignment-y", self._matrix_changed)
 		self.connect("notify::minify-filter",
 		             self._interpolation_changed)
 		self.connect("notify::magnify-filter",
