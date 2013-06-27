@@ -36,9 +36,7 @@ class ImageViewer(Gtk.Application):
 		self.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
 		
 		# Default prefs stuff
-		self.zoom_effect = 2
-		self.spin_effect = 90
-		self.default_position = .5, .5
+		self._preferences_dialog = None
 		self.memory_check_queued = False
 		self.meta_mouse_handler = navigation.MetaMouseHandler()
 	
@@ -67,10 +65,12 @@ class ImageViewer(Gtk.Application):
 			
 		Gtk.Window.set_default_icon_name("pynorama")
 	
+	
 	def do_activate(self):
 		some_window = self.get_window()
 		some_window.present()
-		
+	
+	
 	def do_open(self, files, file_count, hint):
 		some_window = self.get_window()
 		
@@ -80,7 +80,17 @@ class ImageViewer(Gtk.Application):
 		some_window.go_new = False
 		
 		some_window.present()
-			
+	
+	
+	def do_shutdown(self):
+		preferences.SaveFromApp(self)
+		Gtk.Application.do_shutdown(self)
+	
+	
+	#-- Some properties down this line --#
+	zoom_effect = GObject.Property(type=int, default=2)
+	spin_effect = GObject.Property(type=int, default=90)
+		
 	def open_image_dialog(self, album, window=None):
 		''' Creates an "open image..." dialog for
 		    adding images into an album. '''
@@ -131,16 +141,23 @@ class ImageViewer(Gtk.Application):
 	
 	def show_preferences_dialog(self, window=None):
 		''' Show the preferences dialog '''
-		dialog = preferences.Dialog(self)
+		if self._preferences_dialog:
+			self._preferences_dialog.present()
 			
-		dialog.set_transient_for(window or self.get_window())
-		dialog.set_modal(True)
-		dialog.set_destroy_with_parent(True)
+		else:
+			dialog = self._preferences_dialog = preferences.Dialog(self)
 		
-		if dialog.run() == Gtk.ResponseType.OK:
-			dialog.save_prefs()
+			dialog.set_transient_for(window or self.get_window())
+			dialog.set_destroy_with_parent(False)
 			
-		dialog.destroy()
+			dialog.connect("response", self._preferences_dialog_responded)
+			dialog.present()
+	
+	def _preferences_dialog_responded(self, *data):
+		self._preferences_dialog.destroy()
+		self._preferences_dialog = None
+		preferences.SaveFromApp(self)
+		
 		
 	def show_about_dialog(self, window=None):
 		''' Shows the about dialog '''
@@ -491,8 +508,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			)
 			
 			self._layout_options_merge_ids[an_option] = a_merge_id
-
-
+			
 		# Bind properties
 		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
 		sync_flag = GObject.BindingFlags.SYNC_CREATE

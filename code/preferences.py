@@ -25,10 +25,8 @@ Settings = Gio.Settings("com.example.pynorama")
 
 class Dialog(Gtk.Dialog):
 	def __init__(self, app):
-		Gtk.Dialog.__init__(self, _("Pynorama Preferences"), None,
-			Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
-			(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-			 Gtk.STOCK_OK, Gtk.ResponseType.OK))
+		Gtk.Dialog.__init__(self, _("Pynorama Preferences"), None, 0,
+			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
 		
 		self.app = app
 		
@@ -88,19 +86,25 @@ class Dialog(Gtk.Dialog):
 		view_grid.attach(point_scale, 2, 0, 1, 3)
 		self.point_adjustments = hadjust, vadjust
 		
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
+		
 		spin_button_specs = [
-			(_("Rotation effect"),
-			 (self.app.spin_effect, 1, 359, 3, 30)),
-			(_("Zoom in/out effect"),
-			 (self.app.zoom_effect, 1.02, 4, 0.1, 0.25))
-		]		
+			(_("Spin effect"), "spin-effect", (0, 1, 359, 3, 30)),
+			(_("Zoom in/out effect"), "zoom-effect", (0, 1.02, 4, 0.1, 0.25))
+		]
+		
 		spin_buttons = []
-		for a_label_string, an_adjustment_args in spin_button_specs:
+		for a_label_string, a_property, an_adjustment_args in spin_button_specs:
 			a_button_label = Gtk.Label(a_label_string)
 			a_button_label.set_hexpand(True)
 			a_button_label.set_alignment(0, 0.5)
 			
 			an_adjustment = Gtk.Adjustment(*(an_adjustment_args + (0,)))
+			if a_property:
+				self.app.bind_property(a_property, an_adjustment, "value",
+				                       bidi_flag | sync_flag)
+				
 			a_spin_button = Gtk.SpinButton()
 			a_spin_button.set_adjustment(an_adjustment)
 			
@@ -125,21 +129,6 @@ class Dialog(Gtk.Dialog):
 			box.pack_start(a_widget, False, False, 3)
 			
 		return alignment
-			
-	def save_prefs(self):		
-		rotation_effect = self.spin_effect.get_value()
-		zoom_effect = self.zoom_effect.get_value()
-		default_h, default_v =  [adjust.get_value() for adjust \
-                         in self.point_adjustments]
-		
-		self.app.zoom_effect = zoom_effect
-		self.app.spin_effect = rotation_effect
-		self.app.default_position = default_h, default_v
-		
-		Settings.set_double("start-horizontal-position", default_h)
-		Settings.set_double("start-vertical-position", default_v)
-		Settings.set_double("zoom-effect", zoom_effect)
-		Settings.set_int("rotation-effect", rotation_effect)
 
 
 def LoadForApp(app):
@@ -148,6 +137,11 @@ def LoadForApp(app):
 	app.default_position = default_h, default_v
 	app.zoom_effect = Settings.get_double("zoom-effect")
 	app.spin_effect = Settings.get_int("rotation-effect")
+
+
+def SaveFromApp(app):
+	Settings.set_double("zoom-effect", app.zoom_effect)
+	Settings.set_int("rotation-effect", app.spin_effect)
 
 
 def LoadForWindow(window):
