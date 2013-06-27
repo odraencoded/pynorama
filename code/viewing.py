@@ -64,8 +64,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		
 		# These are the two interpolation settings, one is used for
 		# minification and another for magnification.
-		self.minify_interpolation = cairo.FILTER_BILINEAR
-		self.magnify_interpolation = cairo.FILTER_NEAREST
+		self.minify_filter = cairo.FILTER_BILINEAR
+		self.magnify_filter = cairo.FILTER_NEAREST
 		
 		# These two variables are used for rounding the offset for drawing
 		# round_full_pixel_offset will round the offset to a multiple
@@ -82,9 +82,9 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		self.connect("notify::magnification", self._matrix_changed)
 		self.connect("notify::rotation", self._matrix_changed)
 		self.connect("notify::flip", self._matrix_changed)
-		self.connect("notify::minify-interpolation",
+		self.connect("notify::minify-filter",
 		             self._interpolation_changed)
-		self.connect("notify::magnify-interpolation",
+		self.connect("notify::magnify-filter",
                      self._interpolation_changed)
 		self.connect("notify::round-full-pixel-offset",
 		             self._interpolation_changed)
@@ -339,19 +339,19 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def get_magnified_height(self):
 		return self.get_allocated_height() / self.magnification
 	
-	def get_interpolation_for_scale(self, scale):
-		if scale > 1:
-			return self.magnify_interpolation
-		elif scale < 1:
-			return self.minify_interpolation
+	def get_filter_for_magnification(self, zoom):
+		if zoom > 1:
+			return self.magnify_filter
+		elif zoom < 1:
+			return self.minify_filter
 		else:
 			return None
 			
-	def set_interpolation_for_scale(self, scale, value):
-		if scale > 1:
-			self.magnify_interpolation = value
-		elif scale < 1:
-			self.minify_interpolation = value
+	def set_filter_for_magnification(self, zoom, value):
+		if zoom > 1:
+			self.magnify_filter = value
+		elif zoom < 1:
+			self.minify_filter = value
 	
 	@property
 	def flipping(self):
@@ -409,8 +409,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	horizontal_flip = GObject.property(type=bool, default=False)
 	vertical_flip = GObject.property(type=bool, default=False)
 	
-	minify_interpolation = GObject.property(type=int, default=1)
-	magnify_interpolation = GObject.property(type=int, default=1)
+	minify_filter = GObject.property(type=int, default=1)
+	magnify_filter = GObject.property(type=int, default=1)
 	
 	round_full_pixel_offset = GObject.property(type=bool, default=False)
 	round_sub_pixel_offset = GObject.property(type=bool, default=True)
@@ -526,19 +526,19 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			self.hflip, self.vflip = self.flip = view.flipping
 			self.is_flipped = self.hflip or self.vflip
 			
-			self.magnify_interpolation = view.magnify_interpolation
-			self.minify_interpolation = view.minify_interpolation
+			self.magnify_filter = view.magnify_filter
+			self.minify_filter = view.minify_filter
 			
 			self.size = self.width, self.height = (
 				view.get_allocated_width(),
 				view.get_allocated_height()
 			)
 			
-		def get_interpolation_for_scale(self, scale):
-			if scale > 1:
-				return self.magnify_interpolation
-			elif scale < 1:
-				return self.minify_interpolation
+		def get_filter_for_magnification(self, zoom):
+			if zoom > 1:
+				return self.magnify_filter
+			elif zoom < 1:
+				return self.minify_filter
 			else:
 				return None		
 	
@@ -618,7 +618,7 @@ class ImageSurfaceFrame(ImageFrame):
 			# Set filter
 			a_pattern = cr.get_source()
 			zoom = drawstate.magnification
-			a_filter = drawstate.get_interpolation_for_scale(zoom)
+			a_filter = drawstate.get_filter_for_magnification(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		
@@ -689,7 +689,7 @@ class AnimatedPixbufFrame(ImageFrame):
 			# Set filter
 			a_pattern = cr.get_source()
 			zoom = drawstate.magnification
-			a_filter = drawstate.get_interpolation_for_scale(zoom)
+			a_filter = drawstate.get_filter_for_magnification(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		
