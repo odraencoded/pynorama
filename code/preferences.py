@@ -303,7 +303,9 @@ class PointScale(Gtk.DrawingArea):
 	def __init__(self, hrange, vrange):
 		Gtk.DrawingArea.__init__(self)
 		self.set_size_request(50, 50)
-		self.padding = 4
+		self.padding = 1
+		self.mark_width = 24
+		self.mark_height = 24
 		self.dragging = False
 		self.__hrange = self.__vrange = None
 		self.hrange_signal = self.vrange_signal = None
@@ -316,11 +318,14 @@ class PointScale(Gtk.DrawingArea):
 			
 	def adjust_from_point(self, x, y):
 		w, h = self.get_allocated_width(), self.get_allocated_height()
-		t, l = self.padding, self.padding
-		r = w - self.padding
-		b = h - self.padding
+		t, l = (self.padding + self.mark_height / 2,
+		        self.padding + self.mark_width / 2)
+		r = w - (self.padding + self.mark_width / 2)
+		b = h - (self.padding + self.mark_height / 2)
 		
-		x, y = max(0, min(r - l, x - l)) / (r - l), max(0, min(b - t, y - t)) / (b - t)
+		x, y = (max(0, min(r - l, x - l)) / (r - l),
+		        max(0, min(b - t, y - t)) / (b - t))
+		        
 		hrange = self.get_hrange()
 		if hrange:
 			lx, ux = hrange.get_lower(), hrange.get_upper()
@@ -365,9 +370,10 @@ class PointScale(Gtk.DrawingArea):
 	
 	def do_draw(self, cr):
 		w, h = self.get_allocated_width(), self.get_allocated_height()		
-		t, l = self.padding, self.padding
-		r = w - self.padding
-		b = h - self.padding
+		t, l = (self.padding + self.mark_height / 2,
+		        self.padding + self.mark_width / 2)
+		r = w - (self.padding + self.mark_width / 2)
+		b = h - (self.padding + self.mark_height / 2)
 		
 		hrange = self.get_hrange()
 		if hrange:
@@ -391,35 +397,46 @@ class PointScale(Gtk.DrawingArea):
 		Gtk.render_background(style, cr, 0, 0, w, h)
 		cr.save()
 		border = style.get_border(style.get_state())
-		radius = style.get_property(Gtk.STYLE_PROPERTY_BORDER_RADIUS, Gtk.StateFlags.NORMAL)
+		radius = style.get_property(Gtk.STYLE_PROPERTY_BORDER_RADIUS,
+		                            Gtk.StateFlags.NORMAL)
 		color = style.get_color(style.get_state())
-		cr.arc(border.left + radius, border.top + radius, radius, math.pi, math.pi * 1.5)
-		cr.arc(w - border.right - radius -1, border.top + radius, radius, math.pi * 1.5, math.pi * 2)
-		cr.arc(w - border.right - radius -1, h -border.bottom - radius -1, radius, 0, math.pi / 2)
-		cr.arc(border.left + radius, h - border.bottom - radius - 1, radius, math.pi / 2, math.pi)
+		cr.arc(border.left + radius,
+		       border.top + radius, radius, math.pi, math.pi * 1.5)
+		cr.arc(w - border.right - radius -1,
+		       border.top + radius, radius, math.pi * 1.5, math.pi * 2)
+		cr.arc(w - border.right - radius -1,
+		       h -border.bottom - radius -1, radius, 0, math.pi / 2)
+		cr.arc(border.left + radius,
+		       h - border.bottom - radius - 1, radius, math.pi / 2, math.pi)
 		cr.clip()
 		
 		cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
 		
-		dot_radius = 3
-		out_radius = dot_radius * 4
-		cr.set_line_width(1)
-		cr.set_dash([dot_radius, out_radius], x)
-		Gtk.render_line(style, cr, x, -out_radius, x, y -out_radius)
-		Gtk.render_line(style, cr, x, y +out_radius, x, h +out_radius)
-		cr.set_dash([dot_radius, out_radius], y)
-		Gtk.render_line(style, cr, -out_radius, y, x -out_radius, y)
-		Gtk.render_line(style, cr, x +out_radius, y, w +out_radius, y)
+		ml, mt = x - self.mark_width / 2, y - self.mark_height / 2
+		mr, mb = ml + self.mark_width, mt + self.mark_height
 		
+		ml, mt, mr, mb = round(ml), round(mt), round(mr), round(mb)
+		
+		cr.set_line_width(1)
+		cr.set_dash([1, 7], x)
+		Gtk.render_line(style, cr, ml, 0, ml, h)
+		Gtk.render_line(style, cr, mr, 0, mr, h)
+		cr.set_dash([1, 7], y)
+		Gtk.render_line(style, cr, 0, mt, w, mt)
+		Gtk.render_line(style, cr, 0, mb, w, mb)
+		
+		cr.set_line_width(2)
 		cr.set_dash([], 0)
-		cr.arc(x, y, out_radius, 0, 2 * math.pi)
+		Gtk.render_line(style, cr, ml, mt, ml, mb)
+		Gtk.render_line(style, cr, mr, mt, mr, mb)
+		Gtk.render_line(style, cr, ml, mt, mr, mt)
+		Gtk.render_line(style, cr, ml, mb, mr, mb)
+		
 		cr.stroke()
-		cr.arc(x, y, dot_radius, 0, 2 * math.pi)
-		cr.fill()
 		
 		cr.restore()
 		Gtk.render_frame(style, cr, 0, 0, w, h)
-			
+		
 	def adjustment_changed(self, data):
 		self.queue_draw()
 	
