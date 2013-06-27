@@ -26,7 +26,8 @@ class IdlyMethod:
 		self.kwargs = kwargs
 		self._signal_id = None
 		self._queued = False
-		
+	
+	
 	def __call__(self):
 		self.cancel_queue()
 		self.callback(*self.args, **self.kwargs)
@@ -34,19 +35,30 @@ class IdlyMethod:
 	execute = __call__
 	
 	def queue(self):
+		''' Queues the IdlyMethod to be called from the Gtk main loop later '''
 		if not self._signal_id:
 			self._signal_id = GLib.idle_add(
-			     self._execute_queue, priority=self.priority)
+			     self._idly_execute_queue, priority=self.priority)
 		
 		self._queued = True
-		
+
+
 	def cancel_queue(self):
+		''' Cancels the idle call '''
 		if self._signal_id:
 			GLib.source_remove(self._signal_id)
 			self._signal_id = None
 			self._queued = False
-			
-	def _execute_queue(self):
+	
+	
+	def execute_queue(self):
+		''' Executes the IdlyMethod if it has been queued.
+			Nothing happens otherwise. '''
+		if self._queued:
+			self()
+	
+	
+	def _idly_execute_queue(self):
 		self._queued = False
 		self()
 		
