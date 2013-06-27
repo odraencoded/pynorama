@@ -154,33 +154,32 @@ class Album(GObject.Object):
 class SortingKeys:
 	''' Contains functions to get keys in images for sorting them '''
 	
-	@staticmethod
 	def ByName(image):
 		return GLib.utf8_collate_key_for_filename(image.fullname, -1)
 		
-	@staticmethod
 	def ByCharacters(image):
 		return image.fullname.lower()
 			
-	@staticmethod
 	def ByFileSize(image):
 		return image.get_metadata().data_size
 		
-	@staticmethod
 	def ByFileDate(image):
 		return image.get_metadata().modification_date
 		
-	@staticmethod
 	def ByImageSize(image):
 		return image.get_metadata().get_area()
 		
-	@staticmethod
 	def ByImageWidth(image):
 		return image.get_metadata().width
 		
-	@staticmethod
 	def ByImageHeight(image):
 		return image.get_metadata().height
+		
+	Enum = [
+		ByName, ByCharacters,
+		ByFileSize, ByFileDate,
+		ByImageSize, ByImageWidth, ByImageHeight
+	]
 
 from gi.repository import Gtk, Gio
 from gettext import gettext as _

@@ -90,7 +90,7 @@ class ImageViewer(Gtk.Application):
 	#-- Some properties down this line --#
 	zoom_effect = GObject.Property(type=int, default=2)
 	spin_effect = GObject.Property(type=int, default=90)
-		
+	
 	def open_image_dialog(self, album, window=None):
 		''' Creates an "open image..." dialog for
 		    adding images into an album. '''
@@ -363,15 +363,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self._focus_loaded_handler_id = None
 		self._old_focused_image = None
 		self.go_new = False
-		self.ordering_modes_map = [
-			organization.SortingKeys.ByName,
-			organization.SortingKeys.ByCharacters,
-			organization.SortingKeys.ByFileDate,
-			organization.SortingKeys.ByFileSize,
-			organization.SortingKeys.ByImageSize,
-			organization.SortingKeys.ByImageWidth,
-			organization.SortingKeys.ByImageHeight
-		]
 		self.image_list = organization.Album()
 		self.image_list.connect("image-added", self._image_added)
 		self.image_list.connect("image-removed", self._image_removed)
@@ -551,9 +542,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.connect("notify::ordering-mode", self._changed_ordering_mode)
 		self.connect("notify::layout-option", self._changed_layout_option)
 		
+		self.image_list.connect("notify::comparer",
+		                        self._changed_album_comparer)
+		
 		# Load preferences
 		other_option.set_current_value(0)
 		preferences.LoadForWindow(self)
+		preferences.LoadForView(self.imageview)
+		preferences.LoadForAlbum(self.image_list)
 		
 		# Refresh status widgets
 		self.refresh_transform()
@@ -712,7 +708,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"open" : (self.file_open,),
 			"paste" : (self.pasted_data,),
 			"sort" : (lambda data: self.image_list.sort(),),
-			"sort-reverse" : (self.__sort_changed,),
+			"sort-reverse" : (self._toggled_reverse_sort,),
 			"remove" : (self.handle_remove,),
 			"clear" : (self.handle_clear,),
 			"quit" : (lambda data: self.destroy(),),
@@ -862,21 +858,34 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.statusbar.pop(context_id)
 			self.statusbar.push(context_id, tooltip)
 			
+	
 	def _pop_tooltip_from_statusbar(self, *data):
 		context_id = self.statusbar.get_context_id("tooltip")
 		self.statusbar.pop(context_id)
-		
+	
+	
 	def _changed_ordering_mode(self, *data):
 		#TODO: Use GObject.bind_property_with_closure for this
-		self.image_list.comparer = self.ordering_modes_map[self.ordering_mode]
-		if not self.image_list.autosort:
-			self.image_list.sort()
-
+		new_comparer = organization.SortingKeys.Enum[self.ordering_mode]
+		if self.image_list.comparer != new_comparer:
+			self.image_list.comparer = new_comparer
+			
+			if not self.image_list.autosort:
+				self.image_list.sort()
+	
+	
+	def _changed_album_comparer(self, album, *data):
+		sorting_keys_enum = organization.SortingKeys.Enum
+		ordering_mode = sorting_keys_enum.index(album.comparer)
 		
-	def __sort_changed(self, *data):
+		self.ordering_mode = ordering_mode
+	
+		
+	def _toggled_reverse_sort(self, *data):
 		if not self.image_list.autosort:
 			self.image_list.sort()
 
+	
 	def _layout_option_chosen(self, radio_action, current_action):
 		''' Sets the layout-option property from the menu choices '''
 		current_value = current_action.get_current_value()
@@ -1410,6 +1419,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def do_destroy(self, *data):
 		# Saves this window preferences
 		preferences.SaveFromWindow(self)
+		preferences.SaveFromAlbum(self.image_list)
+		preferences.SaveFromView(self.imageview)
 		try:
 			# Tries to save the layout preferences
 			self.avl.layout.save_preferences()
@@ -1547,14 +1558,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		return self.actions.get_action("auto-zoom-fit").get_current_value()
 	def set_auto_zoom_mode(self, mode):
 		self.actions.get_action("auto-zoom-fit").set_current_value(mode)
-	
-	def get_interpolation(self):
-		return (self.imageview.minify_filter,
-		        self.imageview.magnify_filter)
-		        
-	def set_interpolation(self, minify, magnify):
-		self.imageview.minify_filter = minify
-		self.imageview.magnify_filter = magnify
 		
 	def get_fullscreen(self):
 		return self.actions.get_action("fullscreen").get_active()

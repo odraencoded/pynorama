@@ -19,7 +19,7 @@
 from gi.repository import Gio, GLib, Gtk, Gdk, GObject
 from gettext import gettext as _
 import cairo, math
-import extending
+import extending, organization
 
 Settings = Gio.Settings("com.example.pynorama")
 
@@ -144,32 +144,20 @@ def SaveFromApp(app):
 	Settings.set_int("rotation-effect", app.spin_effect)
 
 
-def LoadForWindow(window):
-	window.sort_automatically = Settings.get_boolean("sort-auto")
-	window.reverse_ordering = Settings.get_boolean("sort-reverse")
+def LoadForWindow(window):	
 	window.toolbar_visible = Settings.get_boolean("interface-toolbar")
 	window.statusbar_visible = Settings.get_boolean("interface-statusbar")
-	
-	window.ordering_mode = Settings.get_enum("sort-mode")
 	
 	hscrollbar = Settings.get_enum("interface-horizontal-scrollbar")
 	vscrollbar = Settings.get_enum("interface-vertical-scrollbar")
 	window.hscrollbar_placement = hscrollbar
 	window.vscrollbar_placement = vscrollbar
 	
-	interp_min_enum = Settings.get_enum("interpolation-minify")
-	interp_mag_enum = Settings.get_enum("interpolation-magnify")
-	interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
-	              cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
-	interp_min = interp_map[interp_min_enum]
-	interp_mag = interp_map[interp_mag_enum]
-	
 	auto_zoom = Settings.get_boolean("auto-zoom")
 	auto_zoom_minify = Settings.get_boolean("auto-zoom-minify")
 	auto_zoom_magnify = Settings.get_boolean("auto-zoom-magnify")
 	auto_zoom_mode = Settings.get_enum("auto-zoom-mode")
 	
-	window.set_interpolation(interp_min, interp_mag)
 	window.set_auto_zoom_mode(auto_zoom_mode)
 	window.set_auto_zoom(auto_zoom, auto_zoom_minify, auto_zoom_magnify)
 	
@@ -181,24 +169,14 @@ def LoadForWindow(window):
 			window.layout_option = an_option
 			break
 
-def SaveFromWindow(window):
-	Settings.set_boolean("sort-auto", window.sort_automatically)
-	Settings.set_boolean("sort-reverse", window.reverse_ordering)
+def SaveFromWindow(window):	
 	Settings.set_boolean("interface-toolbar", window.toolbar_visible)
 	Settings.set_boolean("interface-statusbar", window.statusbar_visible)
-	
-	Settings.set_enum("sort-mode", window.ordering_mode)
 	
 	hscrollbar = window.hscrollbar_placement
 	vscrollbar = window.vscrollbar_placement
 	Settings.set_enum("interface-horizontal-scrollbar", hscrollbar)
 	Settings.set_enum("interface-vertical-scrollbar", vscrollbar)
-	
-	interp_min, interp_mag = window.get_interpolation()
-	interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
-	              cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
-	interp_min_enum = interp_map.index(interp_min)
-	interp_mag_enum = interp_map.index(interp_mag)
 	
 	auto_zoom, auto_zoom_minify, auto_zoom_magnify = window.get_auto_zoom()
 	auto_zoom_mode = window.get_auto_zoom_mode()
@@ -207,8 +185,6 @@ def SaveFromWindow(window):
 	Settings.set_boolean("auto-zoom-minify", auto_zoom_minify)
 	Settings.set_boolean("auto-zoom-magnify", auto_zoom_magnify)
 	Settings.set_enum("auto-zoom-mode", auto_zoom_mode)
-	Settings.set_enum("interpolation-minify", interp_min_enum)
-	Settings.set_enum("interpolation-magnify", interp_mag_enum)
 	
 	fullscreen = window.get_fullscreen()
 	Settings.set_boolean("start-fullscreen", fullscreen)
@@ -220,6 +196,50 @@ def SaveFromWindow(window):
 		
 	else:
 		Settings.set_string("layout-codename", window.layout_option.codename)
+
+
+def LoadForAlbum(album):
+	album.freeze_notify()
+	try:
+		album.autosort = Settings.get_boolean("sort-auto")
+		album.reverse = Settings.get_boolean("sort-reverse")
+		
+		comparer_value = Settings.get_enum("sort-mode")
+		album.comparer = organization.SortingKeys.Enum[comparer_value]
+		
+	finally:
+		album.thaw_notify()
+
+	
+def SaveFromAlbum(album):
+	Settings.set_boolean("sort-auto", album.autosort)
+	Settings.set_boolean("sort-reverse", album.reverse)
+	
+	comparer_value = organization.SortingKeys.Enum.index(album.comparer)
+	Settings.set_enum("sort-mode", comparer_value)	
+
+def LoadForView(view):
+	view.freeze_notify()
+	try:
+		# Load interpolation filter settings
+		interp_min_value = Settings.get_enum("interpolation-minify")
+		interp_mag_value = Settings.get_enum("interpolation-magnify")
+		interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
+			          cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
+		view.minify_filter = interp_map[interp_min_value]
+		view.magnify_filter = interp_map[interp_mag_value]
+	
+	finally:
+		view.thaw_notify()
+	
+def SaveFromView(view):
+	# Save interpolation filter settings
+	interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
+	              cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
+	interp_min_value = interp_map.index(view.minify_filter)
+	interp_mag_value = interp_map.index(view.magnify_filter)
+	Settings.set_enum("interpolation-minify", interp_min_value)
+	Settings.set_enum("interpolation-magnify", interp_mag_value)
 
 class PointScale(Gtk.DrawingArea):
 	''' A widget like a Gtk.HScale and Gtk.VScale together. '''
