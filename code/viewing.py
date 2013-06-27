@@ -208,7 +208,11 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		
 		self.adjust_to(x, y)
 	
+	
 	def adjust_to_frame(self, frame, rx=.5, ry=.5):
+		''' Adjusts the view to a frame using rx and ry as anchoring
+		    coordinates in the frame rectangle '''
+		
 		hadjust = self.get_hadjustment()
 		vadjust = self.get_vadjustment()
 		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
@@ -216,8 +220,17 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		x, y = point.spin((x, y), self.rotation / 180 * math.pi)
 		
 		self.adjust_to(x - vw * rx, y - vh * ry)
-	
+
+
+	def align_to_frame(self, frame):
+		''' Aligns the view to a frame '''
+		self.adjust_to_frame(frame, *self.alignment_point)
+
+
 	def adjust_to_boundaries(self, rx, ry):
+		''' Adjusts the view to some relative point where the actual
+		    coordinates are more or less width * rx, height * ry '''
+		
 		hadjust = self.get_hadjustment()
 		vadjust = self.get_vadjustment()
 		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
@@ -228,7 +241,12 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		y = (uy - ly - vh) * ry + ly
 		self.adjust_to(x, y)
 	
+	
 	def adjust_to(self, x, y):
+		''' Adjusts the view to x, y '''
+		# Refresh outline and adjustments
+		self.refresh_outline.execute_queue()
+		
 		hadjust = self.get_hadjustment()
 		if hadjust:
 			lx, ux = hadjust.get_lower(), hadjust.get_upper()
@@ -448,6 +466,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		bounds = self.outline.flip(*self.flipping)
 		bounds = bounds.spin(self.rotation / 180 * math.pi)
 		hadjust, vadjust = self.get_hadjustment(), self.get_vadjustment()
+		
 		if hadjust:
 			hadjust.freeze_notify()
 			
@@ -467,6 +486,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			hadjust.set_value(clamped_value)
 			
 			hadjust.thaw_notify()
+			
 		if vadjust:
 			vadjust.freeze_notify()
 			
