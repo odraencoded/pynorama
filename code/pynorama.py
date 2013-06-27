@@ -88,8 +88,8 @@ class ImageViewer(Gtk.Application):
 	
 	
 	#-- Some properties down this line --#
-	zoom_effect = GObject.Property(type=int, default=2)
-	spin_effect = GObject.Property(type=int, default=90)
+	zoom_effect = GObject.Property(type=float, default=2)
+	spin_effect = GObject.Property(type=float, default=90)
 	
 	def open_image_dialog(self, album, window=None):
 		''' Creates an "open image..." dialog for
