@@ -90,7 +90,11 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		             self._interpolation_changed)
 		self.connect("notify::round-sub-pixel-offset",
                      self._interpolation_changed)
-                     
+		
+		self._magnification_watch = (0, None)
+		self.connect("notify::magnification", self._magnification_changed)
+		
+
 	def add_frame(self, *frames):
 		''' Adds one or more pictures to the gallery '''
 		for a_frame in frames:
@@ -106,7 +110,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			
 		self.refresh_outline.queue()
 		self.queue_draw()
-			
+
+
 	def remove_frame(self, *frames):
 		''' Removes one or more pictures from the gallery '''
 		for a_frame in frames:
@@ -120,7 +125,8 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			
 		self.refresh_outline.queue()
 		self.queue_draw()
-	
+
+
 	def refresh_outline(self):
 		''' Figure out the outline of all frames united '''
 		rectangles = [a_frame.rectangle.shift(a_frame.origin) \
@@ -361,8 +367,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def flipping(self, value):
 		self.horizontal_flip, self.vertical_flip = value
 			
-	# --- basic properties down this line --- #
-	# TODO: Remove get_/set_	
+	# --- basic properties down this line --- #	
 	def get_hadjustment(self):
 		return self._hadjustment
 	def get_vadjustment(self):
@@ -393,7 +398,18 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			adjustment.set_page_size(self.get_magnified_height())
 			self._vadjust_signal = adjustment.connect(
 			                        "value-changed", self._adjustment_changed)
+	
+	def get_current_interpolation_filter(self):
+		'''' Returns the interpolation filter for the view magnification '''
+		return self.get_filter_for_magnification(self.magnification)
 		
+	def set_current_interpolation_filter(self, value):
+		self.set_filter_for_magnification(self.magnification, value)
+	
+	def is_zoomed(self):
+		''' Returns whether magnification does not equal one '''
+		return self.magnification != 1
+	
 	hadjustment = GObject.property(get_hadjustment, set_hadjustment,
 	                               type=Gtk.Adjustment)
 	vadjustment = GObject.property(get_vadjustment, set_vadjustment,
@@ -408,13 +424,19 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	rotation = GObject.property(type=float, default=0)
 	horizontal_flip = GObject.property(type=bool, default=False)
 	vertical_flip = GObject.property(type=bool, default=False)
-	
+
+
 	minify_filter = GObject.property(type=int, default=1)
 	magnify_filter = GObject.property(type=int, default=1)
 	
 	round_full_pixel_offset = GObject.property(type=bool, default=False)
 	round_sub_pixel_offset = GObject.property(type=bool, default=True)
-		
+	
+	zoomed = GObject.property(is_zoomed, type=bool, default=False)
+	current_interpolation_filter = GObject.property(
+	                               get_current_interpolation_filter,
+	                               set_current_interpolation_filter,
+	                               type=int)
 	# --- computing stuff down this line --- #	
 	
 	def _compute_adjustments(self):
@@ -487,20 +509,64 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def _adjustment_changed(self, data):
 		self._obsolete_offset = True
 		self.queue_draw()
-		
+
+
 	def _matrix_changed(self, *data):
 		# I saw a black cat walk by. Twice.
 		self._compute_adjustments()
 		self.queue_draw()
 		self.emit("transform-change")
 	
+	
 	def _interpolation_changed(self, *data):
 		self.queue_draw()
 	
+	
+	def _magnification_changed(self, *data):
+		''' handler for notify::magnification '''
+		old_sign, filter_handler_id = self._magnification_watch
+		mag = self.magnification
+		changed = False
+		if mag < 1:
+			if old_sign >= 0:
+				changed = True
+				sign = -1
+				new_handler_id = self.connect("notify::minify-filter",
+				                              self._notify_interpolation_filter)
+				
+		elif mag > 1:
+			if old_sign <= 0:
+				changed = True
+				sign = 1
+				new_handler_id = self.connect("notify::magnify-filter",
+				                              self._notify_interpolation_filter)
+				
+		else:
+			if old_sign != 0:
+				sign = 0
+				changed = True
+				new_handler_id = None
+		
+		if changed:
+			if filter_handler_id:
+				self.disconnect(filter_handler_id)
+				
+			self._magnification_watch = sign, new_handler_id
+			if sign != 0:
+				self._notify_interpolation_filter()
+			
+			if (sign == 0) != (old_sign == 0):
+				self.notify("zoomed")
+
+	def _notify_interpolation_filter(self, *data):
+		self.notify("current-interpolation-filter")
+	
+
 	def do_size_allocate(self, allocation):
 		Gtk.DrawingArea.do_size_allocate(self, allocation)
 		self._compute_adjustments()
 	
+
 	class DrawState:
 		''' Caches a bunch of properties '''
 		def __init__(self, view):

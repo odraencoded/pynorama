@@ -494,30 +494,41 @@ class ViewerWindow(Gtk.ApplicationWindow):
 
 
 		# Bind properties
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
 		self.bind_property("sort-automatically", self.image_list,
-		                   "autosort", GObject.BindingFlags.BIDIRECTIONAL)
+		                   "autosort", bidi_flag)
 		self.bind_property("reverse-ordering", self.image_list,
-		                   "reverse", GObject.BindingFlags.BIDIRECTIONAL)
+		                   "reverse", bidi_flag)
 		self.bind_property("toolbar-visible", self.toolbar,
-		                   "visible", GObject.BindingFlags.BIDIRECTIONAL)
+		                   "visible", bidi_flag)
 		self.bind_property("statusbar-visible", self.statusbarboxbox,
-		                   "visible", GObject.BindingFlags.BIDIRECTIONAL)
+		                   "visible", bidi_flag)
 		self.bind_property(
 		     "reverse-ordering", self.actions.get_action("sort-reverse"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		     "active", bidi_flag)
 		self.bind_property(
 		     "sort-automatically", self.actions.get_action("sort-auto"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		     "active", bidi_flag)
 		self.bind_property(
 		     "ordering-mode", self.actions.get_action("sort-name"),
-		     "current-value", GObject.BindingFlags.BIDIRECTIONAL)
+		     "current-value", bidi_flag)
 		
 		self.bind_property(
 		     "toolbar-visible", self.actions.get_action("ui-toolbar"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		     "active", bidi_flag)
 		self.bind_property(
 		     "statusbar-visible", self.actions.get_action("ui-statusbar"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		     "active", bidi_flag)
+		
+		self.imageview.bind_property(
+		     "current-interpolation-filter",
+		     self.actions.get_action("interp-nearest"),
+		     "current-value", bidi_flag)
+		
+		self.imageview.bind_property("zoomed",
+		     self.actions.get_action("interpolation"),
+		     "sensitive", bidi_flag | sync_flag)
 		
 		self.connect("notify::vscrollbar-placement", self._changed_scrollbars)
 		self.connect("notify::hscrollbar-placement", self._changed_scrollbars)
@@ -531,7 +542,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Refresh status widgets
 		self.refresh_transform()
 		self.refresh_index()
-		self.refresh_interp()
 		
 	def setup_actions(self):
 		self.uimanager = Gtk.UIManager()
@@ -707,7 +717,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"flip-h" : (lambda data: self.flip_view(False),),
 			"flip-v" : (lambda data: self.flip_view(True),),
 			"transform-reset" : (lambda data: self.reset_view_transform(),),
-			"interp-nearest" : (self.change_interp,), # For group
 			"layout-configure" : (self.show_layout_dialog,),
 			"ui-scrollbar-top" : (self._toggled_hscroll,),
 			"ui-scrollbar-bottom" : (self._toggled_hscroll,),
@@ -1003,7 +1012,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 
 	
 	def magnification_changed(self, widget, data=None):
-		self.refresh_interp()
 		self.auto_zoom_zoom_modified = True
 		
 	def view_changed(self, widget, data):
@@ -1012,23 +1020,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def reapply_auto_zoom(self, *data):
 		if self.auto_zoom_enabled and not self.auto_zoom_zoom_modified:
 			self.auto_zoom()
-			
-	def refresh_interp(self):	
-		magnification = self.imageview.magnification
-		interp = self.imageview.get_filter_for_magnification(magnification)
-		interp_menu_action = self.actions.get_action("interpolation")
-		interp_menu_action.set_sensitive(interp is not None)
-		
-		interp_group = self.actions.get_action("interp-nearest")
-		interp_group.block_activate()
-		
-		if interp is None:
-			for interp_action in interp_group.get_group():
-				interp_action.set_active(False)
-		else:
-			interp_group.set_current_value(interp)
-			
-		interp_group.unblock_activate()
+
 		
 	def refresh_index(self):
 		focused_image = self.avl.focus_image
@@ -1239,13 +1231,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.auto_zoom_enabled = enabled
 		if self.auto_zoom_enabled:
 			self.auto_zoom()
-	
-	def change_interp(self, radioaction, current):
-		if self.imageview.magnification:
-			interpolation = current.props.value
-			magnification = self.imageview.magnification
-			self.imageview.set_filter_for_magnification(magnification,
-			                                            interpolation)
 	
 	
 	def toggle_keep_above(self, *data):
@@ -1559,7 +1544,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def set_interpolation(self, minify, magnify):
 		self.imageview.minify_filter = minify
 		self.imageview.magnify_filter = magnify
-		self.refresh_interp()
 		
 	def get_fullscreen(self):
 		return self.actions.get_action("fullscreen").get_active()
