@@ -449,28 +449,43 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		bounds = bounds.spin(self.rotation / 180 * math.pi)
 		hadjust, vadjust = self.get_hadjustment(), self.get_vadjustment()
 		if hadjust:
+			hadjust.freeze_notify()
+			
 			hadjust.set_lower(bounds.left)
 			hadjust.set_upper(bounds.right)
+			
+			# Set page size, get and align value
 			visible_span = min(self.get_magnified_width(), bounds.width)
+			visible_diff = hadjust.get_page_size() - visible_span
 			hadjust.set_page_size(visible_span)
+			value = hadjust.get_value() + visible_diff * self.alignment_x
+						
 			# Clamp value
 			max_value = hadjust.get_upper() - hadjust.get_page_size()
 			min_value = hadjust.get_lower()
-			value = hadjust.get_value()
 			clamped_value = min(max_value, max(min_value, value))
 			hadjust.set_value(clamped_value)
 			
+			hadjust.thaw_notify()
 		if vadjust:
+			vadjust.freeze_notify()
+			
 			vadjust.set_lower(bounds.top)
 			vadjust.set_upper(bounds.bottom)
+			
+			# Set page size, get and align value
 			visible_span = min(self.get_magnified_height(), bounds.height)
+			visible_diff = vadjust.get_page_size() - visible_span
 			vadjust.set_page_size(visible_span)
+			value = vadjust.get_value() + visible_diff * self.alignment_y
+			
 			# Clamp value
 			max_value = vadjust.get_upper() - vadjust.get_page_size()
 			min_value = vadjust.get_lower()
-			value = vadjust.get_value()
 			clamped_value = min(max_value, max(min_value, value))
 			vadjust.set_value(clamped_value)
+			
+			vadjust.thaw_notify()
 			
 		self._obsolete_offset = True
 			
