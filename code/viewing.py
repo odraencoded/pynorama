@@ -49,33 +49,14 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		self.refresh_outline.priority = GLib.PRIORITY_HIGH
 		
 		self.outline = point.Rectangle(width=1, height=1)
-		self._obsolete_offset = False
 		
 		# Does this even do anything?
 		self.get_style_context().add_class(Gtk.STYLE_CLASS_VIEW)
 		
-		# View transform variables
 		# offset is usually the same as horizontal/vertical adjustments values
 		# unless the outline fits inside the widget
 		self.offset = 0, 0
-		self.magnification = 1
-		self.rotation = 0
-		self.flipping = False, False
-		self.alignment_point = 0.5, 0.5
-		
-		# These are the two interpolation settings, one is used for
-		# minification and another for magnification.
-		self.minify_filter = cairo.FILTER_BILINEAR
-		self.magnify_filter = cairo.FILTER_NEAREST
-		
-		# These two variables are used for rounding the offset for drawing
-		# round_full_pixel_offset will round the offset to a multiple
-		# of magnification. E.g. it only shifts 8 pixels at a time at 800% zoom.
-		# round_sub_pixel_offset is more useful. It aligns one widget pixel to
-		# one image pixel so that the interpolation effect doesn't change after
-		# panning the images.
-		self.round_full_pixel_offset = False
-		self.round_sub_pixel_offset = True
+		self._obsolete_offset = False
 		
 		self._hadjustment = self._vadjustment = None
 		self._hadjust_signal = self._vadjust_signal = None
@@ -429,19 +410,26 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	vscroll_policy = GObject.property(type=Gtk.ScrollablePolicy,
 	                                  default=Gtk.ScrollablePolicy.NATURAL)
 	                                  
-	
+	# This is the alignment of the outline in the widget when the outline
+	# fits completely inside the widget
 	alignment_x = GObject.property(type=float, default=.5)
 	alignment_y = GObject.property(type=float, default=.5)
 	
+	# Basic view transform
 	magnification = GObject.property(type=float, default=1)
 	rotation = GObject.property(type=float, default=0)
 	horizontal_flip = GObject.property(type=bool, default=False)
 	vertical_flip = GObject.property(type=bool, default=False)
-
-
-	minify_filter = GObject.property(type=int, default=1)
-	magnify_filter = GObject.property(type=int, default=1)
 	
+	minify_filter = GObject.property(type=int, default=cairo.FILTER_BILINEAR)
+	magnify_filter = GObject.property(type=int, default=cairo.FILTER_NEAREST)
+	
+	# These two properties are used for rounding the offset for drawing
+	# round_full_pixel_offset will round the offset to a multiple
+	# of magnification. E.g. it only shifts 8 pixels at a time at 800% zoom.
+	# round_sub_pixel_offset is more useful. It aligns one widget pixel to
+	# one image pixel so that the interpolation effect doesn't change after
+	# panning the images.
 	round_full_pixel_offset = GObject.property(type=bool, default=False)
 	round_sub_pixel_offset = GObject.property(type=bool, default=True)
 	
