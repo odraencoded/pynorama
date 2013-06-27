@@ -389,7 +389,7 @@ class HoverHandler(MouseHandler):
 		
 		scale = self.speed
 		if not self.magnify_speed:
-			scale /= view.get_magnification()
+			scale /= view.magnification
 		
 		scaled_shift = point.scale(shift, scale)
 		view.pan(scaled_shift)
@@ -553,7 +553,7 @@ class SpinHandler(MouseHandler):
 				rotation_effect *= fallout_effect
 			
 			# Changing the rotation(finally)
-			view.set_rotation(view.get_rotation() + rotation_effect)
+			view.rotation = (view.rotation + rotation_effect) % 360
 			# Anchoring!!!
 			view.adjust_to_pin(pin)
 			
@@ -576,7 +576,7 @@ class StretchHandler(MouseHandler):
 		start_diff = point.subtract(start_point, widget_pivot)
 		distance = max(StretchHandler.MinDistance, point.length(start_diff))
 		
-		zoom = view.get_magnification()
+		zoom = view.magnification
 		zoom_ratio = zoom / distance
 		
 		return zoom_ratio, widget_pivot, view.get_pin(widget_pivot)
@@ -590,7 +590,7 @@ class StretchHandler(MouseHandler):
 		
 		new_zoom = distance * zoom_ratio
 		
-		view.set_magnification(new_zoom)
+		view.magnification = new_zoom
 		view.adjust_to_pin(pin)
 		
 		return data
@@ -674,9 +674,9 @@ class ZoomHandler(MouseHandler):
 			
 			pin = view.get_pin(anchor_point)
 			
-			zoom = view.get_magnification()
+			zoom = view.magnification
 			zoom *= self.power ** delta
-			view.set_magnification(zoom)
+			view.magnification = zoom
 			
 			view.adjust_to_pin(pin)
 
@@ -706,8 +706,8 @@ class GearHandler(MouseHandler):
 			
 		pin = view.get_pin(anchor_point)
 		
-		angle = view.get_rotation()
+		angle = view.rotation
 		angle += self.effect * delta
-		view.set_rotation(angle)
+		view.rotation = angle % 360
 		
 		view.adjust_to_pin(pin)

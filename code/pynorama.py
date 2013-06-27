@@ -1007,7 +1007,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.auto_zoom()
 			
 	def refresh_interp(self):	
-		magnification = self.imageview.get_magnification()
+		magnification = self.imageview.magnification
 		interp = self.imageview.get_interpolation_for_scale(magnification)
 		interp_menu_action = self.actions.get_action("interpolation")
 		interp_menu_action.set_sensitive(interp is not None)
@@ -1091,7 +1091,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				pic = _("Loading")
 				
 			# Cache magnification because it is kind of a long variable
-			mag = self.imageview.get_magnification()
+			mag = self.imageview.magnification
 			if mag != 1:
 				if mag > 1 and mag == int(mag):
 					zoom_fmt = " " + _("x{zoom_in:d}")
@@ -1106,8 +1106,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				zoom = ""
 				
 			# Cachin' variables
-			rot = self.imageview.get_rotation()
-			hflip, vflip = self.imageview.get_flip()
+			rot = self.imageview.rotation
+			hflip, vflip = self.imageview.flipping
 			if hflip or vflip:
 				''' If the view is flipped in either direction apply this
 				    intricate looking math stuff to rotation. Normally, there
@@ -1142,21 +1142,21 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def set_view_rotation(self, angle):
 		anchor = self.imageview.get_widget_point()
 		pin = self.imageview.get_pin(anchor)
-		self.imageview.set_rotation(angle)
+		self.imageview.rotation = angle % 360
 		self.imageview.adjust_to_pin(pin)
 	
 	def set_view_zoom(self, magnification):
 		anchor = self.imageview.get_widget_point()
 		pin = self.imageview.get_pin(anchor)
-		self.imageview.set_magnification(magnification)
+		self.imageview.magnification = magnification
 		self.imageview.adjust_to_pin(pin)
 		
 	def set_view_flip(self, horizontal, vertical):
-		hflip, vflip = self.imageview.get_flip()
+		hflip, vflip = self.imageview.flipping
 		
 		if hflip != horizontal or vflip != vertical:
 			# ih8triGNOMEtricks
-			rot = self.imageview.get_rotation()
+			rot = self.imageview.rotation
 			angle_change = (45 - ((rot + 45) % 180)) * 2
 		
 			# If the image if flipped both horizontally and vertically
@@ -1168,23 +1168,23 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			anchor = self.imageview.get_widget_point()
 			pin = self.imageview.get_pin(anchor)
 			if angle_change:
-				self.imageview.set_rotation((rot + angle_change) % 360)
+				self.imageview.rotation = (rot + angle_change) % 360
 			
-			self.imageview.set_flip((horizontal, vertical))
+			self.imageview.flipping = (horizontal, vertical)
 			self.imageview.adjust_to_pin(pin)
 		
 	def zoom_view(self, power):
 		''' Zooms the viewport '''		
 		zoom_effect = self.app.zoom_effect
 		if zoom_effect and power:
-			old_zoom = self.imageview.get_magnification()
+			old_zoom = self.imageview.magnification
 			new_zoom = self.app.zoom_effect ** power * old_zoom
 			self.set_view_zoom(new_zoom)
 			
 	def flip_view(self, vertically):
 		''' Flips the viewport '''
 		# Horizontal mirroring depends on the rotation of the image
-		hflip, vflip = self.imageview.get_flip()
+		hflip, vflip = self.imageview.flipping
 		if vertically:
 			vflip = not vflip
 		else:
@@ -1199,8 +1199,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			change += (change // 360) * -360
 			
 		if change:
-			new_rotation = self.imageview.get_rotation() + change
-			self.set_view_rotation(new_rotation % 360)
+			self.set_view_rotation(self.imageview.rotation + change)
 	
 	def reset_view_transform(self):
 		self.set_view_flip(False, False)
@@ -1216,10 +1215,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			                      
 			if (new_zoom > 1 and self.auto_zoom_magnify) or \
 			   (new_zoom < 1 and self.auto_zoom_minify):
-				self.imageview.set_magnification(new_zoom)
+				self.imageview.magnification = new_zoom
 				self.auto_zoom_zoom_modified = False
 			else:
-				self.imageview.set_magnification(1)
+				self.imageview.magnification = 1
 					
 	def change_auto_zoom(self, *data):
 		mode = self.actions.get_action("auto-zoom-fit").get_current_value()
@@ -1235,9 +1234,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.auto_zoom()
 	
 	def change_interp(self, radioaction, current):
-		if self.imageview.get_magnification():
+		if self.imageview.magnification:
 			interpolation = current.props.value
-			magnification = self.imageview.get_magnification()
+			magnification = self.imageview.magnification
 			self.imageview.set_interpolation_for_scale(magnification,
 			                                           interpolation)
 	
@@ -1547,11 +1546,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.actions.get_action("auto-zoom-fit").set_current_value(mode)
 	
 	def get_interpolation(self):
-		return (self.imageview.get_minify_interpolation(),
-		        self.imageview.get_magnify_interpolation())
+		return (self.imageview.minify_interpolation,
+		        self.imageview.magnify_interpolation)
+		        
 	def set_interpolation(self, minify, magnify):
-		self.imageview.set_minify_interpolation(minify)
-		self.imageview.set_magnify_interpolation(magnify)
+		self.imageview.minify_interpolation = minify
+		self.imageview.magnify_interpolation = magnify
 		self.refresh_interp()
 		
 	def get_fullscreen(self):
