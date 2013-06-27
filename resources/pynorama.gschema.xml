@@ -45,13 +45,13 @@
 	</enum>
 	
 	<schema id="com.example.pynorama" path="/com/example/pynorama/">
-		<key name="start-horizontal-position" type="d">
-			<summary>Horizontal scrollbar position after loading an image</summary>
+		<key name="view-horizontal-alignment" type="d">
+			<summary>Horizontal alignment for images in the image viewer</summary>
 			<range min="0" max="1" />
 			<default>0.5</default>
 		</key>
-		<key name="start-vertical-position" type="d">
-			<summary>Vertical scrollbar position after loading an image</summary>
+		<key name="view-vertical-alignment" type="d">
+			<summary>Vertical alignment for images in the image viewer</summary>
 			<range min="0" max="1" />
 			<default>0.5</default>
 		</key>

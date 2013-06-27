@@ -139,19 +139,19 @@ class ImageViewer(Gtk.Application):
 			                          uris=choosen_uris, search=search_siblings,
 			                          replace=clear_album)
 	
-	def show_preferences_dialog(self, window=None):
+	def show_preferences_dialog(self, target_window=None):
 		''' Show the preferences dialog '''
-		if self._preferences_dialog:
-			self._preferences_dialog.present()
-			
-		else:
-			dialog = self._preferences_dialog = preferences.Dialog(self)
 		
-			dialog.set_transient_for(window or self.get_window())
-			dialog.set_destroy_with_parent(False)
+		target_window = target_window or self.get_window()
+		
+		if not self._preferences_dialog:
+			dialog = self._preferences_dialog = preferences.Dialog(self)
 			
 			dialog.connect("response", self._preferences_dialog_responded)
 			dialog.present()
+			
+		self._preferences_dialog.target_window = target_window
+		self._preferences_dialog.present()
 	
 	def _preferences_dialog_responded(self, *data):
 		self._preferences_dialog.destroy()

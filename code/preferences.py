@@ -25,7 +25,8 @@ Settings = Gio.Settings("com.example.pynorama")
 
 class Dialog(Gtk.Dialog):
 	def __init__(self, app):
-		Gtk.Dialog.__init__(self, _("Pynorama Preferences"), None, 0,
+		Gtk.Dialog.__init__(self, _("Pynorama Preferences"), None,
+			Gtk.DialogFlags.DESTROY_WITH_PARENT,
 			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
 		
 		self.app = app
@@ -54,20 +55,20 @@ class Dialog(Gtk.Dialog):
 		view_grid = tab_grids[0]
 		
 		# Setup view tab		
-		point_label = Gtk.Label(_("Default scrollbar adjustment"))
+		point_label = Gtk.Label(_("Image alignment"))
+		alignment_tooltip = _('''This alignment setting is \
+used for various alignment related things in the program''')
 		
 		point_label.set_alignment(0, 0)
 		point_label.set_line_wrap(True)
 		
-		adjust_x, adjust_y = self.app.default_position
-		
-		hadjust = Gtk.Adjustment(adjust_x, 0, 1, .04, .2, 0)
+		hadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
 		xlabel = Gtk.Label(_("Horizontal "))
 		xlabel.set_alignment(0, 0.5)
 		xspin = Gtk.SpinButton()
 		xspin.set_adjustment(hadjust)
 		
-		vadjust = Gtk.Adjustment(adjust_y, 0, 1, .04, .2, 0)
+		vadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
 		ylabel = Gtk.Label(_("Vertical "))
 		ylabel.set_alignment(0, 0.5)
 		yspin = Gtk.SpinButton()
@@ -77,6 +78,15 @@ class Dialog(Gtk.Dialog):
 		yspin.set_digits(2)
 		
 		point_scale = PointScale(hadjust, vadjust)
+		
+		# Set tooltip
+		xspin.set_tooltip_text(alignment_tooltip)
+		yspin.set_tooltip_text(alignment_tooltip)
+		xlabel.set_tooltip_text(alignment_tooltip)
+		ylabel.set_tooltip_text(alignment_tooltip)
+		point_label.set_tooltip_text(alignment_tooltip)
+		point_scale.set_tooltip_text(alignment_tooltip)
+		
 		view_grid.attach(point_label, 0, 0, 2, 1)
 		
 		view_grid.attach(xlabel, 0, 1, 1, 1)
@@ -84,7 +94,8 @@ class Dialog(Gtk.Dialog):
 		view_grid.attach(xspin, 1, 1, 1, 1)
 		view_grid.attach(yspin, 1, 2, 1, 1)
 		view_grid.attach(point_scale, 2, 0, 1, 3)
-		self.point_adjustments = hadjust, vadjust
+		self.alignment_x_adjust = hadjust
+		self.alignment_y_adjust = vadjust
 		
 		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
 		sync_flag = GObject.BindingFlags.SYNC_CREATE
@@ -116,7 +127,13 @@ class Dialog(Gtk.Dialog):
 		self.spin_effect, self.zoom_effect = spin_buttons
 		self.zoom_effect.set_digits(2)
 		
+		# Bindings
+		self._window_bindings, self._view_bindings = [], []
+		self.connect("notify::target-window", self._changed_target_window)
+		self.connect("notify::target-view", self._changed_target_view)
+		
 		tabs.show_all()
+
 		
 	def create_widget_group(self, *widgets):
 		alignment = Gtk.Alignment()
@@ -131,10 +148,42 @@ class Dialog(Gtk.Dialog):
 		return alignment
 
 
+	def _changed_target_window(self, *data):
+		self.set_transient_for(self.target_window)
+		
+		view, album = self.target_window.view, self.target_window.album
+		
+		if self.target_view != view:
+			self.target_view = view
+			
+		if self.target_album != album:
+			self.target_album = album
+		
+		
+	def _changed_target_view(self, *data):
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
+		
+		for a_binding in self._view_bindings:
+			a_binding.unbind()
+		
+		view = self.target_view
+		if view:
+			self._view_bindings = [
+				view.bind_property("alignment-x", self.alignment_x_adjust,
+						           "value", bidi_flag | sync_flag),
+			
+				view.bind_property("alignment-y", self.alignment_y_adjust,
+				                   "value", bidi_flag | sync_flag)
+			]
+		else:
+			self._view_bindings = []
+		
+	target_window = GObject.Property(type=object)
+	target_view = GObject.Property(type=object)
+	target_album = GObject.Property(type=object)
+	
 def LoadForApp(app):
-	default_h = Settings.get_double("start-horizontal-position")
-	default_v = Settings.get_double("start-vertical-position")
-	app.default_position = default_h, default_v
 	app.zoom_effect = Settings.get_double("zoom-effect")
 	app.spin_effect = Settings.get_int("rotation-effect")
 
@@ -221,6 +270,10 @@ def SaveFromAlbum(album):
 def LoadForView(view):
 	view.freeze_notify()
 	try:
+		# Load alignment
+		view.alignment_x = Settings.get_double("view-horizontal-alignment")
+		view.alignment_y = Settings.get_double("view-vertical-alignment")
+		
 		# Load interpolation filter settings
 		interp_min_value = Settings.get_enum("interpolation-minify")
 		interp_mag_value = Settings.get_enum("interpolation-magnify")
@@ -233,6 +286,10 @@ def LoadForView(view):
 		view.thaw_notify()
 	
 def SaveFromView(view):
+	# Save alignment
+	Settings.set_double("view-horizontal-alignment", view.alignment_x)
+	Settings.set_double("view-vertical-alignment", view.alignment_y)
+	
 	# Save interpolation filter settings
 	interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
 	              cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
