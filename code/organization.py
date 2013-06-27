@@ -443,6 +443,7 @@ class SingleImageLayout(AlbumLayout):
 					
 			avl.current_frame = new_frame
 			avl.view.add_frame(new_frame)
+			avl.view.align_to_frame(new_frame)
 	
 	def _album_changed(self, avl, *data):
 		if not avl.old_album is None:
@@ -593,6 +594,12 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 				avl.center_image = avl.shown_images[new_index]
 				avl.center_frame = avl.shown_frames[new_index]
 				avl.center_index = new_index
+				
+				# If the center frame is already loaded, align the view to it.
+				# If it's not, then that is handled in _refresh_frames
+				if avl.center_frame:
+					avl.view.align_to_frame(avl.center_frame)
+					
 				avl.emit("focus-changed", avl.center_image, False)
 				
 			else:
@@ -614,6 +621,10 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 				avl.center_image = avl.shown_images[new_index]
 				avl.center_frame = avl.shown_frames[new_index]
 				avl.center_index = new_index
+				
+				if avl.center_frame:
+					avl.view.align_to_frame(avl.center_frame)
+					
 				avl.emit("focus-changed", avl.center_image, False)
 				
 			else:
@@ -716,8 +727,12 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 				avl.album.connect("image-added", self._image_added, avl),
 				avl.album.connect("order-changed", self._order_changed, avl),
 			]
-			
+
+
 	def _offset_change(self, view, avl, *data):
+		''' This checks whether an offset change in the view, caused by
+		    panning for example, was big enough to change the focus image '''
+		    
 		if avl.center_frame and not view.frames_fit:
 			w, h = avl.view.get_widget_size()
 			tl = avl.view.get_absolute_point((0, 0))
@@ -730,6 +745,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 			current_distance = None
 			frame_distances = []
 			margin_before, margin_after = self.margin_before, self.margin_after
+			ax, ay = avl.view.alignment_point
 			for i in range(len(avl.shown_frames)):
 				a_frame = avl.shown_frames[i]
 				if a_frame:
@@ -741,7 +757,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 						           else margin_after
 						           
 						a_distance = self._get_rect_distance(margin,
-						                  absolute_view_rect, a_rect)
+						                  ax, ay, absolute_view_rect, a_rect)
 						
 						if i == current_index:
 							current_distance = a_distance
@@ -760,10 +776,11 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 						avl.center_index = best_index			
 						avl.center_image = best_image
 						avl.center_frame = best_frame
-				
+						
 						avl.update_sides.queue()
 						avl.emit("focus-changed", best_image, True)
-					
+
+
 	def _image_added(self, album, image, index, avl):
 		# Handles an iamge added to an album
 		next = album.next(image)
@@ -793,7 +810,8 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 					
 				else:
 					inserted_prev = False
-					
+
+
 	def _image_removed(self, album, image, index, avl):
 		# Handles an image removed from an album
 		removed_frame = False
@@ -1033,7 +1051,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 						backmost_length += margin_before
 						
 	def _refresh_frames(self, avl, image, overwrite=False):
-		# Create frames to represent an image
+		# Create and add frames to represent images
 		error_surface = None
 		new_frames = []
 		for i in range(len(avl.shown_images)):
@@ -1060,6 +1078,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		if new_frames:
 			if image is avl.center_image and not avl.center_frame:
 				avl.center_frame = new_frames[0]
+				avl.view.align_to_frame(avl.center_frame)
 			
 			self._reposition_frames(avl)
 		
@@ -1153,17 +1172,23 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	_GetFrameWidth = lambda f: f.rectangle.width if f else 0
 	_GetFrameHeight = lambda f: f.rectangle.height if f else 0
 	
-	def _GetHorizontalRectDistance(offset, view_rect, rect):
-		center = view_rect.left + view_rect.width / 2 + offset
+	# These calculate the distance of rectangles to figure out what
+	# is the current frame after the offset changes
+	# ax and ay are alignments, offset is based on margin
+	def _GetHorizontalRectDistance(offset, ax, ay, view_rect, rect):
+		center = view_rect.left + view_rect.width * ax + offset
 		dist_a = abs(rect.left - center)
 		dist_b = abs(rect.left + rect.width - center)
-		return dist_a + dist_b
 		
-	def _GetVerticalRectDistance(offset, view_rect, rect):
-		center = view_rect.top + view_rect.height / 2 + offset
+		# Use * (1 - ax) and * ax here so that the distance values
+		# matches the alignment of frames with the view
+		return dist_a * (1 - ax) + dist_b * ax
+		
+	def _GetVerticalRectDistance(offset, ax, ay, view_rect, rect):
+		center = view_rect.top + view_rect.height * ay + offset
 		dist_a = abs(rect.top - center)
 		dist_b = abs(rect.top + rect.height - center)
-		return dist_a + dist_b
+		return dist_a * (1 - ay) + dist_b * ay
 			
 	DirectionMethods = {
 		LayoutDirection.Right : (_GetFrameWidth, _GetHorizontalRectDistance,
