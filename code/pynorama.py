@@ -937,8 +937,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				left.set_active(False)
 				
 		new_value = 2 if right.get_active() else 1 if left.get_active() else 0
-		if new_value != self.vscrollbar_placement:
-			self.vscrollbar_placement = new_value
+		self.vscrollbar_placement = new_value
 	
 		
 	def _toggled_hscroll(self, action, *data):
@@ -952,8 +951,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				top.set_active(False)
 		
 		new_value = 2 if bottom.get_active() else 1 if top.get_active() else 0
-		if new_value != self.hscrollbar_placement:
-			self.hscrollbar_placement = new_value
+		self.hscrollbar_placement = new_value
 
 
 	def _changed_scrollbars(self, *data):
@@ -961,14 +959,23 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		v = self.vscrollbar_placement
 		
 		# Refresh actions
-		left = self.actions.get_action("ui-scrollbar-left")
-		right = self.actions.get_action("ui-scrollbar-right")
-		top = self.actions.get_action("ui-scrollbar-top")
-		bottom = self.actions.get_action("ui-scrollbar-bottom")
+		actions = [
+			self.actions.get_action("ui-scrollbar-top"),
+			self.actions.get_action("ui-scrollbar-right"),
+			self.actions.get_action("ui-scrollbar-bottom"),
+			self.actions.get_action("ui-scrollbar-left")
+		]
+		for an_action in actions:
+			an_action.block_activate()
+		
+		top, right, bottom, left = actions
 		left.set_active(v == 1)
 		right.set_active(v == 2)
 		top.set_active(h == 1)
 		bottom.set_active(h == 2)
+		
+		for an_action in actions:
+			an_action.unblock_activate()
 		
 		# Update scrollbars
 		hpolicy = Gtk.PolicyType.NEVER if h == 0 else Gtk.PolicyType.AUTOMATIC
@@ -1008,7 +1015,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			
 	def refresh_interp(self):	
 		magnification = self.imageview.magnification
-		interp = self.imageview.get_interpolation_for_scale(magnification)
+		interp = self.imageview.get_filter_for_magnification(magnification)
 		interp_menu_action = self.actions.get_action("interpolation")
 		interp_menu_action.set_sensitive(interp is not None)
 		
@@ -1237,8 +1244,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if self.imageview.magnification:
 			interpolation = current.props.value
 			magnification = self.imageview.magnification
-			self.imageview.set_interpolation_for_scale(magnification,
-			                                           interpolation)
+			self.imageview.set_filter_for_magnification(magnification,
+			                                            interpolation)
 	
 	
 	def toggle_keep_above(self, *data):
@@ -1546,12 +1553,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.actions.get_action("auto-zoom-fit").set_current_value(mode)
 	
 	def get_interpolation(self):
-		return (self.imageview.minify_interpolation,
-		        self.imageview.magnify_interpolation)
+		return (self.imageview.minify_filter,
+		        self.imageview.magnify_filter)
 		        
 	def set_interpolation(self, minify, magnify):
-		self.imageview.minify_interpolation = minify
-		self.imageview.magnify_interpolation = magnify
+		self.imageview.minify_filter = minify
+		self.imageview.magnify_filter = magnify
 		self.refresh_interp()
 		
 	def get_fullscreen(self):
