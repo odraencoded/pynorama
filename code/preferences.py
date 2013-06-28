@@ -40,7 +40,7 @@ class Dialog(Gtk.Dialog):
 		tabs_align.show_all()
 		
 		# Create tabs
-		tab_labels = [_("View")]
+		tab_labels = [_("View"), _("Mouse")]
 		tab_grids = []
 		for a_tab_label in tab_labels:
 			a_tab_align = Gtk.Alignment()
@@ -52,7 +52,7 @@ class Dialog(Gtk.Dialog):
 			tabs.append_page(a_tab_align, Gtk.Label(a_tab_label))
 			tab_grids.append(a_tab_grid)
 		
-		view_grid = tab_grids[0]
+		view_grid, mouse_grid = tab_grids
 		
 		# Setup view tab		
 		point_label = Gtk.Label(_("Image alignment"))
@@ -127,6 +127,43 @@ used for various alignment related things in the program''')
 		self.spin_effect, self.zoom_effect = spin_buttons
 		self.zoom_effect.set_digits(2)
 		
+		# Setup mouse grid
+		handler_liststore = Gtk.ListStore(object)
+		
+		for a_handler in self.app.meta_mouse_handler.get_handlers():
+			handler_liststore.append([a_handler])
+		
+		handler_listview = Gtk.TreeView()
+		handler_listview.set_model(handler_liststore)
+		
+		name_renderer = Gtk.CellRendererText()
+		name_column = Gtk.TreeViewColumn("Nickname")
+		name_column.pack_start(name_renderer, True)
+		name_column.set_cell_data_func(name_renderer, 
+		                               self._handler_nick_data_func)
+		
+		handler_listview.append_column(name_column)
+		
+		handler_tools = Gtk.Toolbar()
+		toolbar_style = handler_tools.get_style_context()
+		toolbar_style.add_class(Gtk.STYLE_CLASS_INLINE_TOOLBAR)
+		
+		tool_buttons = [
+			Gtk.ToolButton.new_from_stock(Gtk.STOCK_ADD),
+			Gtk.ToolButton.new_from_stock(Gtk.STOCK_REMOVE),
+			Gtk.ToolButton.new_from_stock(Gtk.STOCK_PROPERTIES),
+		]
+		
+		add_handler, configure_handler, remove_handler = tool_buttons[:3]
+		
+		for i, a_button in enumerate(tool_buttons):
+			handler_tools.insert(a_button, i)
+		
+		handler_listview.set_hexpand(True)
+		handler_listview.set_vexpand(True)
+		mouse_grid.attach(handler_listview, 0, 0, 1, 1)
+		mouse_grid.attach(handler_tools, 0, 1, 1, 1)
+		
 		# Bindings
 		self._window_bindings, self._view_bindings = [], []
 		self.connect("notify::target-window", self._changed_target_window)
@@ -134,7 +171,20 @@ used for various alignment related things in the program''')
 		
 		tabs.show_all()
 
-		
+	
+	def _handler_nick_data_func(self, column, renderer, model, treeiter, *data):
+		handler = model[treeiter][0]
+		text = handler.nickname
+		if not text:
+			if handler.factory:
+				text = handler.factory.label
+				
+			else:
+				text = "???"
+				
+		renderer.props.text = text
+		print(text)
+	
 	def create_widget_group(self, *widgets):
 		alignment = Gtk.Alignment()
 		alignment.set_padding(0, 0, 20, 0)
@@ -146,8 +196,8 @@ used for various alignment related things in the program''')
 			box.pack_start(a_widget, False, False, 3)
 			
 		return alignment
-
-
+		
+	
 	def _changed_target_window(self, *data):
 		self.set_transient_for(self.target_window)
 		

@@ -35,3 +35,25 @@ class LayoutOption:
 	def create_layout(self):
 		''' Replaces this with something that creates a layout '''
 		raise NotImplementedError
+		
+
+class MouseHandlerFactory:
+	''' Manufacturates mouse handlers & accessories '''
+	
+	def __init__(self):
+		codename = "" # A string identifier
+		label = "" # A label for the UI
+		
+		
+	def __call__(self):
+		''' This should return a mouse handler '''
+		
+		raise NotImplementedError
+		
+		
+	def create_settings_widget(self, handler):
+		''' Creates a widget for configuring a mouse handler '''
+		
+		raise NotImplementedError
+
+MouseHandlerBrands = list()

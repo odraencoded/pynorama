@@ -212,6 +212,7 @@ class MetaMouseHandler:
 		self.__dragging_handlers = set()
 		self.__scrolling_handlers = set()
 		self.__button_handlers = dict()
+	
 		
 	def add(self, handler, button=None):
 		if not handler in self.__handlers:
@@ -231,6 +232,7 @@ class MetaMouseHandler:
 			for handler_set in self.__get_handler_sets(handler):
 				handler_set.add(handler)
 				
+	
 	def remove(self, handler):
 		if handler in self.__handlers:
 			del self.__handlers[handler]
@@ -239,6 +241,10 @@ class MetaMouseHandler:
 			
 			for a_button_set in self.__button_handlers.values():
 				a_button_set.discard(handler)
+	
+	
+	def get_handlers(self):
+		return self.__handlers.keys()
 	
 	def __get_handler_sets(self, handler):
 		if handler.handles(MouseEvents.Scrolling):
@@ -252,6 +258,7 @@ class MetaMouseHandler:
 			
 		if handler.handles(MouseEvents.Dragging):
 			yield self.__dragging_handlers
+	
 				
 	def attach(self, adapter):
 		if not adapter in self.__adapters:
@@ -264,6 +271,7 @@ class MetaMouseHandler:
 				adapter.connect("stop-dragging", self._stop_dragging),
 			]
 			self.__adapters[adapter] = signals
+	
 			
 	def detach(self, adapter):
 		signals = self.__adapters.get(adapter, [])
@@ -272,6 +280,7 @@ class MetaMouseHandler:
 			
 		del self.__adapters[adapter]
 		
+	
 	def __overlap_button_set(self, handler_set, button):
 		button_handlers = self.__button_handlers.get(button, set())
 		
@@ -279,6 +288,7 @@ class MetaMouseHandler:
 			return handler_set & button_handlers
 		else:
 			return button_handlers
+	
 	
 	def __basic_event_dispatch(self, adapter, event_handlers,
 	                           function_name, *params):
@@ -292,10 +302,12 @@ class MetaMouseHandler:
 			if data:
 				self.__handlers[a_handler][adapter] = data
 	
+	
 	def _scroll(self, adapter, point, direction):
 		if self.__scrolling_handlers:
 			self.__basic_event_dispatch(adapter, self.__scrolling_handlers,
 			                            "scroll", point, direction)
+	
 	
 	def _motion(self, adapter, to_point, from_point):
 		if adapter.is_pressed():
@@ -310,6 +322,7 @@ class MetaMouseHandler:
 			self.__basic_event_dispatch(adapter, self.__hovering_handlers,
 			                            "hover", to_point, from_point)
 	
+	
 	def _pression(self, adapter, point, button):
 		active_handlers = self.__overlap_button_set(
 		                       self.__pression_handlers, button)
@@ -317,6 +330,7 @@ class MetaMouseHandler:
 		if active_handlers:
 			self.__basic_event_dispatch(adapter, active_handlers, 
 			                            "press", point)
+	
 		
 	def _start_dragging(self, adapter, point, button):
 		active_handlers = self.__overlap_button_set(
@@ -326,6 +340,7 @@ class MetaMouseHandler:
 			self.__basic_event_dispatch(adapter, active_handlers, 
 			                            "start_dragging", point)
 		
+	
 	def _drag(self, adapter, to_point, from_point, button):		
 		active_handlers = self.__overlap_button_set(
 		                       self.__dragging_handlers, button)
@@ -334,6 +349,7 @@ class MetaMouseHandler:
 			self.__basic_event_dispatch(adapter, active_handlers, 
 					                    "drag", to_point, from_point)
 			
+	
 	def _stop_dragging(self, adapter, point, button):
 		active_handlers = self.__overlap_button_set(
                        self.__dragging_handlers, button)
@@ -341,41 +357,60 @@ class MetaMouseHandler:
 		if active_handlers:
 			self.__basic_event_dispatch(adapter, active_handlers, 
 				                        "stop_dragging", point)
-		                            
+
+
 class MouseHandler:
-	''' Handles mouse events '''
+	''' Handles mouse events sent by MetaMouseHandler. '''
 	# The base of the totem pole
 	
 	def __init__(self):
 		self.events = MouseEvents.Nothing
+		
+		# These are set by the app.
+		self.nickname = None # A nickname for this instance
+		self.factory = None # The factory that made the handler
 		
 	def handles(self, event_type):
 		return self.events & event_type == event_type \
 		       if event_type != MouseEvents.Nothing \
 		       else not bool(self.events)
 		       
+		       
 	@property
 	def needs_button(self):
 		return bool(self.events & MouseEvents.Pressing)
 		
+	
 	def scroll(self, widget, point, direction, data):
+		''' Handles a scroll event '''
 		pass
 		
+	
 	def press(self, widget, point, data):
+		''' Handles the mouse being pressed somewhere '''
 		pass
+	
 	
 	def hover(self, widget, to_point, from_point, data):
+		''' Handles the mouse just hovering around '''
 		pass
+	
 	
 	def start_dragging(self, widget, point, data):
+		''' Setup dragging variables '''
 		pass
 	
+	
 	def drag(self, widget, to_point, from_point, data):
+		''' Drag to point A from B '''
 		pass
 		
+	
 	def stop_dragging(self, widget, point, data):
+		''' Finish dragging '''
 		pass
 		
+
 class HoverHandler(MouseHandler):
 	''' Pans a view on mouse hovering '''
 	def __init__(self, speed=1.0, magnify=False):
@@ -383,6 +418,7 @@ class HoverHandler(MouseHandler):
 		self.speed = speed
 		self.magnify_speed = magnify
 		self.events = MouseEvents.Hovering
+	
 	
 	def hover(self, view, to_point, from_point, data):
 		shift = point.subtract(to_point, from_point)
@@ -393,6 +429,7 @@ class HoverHandler(MouseHandler):
 		
 		scaled_shift = point.scale(shift, scale)
 		view.pan(scaled_shift)
+		
 
 class DragHandler(HoverHandler):
 	''' Pans a view on mouse dragging '''
@@ -401,14 +438,18 @@ class DragHandler(HoverHandler):
 		HoverHandler.__init__(self, speed, magnify)
 		self.events = MouseEvents.Dragging
 		
+		
 	def start_dragging(self, view, *etc):
 		fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
 		view.get_window().set_cursor(fleur_cursor)
 	
+	
 	drag = HoverHandler.hover # lol.
+	
 	
 	def stop_dragging(self, view, *etc):
 		view.get_window().set_cursor(None)
+
 
 class MapHandler(MouseHandler):
 	''' Adjusts a view to match a point inside.
