@@ -163,21 +163,22 @@ used for various alignment related things in the program''')
 		
 		handler_listview.append_column(name_column)
 		
+		# Create edit button box
+		edit_handler_buttonbox = Gtk.ButtonBox(spacing=8,
+		                             orientation=Gtk.Orientation.HORIZONTAL)
+		edit_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.START)
 		new_handler_button, configure_handler_button, remove_handler_button = (
 			Gtk.Button.new_from_stock(Gtk.STOCK_ADD),
 			Gtk.Button.new_from_stock(Gtk.STOCK_PROPERTIES),
 			Gtk.Button.new_from_stock(Gtk.STOCK_REMOVE),
 		)
-		
-		edit_handler_buttonbox = Gtk.ButtonBox(spacing=8,
-		                             orientation=Gtk.Orientation.HORIZONTAL)
-		
-		edit_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.START)
+		# These are insensitive until something is selected
+		remove_handler_button.set_sensitive(False)
+		configure_handler_button.set_sensitive(False)
 		
 		edit_handler_buttonbox.add(configure_handler_button)
 		edit_handler_buttonbox.add(new_handler_button)
 		edit_handler_buttonbox.add(remove_handler_button)
-		
 		edit_handler_buttonbox.set_child_secondary(
 		                       configure_handler_button, True)
 		
@@ -207,16 +208,14 @@ used for various alignment related things in the program''')
 		brand_listscroller = Gtk.ScrolledWindow()
 		brand_listscroller.add(brand_listview)
 		
+		# Create button box
+		add_handler_buttonbox = Gtk.ButtonBox(spacing=8,
+		                             orientation=Gtk.Orientation.HORIZONTAL)
+		add_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.END)
 		cancel_button, add_button = (
 			Gtk.Button.new_from_stock(Gtk.STOCK_CANCEL),
 			Gtk.Button.new_from_stock(Gtk.STOCK_NEW),
 		)
-		
-		add_handler_buttonbox = Gtk.ButtonBox(spacing=8,
-		                             orientation=Gtk.Orientation.HORIZONTAL)
-		
-		add_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.END)
-		
 		add_handler_buttonbox.add(cancel_button)
 		add_handler_buttonbox.add(add_button)
 		
@@ -231,7 +230,8 @@ used for various alignment related things in the program''')
 		remove_handler_button.connect("clicked", self._clicked_remove_handler)
 		handler_listview_selection.connect("changed",
 		                                   self._changed_handler_list_selection,
-		                                   remove_handler_button)
+		                                   remove_handler_button,
+		                                   configure_handler_button)
 		
 		tabs.show_all()
 
@@ -263,10 +263,13 @@ used for various alignment related things in the program''')
 			del model[a_treeiter]
 	
 	
-	def _changed_handler_list_selection(self, selection, remove_button):
-		rows = selection.get_selected_rows()
+	def _changed_handler_list_selection(self, selection, 
+	                                    remove_button, configure_button):
+		model, row_paths = selection.get_selected_rows()
 		
-		remove_button.set_sensitive(bool(rows))
+		selected_anything = bool(row_paths)
+		remove_button.set_sensitive(selected_anything)
+		configure_button.set_sensitive(selected_anything)
 	
 	
 	def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
