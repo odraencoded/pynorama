@@ -752,3 +752,45 @@ class GearHandler(MouseHandler):
 		view.rotation = angle % 360
 		
 		view.adjust_to_pin(pin)
+		
+#-- Factories down this line --#
+
+import extending
+from gettext import gettext as _
+
+class HoverHandlerFactory(extending.MouseHandlerFactory):
+	def __init__(self):
+		codename = "hover"
+		self.create_default = HoverHandler
+		
+	@property
+	def label(self):
+		return _("Move Mouse to Pan")
+		
+	def create_settings_widget(self, handler):
+		''' Creates a widget for configuring a mouse handler '''
+		
+		raise NotImplementedError
+
+HoverHandlerFactory = HoverHandlerFactory()
+
+class DragHandlerFactory(extending.MouseHandlerFactory):
+	def __init__(self):
+		codename = "drag"
+		self.create_default = DragHandler
+		
+	@property
+	def label(self):
+		return _("Drag Button to Pan")
+		
+	def create_settings_widget(self, handler):
+		''' Creates a widget for configuring a mouse handler '''
+		
+		raise NotImplementedError
+		
+DragHandlerFactory = DragHandlerFactory()
+
+
+extending.MouseHandlerBrands.extend(
+	[DragHandlerFactory, HoverHandlerFactory]
+)

@@ -46,7 +46,7 @@ class ImageViewer(Gtk.Application):
 		
 		preferences.LoadForApp(self)
 		
-		drag_handler = mousing.DragHandler(-1)
+		drag_handler = mousing.DragHandlerFactory.produce()
 		hover_handler = mousing.HoverHandler(0.2)
 		scroll_handler = mousing.ScrollHandler(mousing.ScrollModes.Wide)
 		spin_handler = mousing.SpinHandler()

@@ -41,20 +41,23 @@ class Dialog(Gtk.Dialog):
 		
 		# Create tabs
 		tab_labels = [_("View"), _("Mouse")]
-		tab_grids = []
+		tab_aligns = []
 		for a_tab_label in tab_labels:
 			a_tab_align = Gtk.Alignment()
-			a_tab_grid = Gtk.Grid()
-			a_tab_grid.set_column_spacing(20)
-			a_tab_grid.set_row_spacing(5)
+			
 			a_tab_align.set_padding(10, 15, 20, 20)
-			a_tab_align.add(a_tab_grid)
 			tabs.append_page(a_tab_align, Gtk.Label(a_tab_label))
-			tab_grids.append(a_tab_grid)
+			tab_aligns.append(a_tab_align)
 		
-		view_grid, mouse_grid = tab_grids
+		view_tab_align, mouse_tab_align = tab_aligns
+					
+		# Setup view tad
 		
-		# Setup view tab		
+		view_grid = Gtk.Grid()
+		view_grid.set_column_spacing(20)
+		view_grid.set_row_spacing(5)
+		view_tab_align.add(view_grid)
+				
 		point_label = Gtk.Label(_("Image alignment"))
 		alignment_tooltip = _('''This alignment setting is \
 used for various alignment related things in the program''')
@@ -127,14 +130,30 @@ used for various alignment related things in the program''')
 		self.spin_effect, self.zoom_effect = spin_buttons
 		self.zoom_effect.set_digits(2)
 		
-		# Setup mouse grid
+		# Setup mouse tab
+		very_mice_book = Gtk.Notebook()
+		
+		view_handlers_box = Gtk.Box(spacing=8,
+		                            orientation=Gtk.Orientation.VERTICAL)
+		add_handler_box = Gtk.Box(spacing=8,
+		                          orientation=Gtk.Orientation.VERTICAL)
+		
+		very_mice_book.append_page(view_handlers_box, None)
+		very_mice_book.append_page(add_handler_box, None)
+		
+		mouse_tab_align.add(very_mice_book)
+		
+		# Setup handlers grid
 		handler_liststore = Gtk.ListStore(object)
 		
 		for a_handler in self.app.meta_mouse_handler.get_handlers():
 			handler_liststore.append([a_handler])
 		
-		handler_listview = Gtk.TreeView()
+		self._handler_listview = handler_listview = Gtk.TreeView()
 		handler_listview.set_model(handler_liststore)
+		
+		handler_listview_selection = handler_listview.get_selection()
+		handler_listview_selection.set_mode(Gtk.SelectionMode.MULTIPLE)
 		
 		name_renderer = Gtk.CellRendererText()
 		name_column = Gtk.TreeViewColumn("Nickname")
@@ -144,30 +163,75 @@ used for various alignment related things in the program''')
 		
 		handler_listview.append_column(name_column)
 		
-		handler_tools = Gtk.Toolbar()
-		toolbar_style = handler_tools.get_style_context()
-		toolbar_style.add_class(Gtk.STYLE_CLASS_INLINE_TOOLBAR)
+		new_handler_button, configure_handler_button, remove_handler_button = (
+			Gtk.Button.new_from_stock(Gtk.STOCK_ADD),
+			Gtk.Button.new_from_stock(Gtk.STOCK_PROPERTIES),
+			Gtk.Button.new_from_stock(Gtk.STOCK_REMOVE),
+		)
 		
-		tool_buttons = [
-			Gtk.ToolButton.new_from_stock(Gtk.STOCK_ADD),
-			Gtk.ToolButton.new_from_stock(Gtk.STOCK_REMOVE),
-			Gtk.ToolButton.new_from_stock(Gtk.STOCK_PROPERTIES),
-		]
+		edit_handler_buttonbox = Gtk.ButtonBox(spacing=8,
+		                             orientation=Gtk.Orientation.HORIZONTAL)
 		
-		add_handler, configure_handler, remove_handler = tool_buttons[:3]
+		edit_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.START)
 		
-		for i, a_button in enumerate(tool_buttons):
-			handler_tools.insert(a_button, i)
+		edit_handler_buttonbox.add(configure_handler_button)
+		edit_handler_buttonbox.add(new_handler_button)
+		edit_handler_buttonbox.add(remove_handler_button)
 		
-		handler_listview.set_hexpand(True)
-		handler_listview.set_vexpand(True)
-		mouse_grid.attach(handler_listview, 0, 0, 1, 1)
-		mouse_grid.attach(handler_tools, 0, 1, 1, 1)
+		edit_handler_buttonbox.set_child_secondary(
+		                       configure_handler_button, True)
 		
-		# Bindings
+		handler_listscroler = Gtk.ScrolledWindow()
+		handler_listscroler.add(handler_listview)
+		
+		view_handlers_box.pack_start(handler_listscroler, True, True, 0)
+		view_handlers_box.pack_start(edit_handler_buttonbox, False, True, 0)
+		
+		# Setup add handlers grid (it is used to add handlers)
+		brand_liststore = Gtk.ListStore(object)
+		
+		for a_brand in extending.MouseHandlerBrands:
+			brand_liststore.append([a_brand])
+		
+		brand_listview = Gtk.TreeView()
+		brand_listview.set_model(brand_liststore)
+		
+		type_column = Gtk.TreeViewColumn("Type")
+		label_renderer = Gtk.CellRendererText()
+		type_column.pack_start(label_renderer, True)
+		type_column.set_cell_data_func(label_renderer, 
+		                               self._brand_label_data_func)
+		
+		brand_listview.append_column(type_column)
+		
+		brand_listscroller = Gtk.ScrolledWindow()
+		brand_listscroller.add(brand_listview)
+		
+		cancel_button, add_button = (
+			Gtk.Button.new_from_stock(Gtk.STOCK_CANCEL),
+			Gtk.Button.new_from_stock(Gtk.STOCK_NEW),
+		)
+		
+		add_handler_buttonbox = Gtk.ButtonBox(spacing=8,
+		                             orientation=Gtk.Orientation.HORIZONTAL)
+		
+		add_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.END)
+		
+		add_handler_buttonbox.add(cancel_button)
+		add_handler_buttonbox.add(add_button)
+		
+		add_handler_box.pack_start(brand_listscroller, True, True, 0)
+		add_handler_box.pack_start(add_handler_buttonbox, False, True, 0)
+		
+		# Bindings and events
 		self._window_bindings, self._view_bindings = [], []
 		self.connect("notify::target-window", self._changed_target_window)
 		self.connect("notify::target-view", self._changed_target_view)
+		
+		remove_handler_button.connect("clicked", self._clicked_remove_handler)
+		handler_listview_selection.connect("changed",
+		                                   self._changed_handler_list_selection,
+		                                   remove_handler_button)
 		
 		tabs.show_all()
 
@@ -183,7 +247,37 @@ used for various alignment related things in the program''')
 				text = "???"
 				
 		renderer.props.text = text
-		print(text)
+	
+	
+	def _clicked_remove_handler(self, *data):
+		selection = self._handler_listview.get_selection()
+		model, row_paths = selection.get_selected_rows()
+		
+		remove_handler = self.app.meta_mouse_handler.remove
+		
+		treeiters = [model.get_iter(a_path) for a_path in row_paths]
+		for a_treeiter in treeiters:
+			a_handler = model[a_treeiter][0]
+			remove_handler(a_handler)
+			
+			del model[a_treeiter]
+	
+	
+	def _changed_handler_list_selection(self, selection, remove_button):
+		rows = selection.get_selected_rows()
+		
+		remove_button.set_sensitive(bool(rows))
+	
+	
+	def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
+		factory = model[treeiter][0]
+		renderer.props.text = factory.label
+	
+	def _popup_add_handlers(self, data):
+		time = Gtk.get_current_event_time()
+		menu = self._add_handlers_menu
+		menu.popup( None, None, None, None, 0, time)
+	
 	
 	def create_widget_group(self, *widgets):
 		alignment = Gtk.Alignment()

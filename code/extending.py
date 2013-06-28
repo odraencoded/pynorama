@@ -44,9 +44,15 @@ class MouseHandlerFactory:
 		codename = "" # A string identifier
 		label = "" # A label for the UI
 		
+	
+	def produce(self):
+		product = self.create_default()
+		product.factory = self
+		return product
 		
-	def __call__(self):
-		''' This should return a mouse handler '''
+	
+	def create_default(self):
+		''' This should create a mouse handler with default attributes '''
 		
 		raise NotImplementedError
 		
