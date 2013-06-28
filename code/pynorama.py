@@ -23,7 +23,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
 import extending
-import organization, navigation, loading, preferences, viewing, notification
+import organization, mousing, loading, preferences, viewing, notification
 from viewing import ZoomMode
 from loading import DirectoryLoader
 DND_URI_LIST, DND_IMAGE = range(2)
@@ -38,7 +38,7 @@ class ImageViewer(Gtk.Application):
 		# Default prefs stuff
 		self._preferences_dialog = None
 		self.memory_check_queued = False
-		self.meta_mouse_handler = navigation.MetaMouseHandler()
+		self.meta_mouse_handler = mousing.MetaMouseHandler()
 	
 	# --- Gtk.Application interface down this line --- #
 	def do_startup(self):
@@ -46,11 +46,11 @@ class ImageViewer(Gtk.Application):
 		
 		preferences.LoadForApp(self)
 		
-		drag_handler = navigation.DragHandler(-1)
-		hover_handler = navigation.HoverHandler(0.2)
-		scroll_handler = navigation.ScrollHandler(navigation.ScrollModes.Wide)
-		spin_handler = navigation.SpinHandler()
-		stretch_handler = navigation.StretchHandler((.5, .5))
+		drag_handler = mousing.DragHandler(-1)
+		hover_handler = mousing.HoverHandler(0.2)
+		scroll_handler = mousing.ScrollHandler(mousing.ScrollModes.Wide)
+		spin_handler = mousing.SpinHandler()
+		stretch_handler = mousing.StretchHandler((.5, .5))
 		
 		self.meta_mouse_handler.add(scroll_handler)
 		self.meta_mouse_handler.add(hover_handler)
@@ -203,7 +203,7 @@ class ImageViewer(Gtk.Application):
 				
 			a_window.show()
 			image_view = a_window.view
-			image_view.mouse_adapter = navigation.MouseAdapter(image_view)
+			image_view.mouse_adapter = mousing.MouseAdapter(image_view)
 			self.meta_mouse_handler.attach(image_view.mouse_adapter)
 			
 			fillscreen = preferences.Settings.get_boolean("start-fullscreen")
