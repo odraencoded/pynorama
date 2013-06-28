@@ -142,6 +142,10 @@
 	</enum>
 	
 	<schema id="com.example.pynorama.layouts.image-strip" path="/com/example/pynorama/layouts/image-strip/">
+		<key name="appearance-own-alignment" type="b">
+			<summary>Whether the layout should use it's own alignment</summary>
+			<default>false</default>
+		</key>
 		<key name="appearance-alignment" type="d">
 			<summary>Image alignment in the perpendicular axis</summary>
 			<range min="0" max="1" />

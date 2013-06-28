@@ -483,7 +483,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	''' Places a strip of album images, laid side by side, in a view '''
 	
 	def __init__(self, direction=LayoutDirection.Down,
-	                   loop=False, repeat=False, alignment=.5,
+	                   loop=False, repeat=False, alignment=None,
 	                   margin=(0, 0), space=(2560, 3840), limit=(40, 60)):
 		GObject.Object.__init__(self)
 		AlbumLayout.__init__(self)
@@ -500,21 +500,27 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		self.connect("notify::margin-before", self._placement_args_changed)
 		self.connect("notify::margin-after", self._placement_args_changed)
 		self.connect("notify::alignment", self._placement_args_changed)
+		self.connect("notify::own-alignment", self._placement_args_changed)
 		self.connect("notify::loop", self._loop_changed)
 		self.connect("notify::repeat", self._repeat_changed)
+		
+		self.freeze_notify()
 		
 		self.direction = direction
 		
 		self.loop = loop
 		self.repeat = repeat
-		self.alignment = alignment
+		if alignment is not None:
+			self.alignment = alignment
+			self.own_alignment = True
 		
 		self.margin_before, self.margin_after = margin
 		self.space_before, self.space_after = space
 		self.limit_before, self.limit_after = limit
 		
+		self.thaw_notify()
 		self.setup_actions()
-				
+		
 		
 	def create_settings_widget(self):
 		return ImageStripLayout.SettingsWidget(self)
@@ -659,7 +665,12 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	    vice versa '''
 	loop = GObject.property(type=bool, default=False)
 	
-	''' Alignment for the perpendicular axis, 0..1 = left/right or top/bottom '''
+	''' Set to true to use the alignment property instead 
+	    of the view alignment'''
+	own_alignment = GObject.property(type=bool, default=False)
+	
+	''' Alignment for the perpendicular axis, 
+	    0..1 = left/right or top/bottom '''
 	alignment = GObject.property(type=float, default=.5)
 	
 	''' Distance between two adjacent images '''
@@ -677,7 +688,6 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	limit_after = GObject.property(type=int, default=60)
 	
 	#-- Implementation detail down this line --#
-	
 	def _direction_changed(self, *data):
 		self._get_length, self._get_rect_distance, \
 		     self._place_before, self._place_after = \
@@ -685,8 +695,10 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		
 		self.refresh_subscribers.queue()
 	
+	
 	def _placement_args_changed(self, *data):
 		self.refresh_subscribers.queue()
+	
 	
 	# These two handlers keep loop/repeat synced
 	def _loop_changed(self, *data):
@@ -705,12 +717,18 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 				
 			avl.view_signals = None
 			
-		avl.old_view = avl.view
-		if avl.view is not None:
-			avl.view_signals = [
-				avl.view.connect("offset-change", self._offset_change, avl),
+		view = avl.old_view = avl.view
+		if view is not None:
+			view_signals = [
+				view.connect("offset-change",
+				             self._offset_changed, avl),
+				view.connect("notify::alignment-x",
+				             self._alignment_changed, avl),
+				view.connect("notify::alignment-y",
+				             self._alignment_changed, avl)
 			]
 				
+	
 	def _album_changed(self, avl, *data):
 		# Handler for album changes in avl
 		if avl.old_album is not None:
@@ -728,7 +746,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 			]
 
 
-	def _offset_change(self, view, avl, *data):
+	def _offset_changed(self, view, avl, *data):
 		''' This checks whether an offset change in the view, caused by
 		    panning for example, was big enough to change the focus image '''
 		    
@@ -780,6 +798,11 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 						avl.emit("focus-changed", best_image, True)
 
 
+	def _alignment_changed(self, view, data, avl):
+		if not self.own_alignment:
+			self._reposition_frames(avl)
+	
+	
 	def _image_added(self, album, image, index, avl):
 		# Handles an iamge added to an album
 		next = album.next(image)
@@ -1107,7 +1130,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 			)
 			
 			for a_coordinator, a_margin, a_range in placement_data:
-				self._place_frames(a_coordinator, a_margin,
+				self._place_frames(avl, a_coordinator, a_margin,
 				                   (shown_frames[j] for j in a_range))
 				
 	def _compute_lengths(self, avl):
@@ -1134,10 +1157,21 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 			avl.space_after = 0
 			avl.space_before = 0
 	
-	def _place_frames(self, coordinate_modifier, margin, frames):
+	def _place_frames(self, avl, coordinate_modifier, margin, frames):
 		''' Places a list of frames side by side '''
+		
+		# Get the alignment
+		if self.own_alignment:
+			alignment = self.alignment
+			
+		else:
+			if self.direction in [LayoutDirection.Up, LayoutDirection.Down]:
+				alignment = avl.view.alignment_x
+				
+			else:
+				alignment = avl.view.alignment_y
+		
 		previous_rect = None
-		alignment = self.alignment
 		for a_frame in frames:
 			if a_frame:
 				frame_rect = a_frame.rectangle
@@ -1221,11 +1255,15 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 			"limit" : (preferences.get_int("limit-before-center"),
 			           preferences.get_int("limit-after-center"))
 		}
-		return ImageStripLayout(**kwargs)
+		result = ImageStripLayout(**kwargs)
+		own_alignment = preferences.get_boolean("appearance-own-alignment")
+		result.own_alignment = own_alignment
+		return result
 
 
 	def save_preferences(self):
 		preferences = ImageStripLayout.Preferences
+		preferences.set_boolean("appearance-own-alignment", self.own_alignment)
 		preferences.set_double("appearance-alignment", self.alignment)
 		
 		direction_enum = LayoutDirection.Enum.index(self.direction)
@@ -1278,12 +1316,16 @@ towards this direction''')
 			direction_selector.add_attribute(text_renderer, "text", 1)
 			
 			#-- Alignment --#
-			label = _("Alignment")
+			label = _("Use own alignment")
+			tooltip = _('''Whether to use a different alignment for \
+the layout images than the general view alignment''')
 			
-			alignment_label = Gtk.Label(label)
+			alignment_button = Gtk.CheckButton(label)
 			alignment_adjust = Gtk.Adjustment(.5, 0, 1, .1, .25)
 			alignment_scale = Gtk.Scale(adjustment=alignment_adjust)
 			alignment_scale.set_draw_value(False)
+			
+			alignment_button.set_tooltip_text(tooltip)
 			
 			#-- Loop checkbox --#
 			label = _("Loop around the album")
@@ -1361,10 +1403,13 @@ are too small to breach the pixel count limit''')
 			flags = binding_flags.BIDIRECTIONAL | binding_flags.SYNC_CREATE
 			self.layout.bind_property("direction", direction_selector,
 			                          "active-id", flags)
+			
+			self.layout.bind_property("own-alignment", alignment_button,
+			                          "active", flags)
 			                          
 			self.layout.bind_property("alignment", alignment_adjust,
 			                          "value", flags)
-			                          
+			                          			                          
 			self.layout.bind_property("loop", loop_button,
 			                          "active", flags)
 			
@@ -1384,7 +1429,10 @@ are too small to breach the pixel count limit''')
 			                          "value", flags)
 			self.layout.bind_property("space-after", space_after_adjust,
 			                          "value", flags)
-			                          
+			
+			self.layout.bind_property("own-alignment", alignment_scale,
+			                          "sensitive", flags)
+			
 			# Add tabs, pack lines
 			def add_tab(self, label):
 				gtk_label = Gtk.Label(label)
@@ -1394,7 +1442,7 @@ are too small to breach the pixel count limit''')
 				return box
 			
 			left_aligned_labels = [
-				direction_label, 
+				direction_label,
 				margin_before_label, margin_after_label,
 				performance_label,
 				space_before_label, space_after_label,
@@ -1403,7 +1451,6 @@ are too small to breach the pixel count limit''')
 			for label in left_aligned_labels:
 				label.set_alignment(0, .5)
 				
-			alignment_label.set_alignment(0, 0)
 			direction_label.set_hexpand(True)
 			space_before_label.set_hexpand(True)
 			performance_label.set_line_wrap(True)
@@ -1415,7 +1462,7 @@ are too small to breach the pixel count limit''')
 			appearance_grid.attach(direction_label, 0, 0, 1, 1)
 			appearance_grid.attach(direction_selector, 1, 0, 1, 1)
 			
-			appearance_grid.attach(alignment_label, 0, 1, 1, 1)
+			appearance_grid.attach(alignment_button, 0, 1, 1, 1)
 			appearance_grid.attach(alignment_scale, 1, 1, 1, 1)
 			
 			appearance_grid.attach(Gtk.Separator(), 0, 2, 2, 1)
