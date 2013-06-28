@@ -132,7 +132,8 @@ used for various alignment related things in the program''')
 		
 		# Setup mouse tab
 		self._mouse_pseudo_notebook = very_mice_book = Gtk.Notebook()
-		
+		very_mice_book.set_show_tabs(False)
+		very_mice_book.set_show_border(False)
 		view_handlers_box = Gtk.Box(spacing=8,
 		                            orientation=Gtk.Orientation.VERTICAL)
 		add_handler_box = Gtk.Box(spacing=8,
@@ -168,9 +169,9 @@ used for various alignment related things in the program''')
 		                             orientation=Gtk.Orientation.HORIZONTAL)
 		edit_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.START)
 		new_handler_button, configure_handler_button, remove_handler_button = (
-			Gtk.Button.new_from_stock(Gtk.STOCK_ADD),
+			Gtk.Button.new_from_stock(Gtk.STOCK_NEW),
 			Gtk.Button.new_from_stock(Gtk.STOCK_PROPERTIES),
-			Gtk.Button.new_from_stock(Gtk.STOCK_REMOVE),
+			Gtk.Button.new_from_stock(Gtk.STOCK_DELETE),
 		)
 		# These are insensitive until something is selected
 		remove_handler_button.set_sensitive(False)
@@ -182,10 +183,11 @@ used for various alignment related things in the program''')
 		edit_handler_buttonbox.set_child_secondary(
 		                       configure_handler_button, True)
 		
-		handler_listscroler = Gtk.ScrolledWindow()
-		handler_listscroler.add(handler_listview)
+		handler_listscroller = Gtk.ScrolledWindow()
+		handler_listscroller.add(handler_listview)
+		handler_listscroller.set_shadow_type(Gtk.ShadowType.IN)
 		
-		view_handlers_box.pack_start(handler_listscroler, True, True, 0)
+		view_handlers_box.pack_start(handler_listscroller, True, True, 0)
 		view_handlers_box.pack_start(edit_handler_buttonbox, False, True, 0)
 		
 		# Setup add handlers grid (it is used to add handlers)
@@ -210,6 +212,7 @@ used for various alignment related things in the program''')
 		
 		brand_listscroller = Gtk.ScrolledWindow()
 		brand_listscroller.add(brand_listview)
+		brand_listscroller.set_shadow_type(Gtk.ShadowType.IN)
 		
 		# Create button box
 		add_handler_buttonbox = Gtk.ButtonBox(spacing=8,
@@ -217,7 +220,7 @@ used for various alignment related things in the program''')
 		add_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.END)
 		cancel_add_button, add_button = (
 			Gtk.Button.new_from_stock(Gtk.STOCK_CANCEL),
-			Gtk.Button.new_from_stock(Gtk.STOCK_NEW),
+			Gtk.Button.new_from_stock(Gtk.STOCK_ADD),
 		)
 		add_handler_buttonbox.add(cancel_add_button)
 		add_handler_buttonbox.add(add_button)
@@ -478,7 +481,7 @@ class PointScale(Gtk.DrawingArea):
 	def __init__(self, hrange, vrange):
 		Gtk.DrawingArea.__init__(self)
 		self.set_size_request(50, 50)
-		self.padding = 1
+		self.padding = 0
 		self.mark_width = 24
 		self.mark_height = 24
 		self.dragging = False
@@ -593,14 +596,14 @@ class PointScale(Gtk.DrawingArea):
 		ml, mt, mr, mb = round(ml), round(mt), round(mr), round(mb)
 		
 		cr.set_line_width(1)
-		cr.set_dash([1, 7], x)
+		cr.set_dash([1, 7], x + y)
 		Gtk.render_line(style, cr, ml, 0, ml, h)
 		Gtk.render_line(style, cr, mr, 0, mr, h)
-		cr.set_dash([1, 7], y)
+		cr.set_dash([1, 7], x + y)
 		Gtk.render_line(style, cr, 0, mt, w, mt)
 		Gtk.render_line(style, cr, 0, mb, w, mb)
 		
-		cr.set_line_width(2)
+		cr.set_line_width(3)
 		cr.set_dash([], 0)
 		Gtk.render_line(style, cr, ml, mt, ml, mb)
 		Gtk.render_line(style, cr, mr, mt, mr, mb)
