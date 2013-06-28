@@ -194,7 +194,7 @@ used for various alignment related things in the program''')
 		for a_brand in extending.MouseHandlerBrands:
 			brand_liststore.append([a_brand])
 		
-		brand_listview = Gtk.TreeView()
+		self._brand_listview = brand_listview = Gtk.TreeView()
 		brand_listview.set_model(brand_liststore)
 		
 		brand_selection = brand_listview.get_selection()
@@ -237,7 +237,8 @@ used for various alignment related things in the program''')
 		                                   remove_handler_button,
 		                                   configure_handler_button)
 		
-		cancel_add_button.connect("clicked", self._clicked_cancel_handler)
+		cancel_add_button.connect("clicked", self._clicked_cancel_add_handler)
+		add_button.connect("clicked", self._clicked_add_handler)
 		
 		tabs.show_all()
 
@@ -281,8 +282,23 @@ used for various alignment related things in the program''')
 		configure_button.set_sensitive(selected_anything)
 	
 	
-	def _clicked_cancel_handler(self, *data):
+	def _clicked_cancel_add_handler(self, *data):
 		self._mouse_pseudo_notebook.set_current_page(0)
+	
+	
+	def _clicked_add_handler(self, *data):
+		selection = self._brand_listview.get_selection()
+		model, treeiter = selection.get_selected()
+		if treeiter is not None:
+			factory = model[treeiter][0]
+			
+			new_handler = factory.produce()
+			
+			handler_button = 1 if new_handler.needs_button else None			
+			self.app.meta_mouse_handler.add(new_handler, button=handler_button)
+			self._handler_listview.get_model().append([new_handler])
+					
+			self._mouse_pseudo_notebook.set_current_page(0)
 	
 	def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
 		factory = model[treeiter][0]

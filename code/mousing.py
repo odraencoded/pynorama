@@ -771,8 +771,8 @@ class HoverHandlerFactory(extending.MouseHandlerFactory):
 		''' Creates a widget for configuring a mouse handler '''
 		
 		raise NotImplementedError
-
 HoverHandlerFactory = HoverHandlerFactory()
+
 
 class DragHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
@@ -781,16 +781,99 @@ class DragHandlerFactory(extending.MouseHandlerFactory):
 		
 	@property
 	def label(self):
-		return _("Drag Button to Pan")
+		return _("Drag to Pan")
 		
 	def create_settings_widget(self, handler):
 		''' Creates a widget for configuring a mouse handler '''
 		
 		raise NotImplementedError
-		
 DragHandlerFactory = DragHandlerFactory()
 
 
-extending.MouseHandlerBrands.extend(
-	[DragHandlerFactory, HoverHandlerFactory]
-)
+# TODO: Fix MapHandler for multi-image layouts and create its factory
+
+
+class SpinHandlerFactory(extending.MouseHandlerFactory):
+	def __init__(self):
+		codename = "spin"
+		self.create_default = SpinHandler
+		
+	@property
+	def label(self):
+		return _("Drag to Spin")
+		
+	def create_settings_widget(self, handler):
+		''' Creates a widget for configuring a mouse handler '''
+		
+		raise NotImplementedError		
+SpinHandlerFactory = SpinHandlerFactory()
+
+
+class StretchHandlerFactory(extending.MouseHandlerFactory):
+	def __init__(self):
+		codename = "stretch"
+		self.create_default = StretchHandler
+		
+	@property
+	def label(self):
+		return _("Drag to Stretch")
+		
+	def create_settings_widget(self, handler):
+		''' Creates a widget for configuring a mouse handler '''
+		
+		raise NotImplementedError
+StretchHandlerFactory = StretchHandlerFactory()
+
+
+class ScrollHandlerFactory(extending.MouseHandlerFactory):
+	def __init__(self):
+		codename = "scroll"
+		self.create_default = ScrollHandler
+		
+	@property
+	def label(self):
+		return _("Scroll to Pan")
+		
+	def create_settings_widget(self, handler):
+		''' Creates a widget for configuring a mouse handler '''
+		
+		raise NotImplementedError
+ScrollHandlerFactory = ScrollHandlerFactory()
+
+
+class ZoomHandlerFactory(extending.MouseHandlerFactory):
+	def __init__(self):
+		codename = "zoom"
+		self.create_default = ZoomHandler
+		
+	@property
+	def label(self):
+		return _("Scroll to Zoom")
+		
+	def create_settings_widget(self, handler):
+		''' Creates a widget for configuring a mouse handler '''
+		
+		raise NotImplementedError
+ZoomHandlerFactory = ZoomHandlerFactory()
+
+
+class GearHandlerFactory(extending.MouseHandlerFactory):
+	def __init__(self):
+		codename = "gear"
+		self.create_default = GearHandler
+		
+	@property
+	def label(self):
+		return _("Scroll to Spin")
+		
+	def create_settings_widget(self, handler):
+		''' Creates a widget for configuring a mouse handler '''
+		
+		raise NotImplementedError
+GearHandlerFactory = GearHandlerFactory()
+
+extending.MouseHandlerBrands.extend([
+	DragHandlerFactory, HoverHandlerFactory, SpinHandlerFactory,
+	StretchHandlerFactory, ScrollHandlerFactory,
+	ZoomHandlerFactory, GearHandlerFactory
+])
