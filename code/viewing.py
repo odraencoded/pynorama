@@ -28,8 +28,9 @@ class ZoomMode:
 
 # Quite possibly the least badly designed class in the whole program.
 class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
-	''' This widget can display PictureFrames.
-	    It can also zoom in, out, rotate, adjust and etc. '''
+	''' This widget can display ImageFrames.
+	    It can also zoom in, out, rotate, adjust and etc.
+	    Pretty much the basis of the entire app '''
 	
 	__gsignals__ = {
 		"transform-change" : (GObject.SIGNAL_RUN_FIRST, None, []),
@@ -39,63 +40,67 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def __init__(self):
 		Gtk.DrawingArea.__init__(self)
 		
-		self.__frames = set()
+		# The set of frames being displayed in this widget
+		self._frames = set()
+		self._frame_signals = dict()
+		
+		# The outline is a the boundary of _frames before they are rotated
 		self.refresh_outline = utility.IdlyMethod(self.refresh_outline)
 		self.refresh_outline.priority = GLib.PRIORITY_HIGH
 		
 		self.outline = point.Rectangle(width=1, height=1)
-		self.__obsolete_offset = False
 		
+		# Does this even do anything?
 		self.get_style_context().add_class(Gtk.STYLE_CLASS_VIEW)
 		
+		# offset is usually the same as horizontal/vertical adjustments values
+		# unless the outline fits inside the widget
 		self.offset = 0, 0
-		self.magnification = 1
-		self.rotation = 0
-		self.flip = False, False
-		# There are two interpolation settings: Zoom out and zoom in
-		self.minify_interpolation = cairo.FILTER_BILINEAR
-		self.magnify_interpolation = cairo.FILTER_NEAREST
+		self._obsolete_offset = False
 		
-		self.round_full_pixel_offset = False
-		self.round_sub_pixel_offset = True
+		self._hadjustment = self._vadjustment = None
+		self._hadjust_signal = self._vadjust_signal = None
 		
-		self.__hadjustment = self.__vadjustment = None
-		self.__hadjust_signal = self.__vadjust_signal = None
-		self.frame_signals = dict()
-		
-		self.connect("notify::magnification", self.__matrix_changed)
-		self.connect("notify::rotation", self.__matrix_changed)
-		self.connect("notify::flip", self.__matrix_changed)
-		self.connect("notify::minify-interpolation",
-		             self.__interpolation_changed)
-		self.connect("notify::magnify-interpolation",
-                     self.__interpolation_changed)
+		self.connect("notify::magnification", self._matrix_changed)
+		self.connect("notify::rotation", self._matrix_changed)
+		self.connect("notify::flip", self._matrix_changed)
+		self.connect("notify::alignment-x", self._matrix_changed)
+		self.connect("notify::alignment-y", self._matrix_changed)
+		self.connect("notify::minify-filter",
+		             self._interpolation_changed)
+		self.connect("notify::magnify-filter",
+                     self._interpolation_changed)
 		self.connect("notify::round-full-pixel-offset",
-		             self.__interpolation_changed)
+		             self._interpolation_changed)
 		self.connect("notify::round-sub-pixel-offset",
-                     self.__interpolation_changed)
-                     
+                     self._interpolation_changed)
+		
+		self._magnification_watch = (0, None)
+		self.connect("notify::magnification", self._magnification_changed)
+		
+
 	def add_frame(self, *frames):
 		''' Adds one or more pictures to the gallery '''
 		for a_frame in frames:
-			self.__frames.add(a_frame)
-			a_frame_signals = self.frame_signals.get(a_frame, None)
+			self._frames.add(a_frame)
+			a_frame_signals = self._frame_signals.get(a_frame, None)
 			if a_frame_signals is None:
 				a_frame_signals = [
-					a_frame.connect("notify::origin", self.__frame_changed)
+					a_frame.connect("notify::origin", self._frame_changed)
 				]
-				self.frame_signals[a_frame] = a_frame_signals
+				self._frame_signals[a_frame] = a_frame_signals
 				
 			a_frame.added(self)
 			
 		self.refresh_outline.queue()
 		self.queue_draw()
-			
+
+
 	def remove_frame(self, *frames):
 		''' Removes one or more pictures from the gallery '''
 		for a_frame in frames:
-			self.__frames.discard(a_frame)
-			a_frame_signals = self.frame_signals.pop(a_frame, None)
+			self._frames.discard(a_frame)
+			a_frame_signals = self._frame_signals.pop(a_frame, None)
 			if a_frame_signals is not None:
 				for one_frame_signal in a_frame_signals:
 					a_frame.disconnect(one_frame_signal)
@@ -104,11 +109,12 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			
 		self.refresh_outline.queue()
 		self.queue_draw()
-	
+
+
 	def refresh_outline(self):
 		''' Figure out the outline of all frames united '''
-		rectangles = [a_frame.rectangle.shift(a_frame.origin) for a_frame \
-		                                                      in self.__frames]
+		rectangles = [a_frame.rectangle.shift(a_frame.origin) \
+		                                for a_frame in self._frames]
 		                                                      
 		new_outline = point.Rectangle.Union(rectangles)
 		new_outline.width = max(new_outline.width, 1)
@@ -116,7 +122,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		
 		if self.outline != new_outline:
 			self.outline = new_outline
-			self.__compute_adjustments()
+			self._compute_adjustments()
 	
 	@property
 	def frames_fit(self):
@@ -129,17 +135,17 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		self.adjust_to(*point.add(self.get_adjustment(), direction))
 	
 	def rotate(self, degrees):
-		self.set_rotation(self.get_rotation() + degrees)
+		self.rotation = self.rotation + degrees
 	
 	def magnify(self, scale):
-		self.set_magnification(self.get_magnification() * magnification)
+		self.magnification = self.magnification * scale
 		
-	def flip(self, vertical):
-		hflip, vflip = self.get_flip()
-		if vertical:
-			self.set_flip((hflip, not vflip))
-		else:
-			self.set_flip((not hflip, vflip))
+	def flip(self, vertically=False, Horizontally=False):
+		if vertically:
+			self.vertical_flip = not self.vertical_flip
+			
+		if horziontally:
+			self.horizontal_flip = not self.horizontal_flip
 	
 	def zoom_for_size(self, size, mode):
 		''' Gets a zoom for a size based on a zoom mode '''
@@ -186,13 +192,13 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		    converted to the same absolute point in the pin '''
 		(x, y), (px, py) = pin
 		
-		hflip, vflip = self.get_flip()
+		hflip, vflip = self.flipping
 		if hflip:
 			x *= -1
 		if vflip:
 			y *= -1
 		
-		rotation = self.get_rotation()
+		rotation = self.rotation
 		if rotation:
 			x, y = point.spin((x, y), rotation / 180 * math.pi)
 		
@@ -204,16 +210,29 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		
 		self.adjust_to(x, y)
 	
+	
 	def adjust_to_frame(self, frame, rx=.5, ry=.5):
+		''' Adjusts the view to a frame using rx and ry as anchoring
+		    coordinates in the frame rectangle '''
+		
 		hadjust = self.get_hadjustment()
 		vadjust = self.get_vadjustment()
 		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
 		x, y = frame.rectangle.shift(frame.origin).unbox_point((rx, ry))
-		x, y = point.spin((x, y), self.get_rotation() / 180 * math.pi)
+		x, y = point.spin((x, y), self.rotation / 180 * math.pi)
 		
 		self.adjust_to(x - vw * rx, y - vh * ry)
-	
+
+
+	def align_to_frame(self, frame):
+		''' Aligns the view to a frame '''
+		self.adjust_to_frame(frame, *self.alignment_point)
+
+
 	def adjust_to_boundaries(self, rx, ry):
+		''' Adjusts the view to some relative point where the actual
+		    coordinates are more or less width * rx, height * ry '''
+		
 		hadjust = self.get_hadjustment()
 		vadjust = self.get_vadjustment()
 		vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
@@ -224,26 +243,31 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		y = (uy - ly - vh) * ry + ly
 		self.adjust_to(x, y)
 	
+	
 	def adjust_to(self, x, y):
+		''' Adjusts the view to x, y '''
+		# Refresh outline and adjustments
+		self.refresh_outline.execute_queue()
+		
 		hadjust = self.get_hadjustment()
 		if hadjust:
 			lx, ux = hadjust.get_lower(), hadjust.get_upper()
 			vw = hadjust.get_page_size()
 			x = max(lx, min(ux, x))
-			hadjust.handler_block(self.__hadjust_signal)
+			hadjust.handler_block(self._hadjust_signal)
 			hadjust.set_value(x)
-			hadjust.handler_unblock(self.__hadjust_signal)
+			hadjust.handler_unblock(self._hadjust_signal)
 			
 		vadjust = self.get_vadjustment()
 		if vadjust:
 			ly, uy = vadjust.get_lower(), vadjust.get_upper()
 			vh = vadjust.get_page_size()
 			y = max(ly, min(uy, y))
-			vadjust.handler_block(self.__vadjust_signal)
+			vadjust.handler_block(self._vadjust_signal)
 			vadjust.set_value(y)
-			vadjust.handler_unblock(self.__vadjust_signal)
+			vadjust.handler_unblock(self._vadjust_signal)
 			
-		self.__obsolete_offset = True
+		self._obsolete_offset = True
 		self.queue_draw()
 		
 	# --- getter/setters down this line --- #
@@ -275,14 +299,14 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	def get_absolute_point(self, widget_point):
 		''' Returns a point with the view transformations of a point in the
 		    widget reverted '''
-		inv_zoom = 1 / self.get_magnification()
+		inv_zoom = 1 / self.magnification
 		x, y = point.add(self.offset, point.scale(widget_point, inv_zoom))
 		
-		rotation = self.get_rotation()
+		rotation = self.rotation
 		if rotation:
 			x, y = point.spin((x, y), rotation / 180 * math.pi * -1)
 		
-		hflip, vflip = self.get_flip()
+		hflip, vflip = self.flipping
 		if hflip:
 			x *= -1
 		if vflip:
@@ -315,87 +339,86 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		return (hadjust.get_value() if hadjust else 0,
 		        vadjust.get_value() if vadjust else 0)
 	def get_rotation_radians(self):
-		return self.get_rotation() / 180 * math.pi * -1
+		return self.rotation / 180 * math.pi * -1
 		
 	def get_magnified_width(self):
-		return self.get_allocated_width() / self.get_magnification()
+		return self.get_allocated_width() / self.magnification
 		
 	def get_magnified_height(self):
-		return self.get_allocated_height() / self.get_magnification()
+		return self.get_allocated_height() / self.magnification
 	
-	def get_interpolation_for_scale(self, scale):
-		if scale > 1:
-			return self.get_magnify_interpolation()
-		elif scale < 1:
-			return self.get_minify_interpolation()
+	def get_filter_for_magnification(self, zoom):
+		if zoom > 1:
+			return self.magnify_filter
+		elif zoom < 1:
+			return self.minify_filter
 		else:
 			return None
 			
-	def set_interpolation_for_scale(self, scale, value):
-		if scale > 1:
-			self.set_magnify_interpolation(value)
-		elif scale < 1:
-			self.set_minify_interpolation(value)
-			
-	# --- basic properties down this line --- #
-	# TODO: Remove get_/set_
+	def set_filter_for_magnification(self, zoom, value):
+		if zoom > 1:
+			self.magnify_filter = value
+		elif zoom < 1:
+			self.minify_filter = value
+	
+	@property
+	def flipping(self):
+		return self.horizontal_flip, self.vertical_flip
+	
+	@flipping.setter
+	def flipping(self, value):
+		self.horizontal_flip, self.vertical_flip = value
+	
+	@property
+	def alignment_point(self):
+		return self.alignment_x, self.alignment_y
+	
+	@alignment_point.setter
+	def alignment_point(self, value):
+		self.alignment_x, self.alignment_y = value
+	
+	# --- basic properties down this line --- #	
 	def get_hadjustment(self):
-		return self.__hadjustment
+		return self._hadjustment
 	def get_vadjustment(self):
-		return self.__vadjustment
-		
-	def get_magnification(self):
-		return self.magnification
-	def get_rotation(self):
-		return self.rotation
-	def get_flip(self):
-		return self.flip
-		
-	def get_minify_interpolation(self):
-		return self.minify_interpolation	
-	def get_magnify_interpolation(self):
-		return self.magnify_interpolation
+		return self._vadjustment
 		
 	def set_hadjustment(self, adjustment):
-		if self.__hadjustment:
-			self.__hadjustment.disconnect(self.__hadjust_signal)
-			self.__hadjust_signal = None
+		if self._hadjustment:
+			self._hadjustment.disconnect(self._hadjust_signal)
+			self._hadjust_signal = None
 			
-		self.__hadjustment = adjustment
+		self._hadjustment = adjustment
 		if adjustment:
 			adjustment.set_lower(self.outline.left)
 			adjustment.set_upper(self.outline.right)
 			adjustment.set_page_size(self.get_magnified_width())
-			self.__hadjust_signal = adjustment.connect(
-			                        "value-changed", self.__adjustment_changed)
+			self._hadjust_signal = adjustment.connect(
+			                        "value-changed", self._adjustment_changed)
 			                                         
 	def set_vadjustment(self, adjustment):
-		if self.__vadjustment:
-			self.__vadjustment.disconnect(self.__vadjust_signal)
-			self.__vadjust_signal = None
+		if self._vadjustment:
+			self._vadjustment.disconnect(self._vadjust_signal)
+			self._vadjust_signal = None
 			
-		self.__vadjustment = adjustment
+		self._vadjustment = adjustment
 		if adjustment:
 			adjustment.set_lower(self.outline.top)
 			adjustment.set_upper(self.outline.bottom)
 			adjustment.set_page_size(self.get_magnified_height())
-			self.__vadjust_signal = adjustment.connect(
-			                        "value-changed", self.__adjustment_changed)
-			                        
-	def set_magnification(self, magnification):
-		self.magnification = magnification
+			self._vadjust_signal = adjustment.connect(
+			                        "value-changed", self._adjustment_changed)
+	
+	def get_current_interpolation_filter(self):
+		'''' Returns the interpolation filter for the view magnification '''
+		return self.get_filter_for_magnification(self.magnification)
 		
-	def set_rotation(self, value):
-		self.rotation = value % 360
-		
-	def set_flip(self, value):
-		self.flip = value
-		
-	def set_minify_interpolation(self, value):
-		self.minify_interpolation = value
-		
-	def set_magnify_interpolation(self, value):
-		self.magnify_interpolation = value
+	def set_current_interpolation_filter(self, value):
+		self.set_filter_for_magnification(self.magnification, value)
+	
+	def is_zoomed(self):
+		''' Returns whether magnification does not equal one '''
+		return self.magnification != 1
 	
 	hadjustment = GObject.property(get_hadjustment, set_hadjustment,
 	                               type=Gtk.Adjustment)
@@ -407,58 +430,88 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 	vscroll_policy = GObject.property(type=Gtk.ScrollablePolicy,
 	                                  default=Gtk.ScrollablePolicy.NATURAL)
 	                                  
+	# This is the alignment of the outline in the widget when the outline
+	# fits completely inside the widget
+	alignment_x = GObject.property(type=float, default=.5)
+	alignment_y = GObject.property(type=float, default=.5)
+	
+	# Basic view transform
 	magnification = GObject.property(type=float, default=1)
 	rotation = GObject.property(type=float, default=0)
-	flip = GObject.property(type=GObject.TYPE_PYOBJECT)
+	horizontal_flip = GObject.property(type=bool, default=False)
+	vertical_flip = GObject.property(type=bool, default=False)
 	
-	minify_interpolation = GObject.property(type=int, default=1)
-	magnify_interpolation = GObject.property(type=int, default=1)
+	minify_filter = GObject.property(type=int, default=cairo.FILTER_BILINEAR)
+	magnify_filter = GObject.property(type=int, default=cairo.FILTER_NEAREST)
 	
-	# This options rounds the offset for drawing while zoomed in so
-	# that panning pixels appear to be locked to a pixel grid
+	# These two properties are used for rounding the offset for drawing
+	# round_full_pixel_offset will round the offset to a multiple
+	# of magnification. E.g. it only shifts 8 pixels at a time at 800% zoom.
+	# round_sub_pixel_offset is more useful. It aligns one widget pixel to
+	# one image pixel so that the interpolation effect doesn't change after
+	# panning the images.
 	round_full_pixel_offset = GObject.property(type=bool, default=False)
-	# This option rounds the offset for drawing while zoomed out so
-	# that panning doesn't shift pixels into a different subpixel interpolation,
-	# reducing tearing
 	round_sub_pixel_offset = GObject.property(type=bool, default=True)
-		
+	
+	zoomed = GObject.property(is_zoomed, type=bool, default=False)
+	current_interpolation_filter = GObject.property(
+	                               get_current_interpolation_filter,
+	                               set_current_interpolation_filter,
+	                               type=int)
 	# --- computing stuff down this line --- #	
 	
-	def __compute_adjustments(self):
+	def _compute_adjustments(self):
 		''' Figure out lower, upper and page size of adjustments.
 		    Also clamp them. Clamping is important. '''
 		    
 		# Name's Bounds, James Bounds
-		bounds = self.outline.flip(*self.get_flip())
-		bounds = bounds.spin(self.get_rotation() / 180 * math.pi)
+		bounds = self.outline.flip(*self.flipping)
+		bounds = bounds.spin(self.rotation / 180 * math.pi)
 		hadjust, vadjust = self.get_hadjustment(), self.get_vadjustment()
+		
 		if hadjust:
+			hadjust.freeze_notify()
+			
 			hadjust.set_lower(bounds.left)
 			hadjust.set_upper(bounds.right)
+			
+			# Set page size, get and align value
 			visible_span = min(self.get_magnified_width(), bounds.width)
+			visible_diff = hadjust.get_page_size() - visible_span
 			hadjust.set_page_size(visible_span)
+			value = hadjust.get_value() + visible_diff * self.alignment_x
+						
 			# Clamp value
 			max_value = hadjust.get_upper() - hadjust.get_page_size()
 			min_value = hadjust.get_lower()
-			value = hadjust.get_value()
 			clamped_value = min(max_value, max(min_value, value))
 			hadjust.set_value(clamped_value)
 			
+			hadjust.thaw_notify()
+			
 		if vadjust:
+			vadjust.freeze_notify()
+			
 			vadjust.set_lower(bounds.top)
 			vadjust.set_upper(bounds.bottom)
+			
+			# Set page size, get and align value
 			visible_span = min(self.get_magnified_height(), bounds.height)
+			visible_diff = vadjust.get_page_size() - visible_span
 			vadjust.set_page_size(visible_span)
+			value = vadjust.get_value() + visible_diff * self.alignment_y
+			
 			# Clamp value
 			max_value = vadjust.get_upper() - vadjust.get_page_size()
 			min_value = vadjust.get_lower()
-			value = vadjust.get_value()
 			clamped_value = min(max_value, max(min_value, value))
 			vadjust.set_value(clamped_value)
 			
-		self.__obsolete_offset = True
+			vadjust.thaw_notify()
 			
-	def __compute_offset(self):
+		self._obsolete_offset = True
+			
+	def _compute_offset(self):
 		''' Figures out the x, y offset based on the adjustments '''
 		x, y = self.offset
 		hadjust = self.get_hadjustment()
@@ -469,7 +522,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			if diff > 0:
 				x = hadjust.get_value()
 			else:
-				x = lower + diff / 2
+				x = lower + diff * self.alignment_x
 								
 		vadjust = self.get_vadjustment()
 		if vadjust:
@@ -479,40 +532,84 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			if diff > 0:
 				y = vadjust.get_value()
 			else:
-				y = lower + diff / 2
+				y = lower + diff * self.alignment_y
 				
-		self.__obsolete_offset = False
+		self._obsolete_offset = False
 		self.offset = x, y
 		GLib.idle_add(self.emit, "offset-change", priority=GLib.PRIORITY_HIGH)
 	
 	# --- event stuff down this line --- #
-	def __frame_changed(self, *some_data_we_are_not_gonna_use_anyway):
+	def _frame_changed(self, *some_data_we_are_not_gonna_use_anyway):
 		''' Callback for when a picture frame surface changes '''
 		self.refresh_outline.queue()
 		self.queue_draw()
 	
-	def __adjustment_changed(self, data):
-		self.__obsolete_offset = True
+	def _adjustment_changed(self, data):
+		self._obsolete_offset = True
 		self.queue_draw()
-		
-	def __matrix_changed(self, *data):
+
+
+	def _matrix_changed(self, *data):
 		# I saw a black cat walk by. Twice.
-		self.__compute_adjustments()
+		self._compute_adjustments()
 		self.queue_draw()
 		self.emit("transform-change")
 	
-	def __interpolation_changed(self, *data):
+	
+	def _interpolation_changed(self, *data):
 		self.queue_draw()
 	
+	
+	def _magnification_changed(self, *data):
+		''' handler for notify::magnification '''
+		old_sign, filter_handler_id = self._magnification_watch
+		mag = self.magnification
+		changed = False
+		if mag < 1:
+			if old_sign >= 0:
+				changed = True
+				sign = -1
+				new_handler_id = self.connect("notify::minify-filter",
+				                              self._notify_interpolation_filter)
+				
+		elif mag > 1:
+			if old_sign <= 0:
+				changed = True
+				sign = 1
+				new_handler_id = self.connect("notify::magnify-filter",
+				                              self._notify_interpolation_filter)
+				
+		else:
+			if old_sign != 0:
+				sign = 0
+				changed = True
+				new_handler_id = None
+		
+		if changed:
+			if filter_handler_id:
+				self.disconnect(filter_handler_id)
+				
+			self._magnification_watch = sign, new_handler_id
+			if sign != 0:
+				self._notify_interpolation_filter()
+			
+			if (sign == 0) != (old_sign == 0):
+				self.notify("zoomed")
+
+	def _notify_interpolation_filter(self, *data):
+		self.notify("current-interpolation-filter")
+	
+
 	def do_size_allocate(self, allocation):
 		Gtk.DrawingArea.do_size_allocate(self, allocation)
-		self.__compute_adjustments()
+		self._compute_adjustments()
 	
+
 	class DrawState:
 		''' Caches a bunch of properties '''
 		def __init__(self, view):
 			self.view = view
-			self.magnification = zoom = view.get_magnification()
+			self.magnification = zoom = view.magnification
 			
 			ox, oy = view.offset
 			if(zoom > 1 and view.round_full_pixel_offset):
@@ -527,32 +624,32 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 				
 			self.offset = ox, oy
 			self.translation = -ox, -oy
-			self.rotation = view.get_rotation()
+			self.rotation = view.rotation
 			self.rad_rotation = self.rotation / 180 * math.pi
 			
-			self.hflip, self.vflip = self.flip = view.get_flip()
+			self.hflip, self.vflip = self.flip = view.flipping
 			self.is_flipped = self.hflip or self.vflip
 			
-			self.magnify_interpolation = view.get_magnify_interpolation()
-			self.minify_interpolation = view.get_minify_interpolation()
+			self.magnify_filter = view.magnify_filter
+			self.minify_filter = view.minify_filter
 			
 			self.size = self.width, self.height = (
 				view.get_allocated_width(),
 				view.get_allocated_height()
 			)
 			
-		def get_interpolation_for_scale(self, scale):
-			if scale > 1:
-				return self.magnify_interpolation
-			elif scale < 1:
-				return self.minify_interpolation
+		def get_filter_for_magnification(self, zoom):
+			if zoom > 1:
+				return self.magnify_filter
+			elif zoom < 1:
+				return self.minify_filter
 			else:
 				return None		
 	
 	def do_draw(self, cr):
 		''' Draws everything! '''
-		if self.__obsolete_offset:
-			self.__compute_offset()
+		if self._obsolete_offset:
+			self._compute_offset()
 		
 		drawstate = ImageView.DrawState(self)
 		
@@ -574,7 +671,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 			         -1 if drawstate.vflip else 1)
 		# Yes, this supports multiple frames!
 		# No, we don't use that feature... not yet.
-		for a_frame in self.__frames:
+		for a_frame in self._frames:
 			cr.save()
 			try:
 				cr.translate(*a_frame.origin)
@@ -625,7 +722,7 @@ class ImageSurfaceFrame(ImageFrame):
 			# Set filter
 			a_pattern = cr.get_source()
 			zoom = drawstate.magnification
-			a_filter = drawstate.get_interpolation_for_scale(zoom)
+			a_filter = drawstate.get_filter_for_magnification(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		
@@ -696,7 +793,7 @@ class AnimatedPixbufFrame(ImageFrame):
 			# Set filter
 			a_pattern = cr.get_source()
 			zoom = drawstate.magnification
-			a_filter = drawstate.get_interpolation_for_scale(zoom)
+			a_filter = drawstate.get_filter_for_magnification(zoom)
 			if a_filter is not None:
 				a_pattern.set_filter(a_filter)
 		

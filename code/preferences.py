@@ -19,16 +19,15 @@
 from gi.repository import Gio, GLib, Gtk, Gdk, GObject
 from gettext import gettext as _
 import cairo, math
-import extending
+import extending, organization
 
 Settings = Gio.Settings("com.example.pynorama")
 
 class Dialog(Gtk.Dialog):
 	def __init__(self, app):
 		Gtk.Dialog.__init__(self, _("Pynorama Preferences"), None,
-			Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
-			(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-			 Gtk.STOCK_OK, Gtk.ResponseType.OK))
+			Gtk.DialogFlags.DESTROY_WITH_PARENT,
+			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
 		
 		self.app = app
 		
@@ -56,20 +55,20 @@ class Dialog(Gtk.Dialog):
 		view_grid = tab_grids[0]
 		
 		# Setup view tab		
-		point_label = Gtk.Label(_("Default scrollbar adjustment"))
+		point_label = Gtk.Label(_("Image alignment"))
+		alignment_tooltip = _('''This alignment setting is \
+used for various alignment related things in the program''')
 		
 		point_label.set_alignment(0, 0)
 		point_label.set_line_wrap(True)
 		
-		adjust_x, adjust_y = self.app.default_position
-		
-		hadjust = Gtk.Adjustment(adjust_x, 0, 1, .04, .2, 0)
+		hadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
 		xlabel = Gtk.Label(_("Horizontal "))
 		xlabel.set_alignment(0, 0.5)
 		xspin = Gtk.SpinButton()
 		xspin.set_adjustment(hadjust)
 		
-		vadjust = Gtk.Adjustment(adjust_y, 0, 1, .04, .2, 0)
+		vadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
 		ylabel = Gtk.Label(_("Vertical "))
 		ylabel.set_alignment(0, 0.5)
 		yspin = Gtk.SpinButton()
@@ -79,6 +78,15 @@ class Dialog(Gtk.Dialog):
 		yspin.set_digits(2)
 		
 		point_scale = PointScale(hadjust, vadjust)
+		
+		# Set tooltip
+		xspin.set_tooltip_text(alignment_tooltip)
+		yspin.set_tooltip_text(alignment_tooltip)
+		xlabel.set_tooltip_text(alignment_tooltip)
+		ylabel.set_tooltip_text(alignment_tooltip)
+		point_label.set_tooltip_text(alignment_tooltip)
+		point_scale.set_tooltip_text(alignment_tooltip)
+		
 		view_grid.attach(point_label, 0, 0, 2, 1)
 		
 		view_grid.attach(xlabel, 0, 1, 1, 1)
@@ -86,21 +94,28 @@ class Dialog(Gtk.Dialog):
 		view_grid.attach(xspin, 1, 1, 1, 1)
 		view_grid.attach(yspin, 1, 2, 1, 1)
 		view_grid.attach(point_scale, 2, 0, 1, 3)
-		self.point_adjustments = hadjust, vadjust
+		self.alignment_x_adjust = hadjust
+		self.alignment_y_adjust = vadjust
+		
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
 		
 		spin_button_specs = [
-			(_("Rotation effect"),
-			 (self.app.spin_effect, 1, 359, 3, 30)),
-			(_("Zoom in/out effect"),
-			 (self.app.zoom_effect, 1.02, 4, 0.1, 0.25))
-		]		
+			(_("Spin effect"), "spin-effect", (0, 1, 359, 3, 30)),
+			(_("Zoom in/out effect"), "zoom-effect", (0, 1.02, 4, 0.1, 0.25))
+		]
+		
 		spin_buttons = []
-		for a_label_string, an_adjustment_args in spin_button_specs:
+		for a_label_string, a_property, an_adjustment_args in spin_button_specs:
 			a_button_label = Gtk.Label(a_label_string)
 			a_button_label.set_hexpand(True)
 			a_button_label.set_alignment(0, 0.5)
 			
 			an_adjustment = Gtk.Adjustment(*(an_adjustment_args + (0,)))
+			if a_property:
+				self.app.bind_property(a_property, an_adjustment, "value",
+				                       bidi_flag | sync_flag)
+				
 			a_spin_button = Gtk.SpinButton()
 			a_spin_button.set_adjustment(an_adjustment)
 			
@@ -112,7 +127,13 @@ class Dialog(Gtk.Dialog):
 		self.spin_effect, self.zoom_effect = spin_buttons
 		self.zoom_effect.set_digits(2)
 		
+		# Bindings
+		self._window_bindings, self._view_bindings = [], []
+		self.connect("notify::target-window", self._changed_target_window)
+		self.connect("notify::target-view", self._changed_target_view)
+		
 		tabs.show_all()
+
 		
 	def create_widget_group(self, *widgets):
 		alignment = Gtk.Alignment()
@@ -125,57 +146,67 @@ class Dialog(Gtk.Dialog):
 			box.pack_start(a_widget, False, False, 3)
 			
 		return alignment
+
+
+	def _changed_target_window(self, *data):
+		self.set_transient_for(self.target_window)
+		
+		view, album = self.target_window.view, self.target_window.album
+		
+		if self.target_view != view:
+			self.target_view = view
 			
-	def save_prefs(self):		
-		rotation_effect = self.spin_effect.get_value()
-		zoom_effect = self.zoom_effect.get_value()
-		default_h, default_v =  [adjust.get_value() for adjust \
-                         in self.point_adjustments]
+		if self.target_album != album:
+			self.target_album = album
 		
-		self.app.zoom_effect = zoom_effect
-		self.app.spin_effect = rotation_effect
-		self.app.default_position = default_h, default_v
 		
-		Settings.set_double("start-horizontal-position", default_h)
-		Settings.set_double("start-vertical-position", default_v)
-		Settings.set_double("zoom-effect", zoom_effect)
-		Settings.set_int("rotation-effect", rotation_effect)
-
-
+	def _changed_target_view(self, *data):
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
+		
+		for a_binding in self._view_bindings:
+			a_binding.unbind()
+		
+		view = self.target_view
+		if view:
+			self._view_bindings = [
+				view.bind_property("alignment-x", self.alignment_x_adjust,
+						           "value", bidi_flag | sync_flag),
+			
+				view.bind_property("alignment-y", self.alignment_y_adjust,
+				                   "value", bidi_flag | sync_flag)
+			]
+		else:
+			self._view_bindings = []
+		
+	target_window = GObject.Property(type=object)
+	target_view = GObject.Property(type=object)
+	target_album = GObject.Property(type=object)
+	
 def LoadForApp(app):
-	default_h = Settings.get_double("start-horizontal-position")
-	default_v = Settings.get_double("start-vertical-position")
-	app.default_position = default_h, default_v
 	app.zoom_effect = Settings.get_double("zoom-effect")
 	app.spin_effect = Settings.get_int("rotation-effect")
 
 
-def LoadForWindow(window):
-	window.sort_automatically = Settings.get_boolean("sort-auto")
-	window.reverse_ordering = Settings.get_boolean("sort-reverse")
+def SaveFromApp(app):
+	Settings.set_double("zoom-effect", app.zoom_effect)
+	Settings.set_int("rotation-effect", app.spin_effect)
+
+
+def LoadForWindow(window):	
 	window.toolbar_visible = Settings.get_boolean("interface-toolbar")
 	window.statusbar_visible = Settings.get_boolean("interface-statusbar")
-	
-	window.ordering_mode = Settings.get_enum("sort-mode")
 	
 	hscrollbar = Settings.get_enum("interface-horizontal-scrollbar")
 	vscrollbar = Settings.get_enum("interface-vertical-scrollbar")
 	window.hscrollbar_placement = hscrollbar
 	window.vscrollbar_placement = vscrollbar
 	
-	interp_min_enum = Settings.get_enum("interpolation-minify")
-	interp_mag_enum = Settings.get_enum("interpolation-magnify")
-	interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
-	              cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
-	interp_min = interp_map[interp_min_enum]
-	interp_mag = interp_map[interp_mag_enum]
-	
 	auto_zoom = Settings.get_boolean("auto-zoom")
 	auto_zoom_minify = Settings.get_boolean("auto-zoom-minify")
 	auto_zoom_magnify = Settings.get_boolean("auto-zoom-magnify")
 	auto_zoom_mode = Settings.get_enum("auto-zoom-mode")
 	
-	window.set_interpolation(interp_min, interp_mag)
 	window.set_auto_zoom_mode(auto_zoom_mode)
 	window.set_auto_zoom(auto_zoom, auto_zoom_minify, auto_zoom_magnify)
 	
@@ -187,24 +218,14 @@ def LoadForWindow(window):
 			window.layout_option = an_option
 			break
 
-def SaveFromWindow(window):
-	Settings.set_boolean("sort-auto", window.sort_automatically)
-	Settings.set_boolean("sort-reverse", window.reverse_ordering)
+def SaveFromWindow(window):	
 	Settings.set_boolean("interface-toolbar", window.toolbar_visible)
 	Settings.set_boolean("interface-statusbar", window.statusbar_visible)
-	
-	Settings.set_enum("sort-mode", window.ordering_mode)
 	
 	hscrollbar = window.hscrollbar_placement
 	vscrollbar = window.vscrollbar_placement
 	Settings.set_enum("interface-horizontal-scrollbar", hscrollbar)
 	Settings.set_enum("interface-vertical-scrollbar", vscrollbar)
-	
-	interp_min, interp_mag = window.get_interpolation()
-	interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
-	              cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
-	interp_min_enum = interp_map.index(interp_min)
-	interp_mag_enum = interp_map.index(interp_mag)
 	
 	auto_zoom, auto_zoom_minify, auto_zoom_magnify = window.get_auto_zoom()
 	auto_zoom_mode = window.get_auto_zoom_mode()
@@ -213,8 +234,6 @@ def SaveFromWindow(window):
 	Settings.set_boolean("auto-zoom-minify", auto_zoom_minify)
 	Settings.set_boolean("auto-zoom-magnify", auto_zoom_magnify)
 	Settings.set_enum("auto-zoom-mode", auto_zoom_mode)
-	Settings.set_enum("interpolation-minify", interp_min_enum)
-	Settings.set_enum("interpolation-magnify", interp_mag_enum)
 	
 	fullscreen = window.get_fullscreen()
 	Settings.set_boolean("start-fullscreen", fullscreen)
@@ -227,12 +246,66 @@ def SaveFromWindow(window):
 	else:
 		Settings.set_string("layout-codename", window.layout_option.codename)
 
+
+def LoadForAlbum(album):
+	album.freeze_notify()
+	try:
+		album.autosort = Settings.get_boolean("sort-auto")
+		album.reverse = Settings.get_boolean("sort-reverse")
+		
+		comparer_value = Settings.get_enum("sort-mode")
+		album.comparer = organization.SortingKeys.Enum[comparer_value]
+		
+	finally:
+		album.thaw_notify()
+
+	
+def SaveFromAlbum(album):
+	Settings.set_boolean("sort-auto", album.autosort)
+	Settings.set_boolean("sort-reverse", album.reverse)
+	
+	comparer_value = organization.SortingKeys.Enum.index(album.comparer)
+	Settings.set_enum("sort-mode", comparer_value)	
+
+def LoadForView(view):
+	view.freeze_notify()
+	try:
+		# Load alignment
+		view.alignment_x = Settings.get_double("view-horizontal-alignment")
+		view.alignment_y = Settings.get_double("view-vertical-alignment")
+		
+		# Load interpolation filter settings
+		interp_min_value = Settings.get_enum("interpolation-minify")
+		interp_mag_value = Settings.get_enum("interpolation-magnify")
+		interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
+			          cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
+		view.minify_filter = interp_map[interp_min_value]
+		view.magnify_filter = interp_map[interp_mag_value]
+	
+	finally:
+		view.thaw_notify()
+	
+def SaveFromView(view):
+	# Save alignment
+	Settings.set_double("view-horizontal-alignment", view.alignment_x)
+	Settings.set_double("view-vertical-alignment", view.alignment_y)
+	
+	# Save interpolation filter settings
+	interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
+	              cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
+	interp_min_value = interp_map.index(view.minify_filter)
+	interp_mag_value = interp_map.index(view.magnify_filter)
+	Settings.set_enum("interpolation-minify", interp_min_value)
+	Settings.set_enum("interpolation-magnify", interp_mag_value)
+
 class PointScale(Gtk.DrawingArea):
 	''' A widget like a Gtk.HScale and Gtk.VScale together. '''
 	def __init__(self, hrange, vrange):
 		Gtk.DrawingArea.__init__(self)
 		self.set_size_request(50, 50)
-		self.padding = 4
+		self.padding = 1
+		self.mark_width = 24
+		self.mark_height = 24
 		self.dragging = False
 		self.__hrange = self.__vrange = None
 		self.hrange_signal = self.vrange_signal = None
@@ -245,11 +318,14 @@ class PointScale(Gtk.DrawingArea):
 			
 	def adjust_from_point(self, x, y):
 		w, h = self.get_allocated_width(), self.get_allocated_height()
-		t, l = self.padding, self.padding
-		r = w - self.padding
-		b = h - self.padding
+		t, l = (self.padding + self.mark_height / 2,
+		        self.padding + self.mark_width / 2)
+		r = w - (self.padding + self.mark_width / 2)
+		b = h - (self.padding + self.mark_height / 2)
 		
-		x, y = max(0, min(r - l, x - l)) / (r - l), max(0, min(b - t, y - t)) / (b - t)
+		x, y = (max(0, min(r - l, x - l)) / (r - l),
+		        max(0, min(b - t, y - t)) / (b - t))
+		        
 		hrange = self.get_hrange()
 		if hrange:
 			lx, ux = hrange.get_lower(), hrange.get_upper()
@@ -294,9 +370,10 @@ class PointScale(Gtk.DrawingArea):
 	
 	def do_draw(self, cr):
 		w, h = self.get_allocated_width(), self.get_allocated_height()		
-		t, l = self.padding, self.padding
-		r = w - self.padding
-		b = h - self.padding
+		t, l = (self.padding + self.mark_height / 2,
+		        self.padding + self.mark_width / 2)
+		r = w - (self.padding + self.mark_width / 2)
+		b = h - (self.padding + self.mark_height / 2)
 		
 		hrange = self.get_hrange()
 		if hrange:
@@ -320,35 +397,46 @@ class PointScale(Gtk.DrawingArea):
 		Gtk.render_background(style, cr, 0, 0, w, h)
 		cr.save()
 		border = style.get_border(style.get_state())
-		radius = style.get_property(Gtk.STYLE_PROPERTY_BORDER_RADIUS, Gtk.StateFlags.NORMAL)
+		radius = style.get_property(Gtk.STYLE_PROPERTY_BORDER_RADIUS,
+		                            Gtk.StateFlags.NORMAL)
 		color = style.get_color(style.get_state())
-		cr.arc(border.left + radius, border.top + radius, radius, math.pi, math.pi * 1.5)
-		cr.arc(w - border.right - radius -1, border.top + radius, radius, math.pi * 1.5, math.pi * 2)
-		cr.arc(w - border.right - radius -1, h -border.bottom - radius -1, radius, 0, math.pi / 2)
-		cr.arc(border.left + radius, h - border.bottom - radius - 1, radius, math.pi / 2, math.pi)
+		cr.arc(border.left + radius,
+		       border.top + radius, radius, math.pi, math.pi * 1.5)
+		cr.arc(w - border.right - radius -1,
+		       border.top + radius, radius, math.pi * 1.5, math.pi * 2)
+		cr.arc(w - border.right - radius -1,
+		       h -border.bottom - radius -1, radius, 0, math.pi / 2)
+		cr.arc(border.left + radius,
+		       h - border.bottom - radius - 1, radius, math.pi / 2, math.pi)
 		cr.clip()
 		
 		cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
 		
-		dot_radius = 3
-		out_radius = dot_radius * 4
-		cr.set_line_width(1)
-		cr.set_dash([dot_radius, out_radius], x)
-		Gtk.render_line(style, cr, x, -out_radius, x, y -out_radius)
-		Gtk.render_line(style, cr, x, y +out_radius, x, h +out_radius)
-		cr.set_dash([dot_radius, out_radius], y)
-		Gtk.render_line(style, cr, -out_radius, y, x -out_radius, y)
-		Gtk.render_line(style, cr, x +out_radius, y, w +out_radius, y)
+		ml, mt = x - self.mark_width / 2, y - self.mark_height / 2
+		mr, mb = ml + self.mark_width, mt + self.mark_height
 		
+		ml, mt, mr, mb = round(ml), round(mt), round(mr), round(mb)
+		
+		cr.set_line_width(1)
+		cr.set_dash([1, 7], x)
+		Gtk.render_line(style, cr, ml, 0, ml, h)
+		Gtk.render_line(style, cr, mr, 0, mr, h)
+		cr.set_dash([1, 7], y)
+		Gtk.render_line(style, cr, 0, mt, w, mt)
+		Gtk.render_line(style, cr, 0, mb, w, mb)
+		
+		cr.set_line_width(2)
 		cr.set_dash([], 0)
-		cr.arc(x, y, out_radius, 0, 2 * math.pi)
+		Gtk.render_line(style, cr, ml, mt, ml, mb)
+		Gtk.render_line(style, cr, mr, mt, mr, mb)
+		Gtk.render_line(style, cr, ml, mt, mr, mt)
+		Gtk.render_line(style, cr, ml, mb, mr, mb)
+		
 		cr.stroke()
-		cr.arc(x, y, dot_radius, 0, 2 * math.pi)
-		cr.fill()
 		
 		cr.restore()
 		Gtk.render_frame(style, cr, 0, 0, w, h)
-			
+		
 	def adjustment_changed(self, data):
 		self.queue_draw()
 	

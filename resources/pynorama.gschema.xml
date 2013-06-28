@@ -45,13 +45,13 @@
 	</enum>
 	
 	<schema id="com.example.pynorama" path="/com/example/pynorama/">
-		<key name="start-horizontal-position" type="d">
-			<summary>Horizontal scrollbar position after loading an image</summary>
+		<key name="view-horizontal-alignment" type="d">
+			<summary>Horizontal alignment for images in the image viewer</summary>
 			<range min="0" max="1" />
 			<default>0.5</default>
 		</key>
-		<key name="start-vertical-position" type="d">
-			<summary>Vertical scrollbar position after loading an image</summary>
+		<key name="view-vertical-alignment" type="d">
+			<summary>Vertical alignment for images in the image viewer</summary>
 			<range min="0" max="1" />
 			<default>0.5</default>
 		</key>
@@ -142,10 +142,14 @@
 	</enum>
 	
 	<schema id="com.example.pynorama.layouts.image-strip" path="/com/example/pynorama/layouts/image-strip/">
+		<key name="appearance-own-alignment" type="b">
+			<summary>Whether the layout should use it's own alignment</summary>
+			<default>false</default>
+		</key>
 		<key name="appearance-alignment" type="d">
 			<summary>Image alignment in the perpendicular axis</summary>
-			<range min="-0.5" max="0.5" />
-			<default>0</default>
+			<range min="0" max="1" />
+			<default>0.5</default>
 		</key>
 		<key name="appearance-direction" enum="com.example.pynorama.directions">
 			<summary>Direction of the image strip</summary>

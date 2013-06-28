@@ -36,9 +36,7 @@ class ImageViewer(Gtk.Application):
 		self.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
 		
 		# Default prefs stuff
-		self.zoom_effect = 2
-		self.spin_effect = 90
-		self.default_position = .5, .5
+		self._preferences_dialog = None
 		self.memory_check_queued = False
 		self.meta_mouse_handler = navigation.MetaMouseHandler()
 	
@@ -67,20 +65,32 @@ class ImageViewer(Gtk.Application):
 			
 		Gtk.Window.set_default_icon_name("pynorama")
 	
+	
 	def do_activate(self):
 		some_window = self.get_window()
 		some_window.present()
-		
+	
+	
 	def do_open(self, files, file_count, hint):
 		some_window = self.get_window()
 		
 		some_window.go_new = True
-		self.open_files_for_album(some_window.image_list, files=files,
+		self.open_files_for_album(some_window.album, files=files,
 		                          search=file_count == 1)
 		some_window.go_new = False
 		
 		some_window.present()
-			
+	
+	
+	def do_shutdown(self):
+		preferences.SaveFromApp(self)
+		Gtk.Application.do_shutdown(self)
+	
+	
+	#-- Some properties down this line --#
+	zoom_effect = GObject.Property(type=float, default=2)
+	spin_effect = GObject.Property(type=float, default=90)
+	
 	def open_image_dialog(self, album, window=None):
 		''' Creates an "open image..." dialog for
 		    adding images into an album. '''
@@ -129,18 +139,25 @@ class ImageViewer(Gtk.Application):
 			                          uris=choosen_uris, search=search_siblings,
 			                          replace=clear_album)
 	
-	def show_preferences_dialog(self, window=None):
+	def show_preferences_dialog(self, target_window=None):
 		''' Show the preferences dialog '''
-		dialog = preferences.Dialog(self)
-			
-		dialog.set_transient_for(window or self.get_window())
-		dialog.set_modal(True)
-		dialog.set_destroy_with_parent(True)
 		
-		if dialog.run() == Gtk.ResponseType.OK:
-			dialog.save_prefs()
+		target_window = target_window or self.get_window()
+		
+		if not self._preferences_dialog:
+			dialog = self._preferences_dialog = preferences.Dialog(self)
 			
-		dialog.destroy()
+			dialog.connect("response", self._preferences_dialog_responded)
+			dialog.present()
+			
+		self._preferences_dialog.target_window = target_window
+		self._preferences_dialog.present()
+	
+	def _preferences_dialog_responded(self, *data):
+		self._preferences_dialog.destroy()
+		self._preferences_dialog = None
+		preferences.SaveFromApp(self)
+		
 		
 	def show_about_dialog(self, window=None):
 		''' Shows the about dialog '''
@@ -185,7 +202,7 @@ class ImageViewer(Gtk.Application):
 				raise
 				
 			a_window.show()
-			image_view = a_window.imageview
+			image_view = a_window.view
 			image_view.mouse_adapter = navigation.MouseAdapter(image_view)
 			self.meta_mouse_handler.attach(image_view.mouse_adapter)
 			
@@ -346,19 +363,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self._focus_loaded_handler_id = None
 		self._old_focused_image = None
 		self.go_new = False
-		self.ordering_modes_map = [
-			organization.SortingKeys.ByName,
-			organization.SortingKeys.ByCharacters,
-			organization.SortingKeys.ByFileDate,
-			organization.SortingKeys.ByFileSize,
-			organization.SortingKeys.ByImageSize,
-			organization.SortingKeys.ByImageWidth,
-			organization.SortingKeys.ByImageHeight
-		]
-		self.image_list = organization.Album()
-		self.image_list.connect("image-added", self._image_added)
-		self.image_list.connect("image-removed", self._image_removed)
-		self.image_list.connect("order-changed", self._album_order_changed)
+		self.album = organization.Album()
+		self.album.connect("image-added", self._image_added)
+		self.album.connect("image-removed", self._image_removed)
+		self.album.connect("order-changed", self._album_order_changed)
 		
 		# Set clipboard
 		self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
@@ -390,17 +398,17 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.view_scroller.connect("key-release-event", lambda x, y: True)
 		self.view_scroller.connect("scroll-event", lambda x, y: True)
 		
-		self.imageview = viewing.ImageView()
+		self.view = viewing.ImageView()
 		# Setup a bunch of reactions to all sorts of things
-		self.imageview.connect("notify::magnification",
+		self.view.connect("notify::magnification",
 		                       self.magnification_changed)
-		self.imageview.connect("notify::rotation", self.reapply_auto_zoom)
-		self.imageview.connect("size-allocate", self.reapply_auto_zoom)
-		self.imageview.connect("notify::magnification", self.view_changed)
-		self.imageview.connect("notify::rotation", self.view_changed)
-		self.imageview.connect("notify::flip", self.view_changed)
+		self.view.connect("notify::rotation", self.reapply_auto_zoom)
+		self.view.connect("size-allocate", self.reapply_auto_zoom)
+		self.view.connect("notify::magnification", self.view_changed)
+		self.view.connect("notify::rotation", self.view_changed)
+		self.view.connect("notify::flip", self.view_changed)
 		
-		self.view_scroller.add(self.imageview)
+		self.view_scroller.add(self.view)
 		self.view_scroller.show_all()
 		
 		vlayout.pack_start(self.view_scroller, True, True, 0)
@@ -439,20 +447,20 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.loading_spinner.hide()
 		
 		# DnD setup	
-		self.imageview.drag_dest_set(Gtk.DestDefaults.ALL,
+		self.view.drag_dest_set(Gtk.DestDefaults.ALL,
 		                             [], Gdk.DragAction.COPY)
 		
 		target_list = Gtk.TargetList.new([])
 		target_list.add_image_targets(DND_IMAGE, False)
 		target_list.add_uri_targets(DND_URI_LIST)
 		
-		self.imageview.drag_dest_set_target_list(target_list)
-		self.imageview.connect("drag-data-received", self.dragged_data)
+		self.view.drag_dest_set_target_list(target_list)
+		self.view.connect("drag-data-received", self.dragged_data)
 		
 		# Setup layout stuff
 		self.layout_dialog = None
-		self.avl = organization.AlbumViewLayout(album=self.image_list,
-		                                        view=self.imageview)
+		self.avl = organization.AlbumViewLayout(album=self.album,
+		                                        view=self.view)
 		
 		self.avl.connect("notify::layout", self._layout_changed)
 		self.avl.connect("focus-changed", self._focus_changed)
@@ -491,47 +499,61 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			)
 			
 			self._layout_options_merge_ids[an_option] = a_merge_id
-
-
+			
 		# Bind properties
-		self.bind_property("sort-automatically", self.image_list,
-		                   "autosort", GObject.BindingFlags.BIDIRECTIONAL)
-		self.bind_property("reverse-ordering", self.image_list,
-		                   "reverse", GObject.BindingFlags.BIDIRECTIONAL)
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
+		self.bind_property("sort-automatically", self.album,
+		                   "autosort", bidi_flag)
+		self.bind_property("reverse-ordering", self.album,
+		                   "reverse", bidi_flag)
 		self.bind_property("toolbar-visible", self.toolbar,
-		                   "visible", GObject.BindingFlags.BIDIRECTIONAL)
+		                   "visible", bidi_flag)
 		self.bind_property("statusbar-visible", self.statusbarboxbox,
-		                   "visible", GObject.BindingFlags.BIDIRECTIONAL)
+		                   "visible", bidi_flag)
 		self.bind_property(
 		     "reverse-ordering", self.actions.get_action("sort-reverse"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		     "active", bidi_flag)
 		self.bind_property(
 		     "sort-automatically", self.actions.get_action("sort-auto"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		     "active", bidi_flag)
 		self.bind_property(
 		     "ordering-mode", self.actions.get_action("sort-name"),
-		     "current-value", GObject.BindingFlags.BIDIRECTIONAL)
+		     "current-value", bidi_flag)
 		
 		self.bind_property(
 		     "toolbar-visible", self.actions.get_action("ui-toolbar"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		     "active", bidi_flag)
 		self.bind_property(
 		     "statusbar-visible", self.actions.get_action("ui-statusbar"),
-		     "active", GObject.BindingFlags.BIDIRECTIONAL)
+		     "active", bidi_flag)
+		
+		self.view.bind_property(
+		     "current-interpolation-filter",
+		     self.actions.get_action("interp-nearest"),
+		     "current-value", bidi_flag)
+		
+		self.view.bind_property("zoomed",
+		     self.actions.get_action("interpolation"),
+		     "sensitive", bidi_flag | sync_flag)
 		
 		self.connect("notify::vscrollbar-placement", self._changed_scrollbars)
 		self.connect("notify::hscrollbar-placement", self._changed_scrollbars)
 		self.connect("notify::ordering-mode", self._changed_ordering_mode)
 		self.connect("notify::layout-option", self._changed_layout_option)
 		
+		self.album.connect("notify::comparer",
+		                        self._changed_album_comparer)
+		
 		# Load preferences
 		other_option.set_current_value(0)
 		preferences.LoadForWindow(self)
+		preferences.LoadForView(self.view)
+		preferences.LoadForAlbum(self.album)
 		
 		# Refresh status widgets
 		self.refresh_transform()
 		self.refresh_index()
-		self.refresh_interp()
 		
 	def setup_actions(self):
 		self.uimanager = Gtk.UIManager()
@@ -685,8 +707,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		signaling_params = {
 			"open" : (self.file_open,),
 			"paste" : (self.pasted_data,),
-			"sort" : (lambda data: self.image_list.sort(),),
-			"sort-reverse" : (self.__sort_changed,),
+			"sort" : (lambda data: self.album.sort(),),
+			"sort-reverse" : (self._toggled_reverse_sort,),
 			"remove" : (self.handle_remove,),
 			"clear" : (self.handle_clear,),
 			"quit" : (lambda data: self.destroy(),),
@@ -707,7 +729,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			"flip-h" : (lambda data: self.flip_view(False),),
 			"flip-v" : (lambda data: self.flip_view(True),),
 			"transform-reset" : (lambda data: self.reset_view_transform(),),
-			"interp-nearest" : (self.change_interp,), # For group
 			"layout-configure" : (self.show_layout_dialog,),
 			"ui-scrollbar-top" : (self._toggled_hscroll,),
 			"ui-scrollbar-bottom" : (self._toggled_hscroll,),
@@ -837,21 +858,34 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.statusbar.pop(context_id)
 			self.statusbar.push(context_id, tooltip)
 			
+	
 	def _pop_tooltip_from_statusbar(self, *data):
 		context_id = self.statusbar.get_context_id("tooltip")
 		self.statusbar.pop(context_id)
-		
+	
+	
 	def _changed_ordering_mode(self, *data):
 		#TODO: Use GObject.bind_property_with_closure for this
-		self.image_list.comparer = self.ordering_modes_map[self.ordering_mode]
-		if not self.image_list.autosort:
-			self.image_list.sort()
-
+		new_comparer = organization.SortingKeys.Enum[self.ordering_mode]
+		if self.album.comparer != new_comparer:
+			self.album.comparer = new_comparer
+			
+			if not self.album.autosort:
+				self.album.sort()
+	
+	
+	def _changed_album_comparer(self, album, *data):
+		sorting_keys_enum = organization.SortingKeys.Enum
+		ordering_mode = sorting_keys_enum.index(album.comparer)
 		
-	def __sort_changed(self, *data):
-		if not self.image_list.autosort:
-			self.image_list.sort()
+		self.ordering_mode = ordering_mode
+	
+		
+	def _toggled_reverse_sort(self, *data):
+		if not self.album.autosort:
+			self.album.sort()
 
+	
 	def _layout_option_chosen(self, radio_action, current_action):
 		''' Sets the layout-option property from the menu choices '''
 		current_value = current_action.get_current_value()
@@ -937,8 +971,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				left.set_active(False)
 				
 		new_value = 2 if right.get_active() else 1 if left.get_active() else 0
-		if new_value != self.vscrollbar_placement:
-			self.vscrollbar_placement = new_value
+		self.vscrollbar_placement = new_value
 	
 		
 	def _toggled_hscroll(self, action, *data):
@@ -952,8 +985,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				top.set_active(False)
 		
 		new_value = 2 if bottom.get_active() else 1 if top.get_active() else 0
-		if new_value != self.hscrollbar_placement:
-			self.hscrollbar_placement = new_value
+		self.hscrollbar_placement = new_value
 
 
 	def _changed_scrollbars(self, *data):
@@ -961,14 +993,23 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		v = self.vscrollbar_placement
 		
 		# Refresh actions
-		left = self.actions.get_action("ui-scrollbar-left")
-		right = self.actions.get_action("ui-scrollbar-right")
-		top = self.actions.get_action("ui-scrollbar-top")
-		bottom = self.actions.get_action("ui-scrollbar-bottom")
+		actions = [
+			self.actions.get_action("ui-scrollbar-top"),
+			self.actions.get_action("ui-scrollbar-right"),
+			self.actions.get_action("ui-scrollbar-bottom"),
+			self.actions.get_action("ui-scrollbar-left")
+		]
+		for an_action in actions:
+			an_action.block_activate()
+		
+		top, right, bottom, left = actions
 		left.set_active(v == 1)
 		right.set_active(v == 2)
 		top.set_active(h == 1)
 		bottom.set_active(h == 2)
+		
+		for an_action in actions:
+			an_action.unblock_activate()
 		
 		# Update scrollbars
 		hpolicy = Gtk.PolicyType.NEVER if h == 0 else Gtk.PolicyType.AUTOMATIC
@@ -996,7 +1037,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 
 	
 	def magnification_changed(self, widget, data=None):
-		self.refresh_interp()
 		self.auto_zoom_zoom_modified = True
 		
 	def view_changed(self, widget, data):
@@ -1005,23 +1045,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def reapply_auto_zoom(self, *data):
 		if self.auto_zoom_enabled and not self.auto_zoom_zoom_modified:
 			self.auto_zoom()
-			
-	def refresh_interp(self):	
-		magnification = self.imageview.get_magnification()
-		interp = self.imageview.get_interpolation_for_scale(magnification)
-		interp_menu_action = self.actions.get_action("interpolation")
-		interp_menu_action.set_sensitive(interp is not None)
-		
-		interp_group = self.actions.get_action("interp-nearest")
-		interp_group.block_activate()
-		
-		if interp is None:
-			for interp_action in interp_group.get_group():
-				interp_action.set_active(False)
-		else:
-			interp_group.set_current_value(interp)
-			
-		interp_group.unblock_activate()
+
 		
 	def refresh_index(self):
 		focused_image = self.avl.focus_image
@@ -1031,14 +1055,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		can_previous = False
 		can_next = False
 			
-		if self.image_list:
+		if self.album:
 			can_remove = True
 			
-			count = len(self.image_list)
+			count = len(self.album)
 			count_chr_count = len(str(count))
 			
-			if focused_image in self.image_list:
-				image_index = self.image_list.index(focused_image)
+			if focused_image in self.album:
+				image_index = self.album.index(focused_image)
 				can_goto_first = image_index != 0
 				can_goto_last = image_index != count - 1
 				can_previous = True
@@ -1063,12 +1087,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			
 		sensible_list = [
 			("remove", can_remove),
-			("clear", len(self.image_list) > 0),
+			("clear", len(self.album) > 0),
 			("go-next", can_next),
 			("go-previous", can_previous),
 			("go-first", can_goto_first),
 			("go-last", can_goto_last),
-			("go-random", len(self.image_list) > 1)
+			("go-random", len(self.album) > 1)
 		]
 		
 		for action_name, sensitivity in sensible_list:
@@ -1091,7 +1115,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				pic = _("Loading")
 				
 			# Cache magnification because it is kind of a long variable
-			mag = self.imageview.get_magnification()
+			mag = self.view.magnification
 			if mag != 1:
 				if mag > 1 and mag == int(mag):
 					zoom_fmt = " " + _("x{zoom_in:d}")
@@ -1106,8 +1130,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				zoom = ""
 				
 			# Cachin' variables
-			rot = self.imageview.get_rotation()
-			hflip, vflip = self.imageview.get_flip()
+			rot = self.view.rotation
+			hflip, vflip = self.view.flipping
 			if hflip or vflip:
 				''' If the view is flipped in either direction apply this
 				    intricate looking math stuff to rotation. Normally, there
@@ -1140,23 +1164,23 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.transform_label.set_text(_("Nothing"))
 			
 	def set_view_rotation(self, angle):
-		anchor = self.imageview.get_widget_point()
-		pin = self.imageview.get_pin(anchor)
-		self.imageview.set_rotation(angle)
-		self.imageview.adjust_to_pin(pin)
+		anchor = self.view.get_widget_point()
+		pin = self.view.get_pin(anchor)
+		self.view.rotation = angle % 360
+		self.view.adjust_to_pin(pin)
 	
 	def set_view_zoom(self, magnification):
-		anchor = self.imageview.get_widget_point()
-		pin = self.imageview.get_pin(anchor)
-		self.imageview.set_magnification(magnification)
-		self.imageview.adjust_to_pin(pin)
+		anchor = self.view.get_widget_point()
+		pin = self.view.get_pin(anchor)
+		self.view.magnification = magnification
+		self.view.adjust_to_pin(pin)
 		
 	def set_view_flip(self, horizontal, vertical):
-		hflip, vflip = self.imageview.get_flip()
+		hflip, vflip = self.view.flipping
 		
 		if hflip != horizontal or vflip != vertical:
 			# ih8triGNOMEtricks
-			rot = self.imageview.get_rotation()
+			rot = self.view.rotation
 			angle_change = (45 - ((rot + 45) % 180)) * 2
 		
 			# If the image if flipped both horizontally and vertically
@@ -1165,26 +1189,26 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				horizontal = vertical = False
 				angle_change += 180
 		
-			anchor = self.imageview.get_widget_point()
-			pin = self.imageview.get_pin(anchor)
+			anchor = self.view.get_widget_point()
+			pin = self.view.get_pin(anchor)
 			if angle_change:
-				self.imageview.set_rotation((rot + angle_change) % 360)
+				self.view.rotation = (rot + angle_change) % 360
 			
-			self.imageview.set_flip((horizontal, vertical))
-			self.imageview.adjust_to_pin(pin)
+			self.view.flipping = (horizontal, vertical)
+			self.view.adjust_to_pin(pin)
 		
 	def zoom_view(self, power):
 		''' Zooms the viewport '''		
 		zoom_effect = self.app.zoom_effect
 		if zoom_effect and power:
-			old_zoom = self.imageview.get_magnification()
+			old_zoom = self.view.magnification
 			new_zoom = self.app.zoom_effect ** power * old_zoom
 			self.set_view_zoom(new_zoom)
 			
 	def flip_view(self, vertically):
 		''' Flips the viewport '''
 		# Horizontal mirroring depends on the rotation of the image
-		hflip, vflip = self.imageview.get_flip()
+		hflip, vflip = self.view.flipping
 		if vertically:
 			vflip = not vflip
 		else:
@@ -1199,8 +1223,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			change += (change // 360) * -360
 			
 		if change:
-			new_rotation = self.imageview.get_rotation() + change
-			self.set_view_rotation(new_rotation % 360)
+			self.set_view_rotation(self.view.rotation + change)
 	
 	def reset_view_transform(self):
 		self.set_view_flip(False, False)
@@ -1211,15 +1234,15 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		frame = self.avl.focus_frame
 		if frame and (self.auto_zoom_magnify or self.auto_zoom_minify):
-			new_zoom = self.imageview.zoom_for_size(
+			new_zoom = self.view.zoom_for_size(
 			                      frame.size, self.auto_zoom_mode)
 			                      
 			if (new_zoom > 1 and self.auto_zoom_magnify) or \
 			   (new_zoom < 1 and self.auto_zoom_minify):
-				self.imageview.set_magnification(new_zoom)
+				self.view.magnification = new_zoom
 				self.auto_zoom_zoom_modified = False
 			else:
-				self.imageview.set_magnification(1)
+				self.view.magnification = 1
 					
 	def change_auto_zoom(self, *data):
 		mode = self.actions.get_action("auto-zoom-fit").get_current_value()
@@ -1233,13 +1256,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.auto_zoom_enabled = enabled
 		if self.auto_zoom_enabled:
 			self.auto_zoom()
-	
-	def change_interp(self, radioaction, current):
-		if self.imageview.get_magnification():
-			interpolation = current.props.value
-			magnification = self.imageview.get_magnification()
-			self.imageview.set_interpolation_for_scale(magnification,
-			                                           interpolation)
 	
 	
 	def toggle_keep_above(self, *data):
@@ -1282,7 +1298,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.avl.go_index(-1)
 		
 	def go_random(self, *data):
-		image_count = len(self.image_list)
+		image_count = len(self.album)
 		if image_count > 1:
 			# Gets a new random index that is not the current one
 			random_int = random.randint(0, image_count - 2)
@@ -1293,25 +1309,25 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.avl.go_index(random_int)
 			
 	def handle_clear(self, *data):
-		del self.image_list[:]
+		del self.album[:]
 		
 	def handle_remove(self, *data):
 		focus = self.avl.focus_image
 		if focus:
-			self.image_list.remove(focus)
+			self.album.remove(focus)
 	
 	def pasted_data(self, data=None):
 		self.go_new = True
 		some_uris = self.clipboard.wait_for_uris()
 		
 		if some_uris:
-			self.app.open_files_for_album(self.image_list, uris=some_uris)
+			self.app.open_files_for_album(self.album, uris=some_uris)
 			
 		some_pixels = self.clipboard.wait_for_image()
 		if some_pixels:
 			new_images = self.app.load_pixels(some_pixels)
 			if new_images:
-				self.image_list.extend(new_images)
+				self.album.extend(new_images)
 				
 		self.go_new = False
 			
@@ -1320,7 +1336,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if info == DND_URI_LIST:
 			some_uris = selection.get_uris()
 			if some_uris:
-				self.app.open_files_for_album(self.image_list, uris=some_uris,
+				self.app.open_files_for_album(self.album, uris=some_uris,
 				                                   search=len(some_uris) == 1,
 				                                   replace=True)
 				                                   
@@ -1329,12 +1345,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			if some_pixels:
 				new_images = self.app.load_pixels(some_pixels)
 				if new_images:
-					self.image_list.extend(new_images)
+					self.album.extend(new_images)
 					
 		self.go_new = False
 								
 	def file_open(self, widget, data=None):
-		self.app.open_image_dialog(self.image_list, self)
+		self.app.open_image_dialog(self.album, self)
 		
 	def show_layout_dialog(self, *data):
 		''' Shows a dialog with the layout settings widget '''
@@ -1403,6 +1419,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	def do_destroy(self, *data):
 		# Saves this window preferences
 		preferences.SaveFromWindow(self)
+		preferences.SaveFromAlbum(self.album)
+		preferences.SaveFromView(self.view)
 		try:
 			# Tries to save the layout preferences
 			self.avl.layout.save_preferences()
@@ -1498,12 +1516,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		if not self._focus_hint:
 			if self.auto_zoom_enabled:
 				self.auto_zoom()
-		
-			focus_frame = self.avl.focus_frame
-			if focus_frame:
-				self.imageview.adjust_to_frame(
-					 focus_frame, *self.app.default_position)
-					 
+				
 			self._focus_hint = True
 			
 		self.refresh_transform()
@@ -1518,6 +1531,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.refresh_index()
 	
 	#--- Properties down this line ---#
+	
+	view = GObject.Property(type=viewing.ImageView)
+	album = GObject.Property(type=organization.Album)
 	
 	sort_automatically = GObject.Property(type=bool, default=True)
 	ordering_mode = GObject.Property(type=int, default=0)
@@ -1545,14 +1561,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		return self.actions.get_action("auto-zoom-fit").get_current_value()
 	def set_auto_zoom_mode(self, mode):
 		self.actions.get_action("auto-zoom-fit").set_current_value(mode)
-	
-	def get_interpolation(self):
-		return (self.imageview.get_minify_interpolation(),
-		        self.imageview.get_magnify_interpolation())
-	def set_interpolation(self, minify, magnify):
-		self.imageview.set_minify_interpolation(minify)
-		self.imageview.set_magnify_interpolation(magnify)
-		self.refresh_interp()
 		
 	def get_fullscreen(self):
 		return self.actions.get_action("fullscreen").get_active()
