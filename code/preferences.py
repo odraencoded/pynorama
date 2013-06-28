@@ -131,7 +131,7 @@ used for various alignment related things in the program''')
 		self.zoom_effect.set_digits(2)
 		
 		# Setup mouse tab
-		very_mice_book = Gtk.Notebook()
+		self._mouse_pseudo_notebook = very_mice_book = Gtk.Notebook()
 		
 		view_handlers_box = Gtk.Box(spacing=8,
 		                            orientation=Gtk.Orientation.VERTICAL)
@@ -197,6 +197,9 @@ used for various alignment related things in the program''')
 		brand_listview = Gtk.TreeView()
 		brand_listview.set_model(brand_liststore)
 		
+		brand_selection = brand_listview.get_selection()
+		brand_selection.set_mode(Gtk.SelectionMode.BROWSE)
+		
 		type_column = Gtk.TreeViewColumn("Type")
 		label_renderer = Gtk.CellRendererText()
 		type_column.pack_start(label_renderer, True)
@@ -212,11 +215,11 @@ used for various alignment related things in the program''')
 		add_handler_buttonbox = Gtk.ButtonBox(spacing=8,
 		                             orientation=Gtk.Orientation.HORIZONTAL)
 		add_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.END)
-		cancel_button, add_button = (
+		cancel_add_button, add_button = (
 			Gtk.Button.new_from_stock(Gtk.STOCK_CANCEL),
 			Gtk.Button.new_from_stock(Gtk.STOCK_NEW),
 		)
-		add_handler_buttonbox.add(cancel_button)
+		add_handler_buttonbox.add(cancel_add_button)
 		add_handler_buttonbox.add(add_button)
 		
 		add_handler_box.pack_start(brand_listscroller, True, True, 0)
@@ -227,11 +230,14 @@ used for various alignment related things in the program''')
 		self.connect("notify::target-window", self._changed_target_window)
 		self.connect("notify::target-view", self._changed_target_view)
 		
+		new_handler_button.connect("clicked", self._clicked_new_handler)
 		remove_handler_button.connect("clicked", self._clicked_remove_handler)
 		handler_listview_selection.connect("changed",
 		                                   self._changed_handler_list_selection,
 		                                   remove_handler_button,
 		                                   configure_handler_button)
+		
+		cancel_add_button.connect("clicked", self._clicked_cancel_handler)
 		
 		tabs.show_all()
 
@@ -247,6 +253,9 @@ used for various alignment related things in the program''')
 				text = "???"
 				
 		renderer.props.text = text
+	
+	def _clicked_new_handler(self, *data):
+		self._mouse_pseudo_notebook.set_current_page(1)
 	
 	
 	def _clicked_remove_handler(self, *data):
@@ -271,6 +280,9 @@ used for various alignment related things in the program''')
 		remove_button.set_sensitive(selected_anything)
 		configure_button.set_sensitive(selected_anything)
 	
+	
+	def _clicked_cancel_handler(self, *data):
+		self._mouse_pseudo_notebook.set_current_page(0)
 	
 	def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
 		factory = model[treeiter][0]
