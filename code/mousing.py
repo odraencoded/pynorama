@@ -205,46 +205,61 @@ class MetaMouseHandler:
 	''' Handles mouse events from mouse adapters for mouse handlers '''
 	# It's So Meta Even This Acronym
 	def __init__(self):
+		self.__handlers_data = dict()
 		self.__adapters = dict()
-		self.__handlers = dict()
 		self.__pression_handlers = set()
 		self.__hovering_handlers = set()
 		self.__dragging_handlers = set()
 		self.__scrolling_handlers = set()
 		self.__button_handlers = dict()
 	
+	
+	def __getitem__(self, handler):
+		return self.__handlers_data[handler]
 		
-	def add(self, handler, button=None):
-		if not handler in self.__handlers:
-			if handler.needs_button:
-				if button:
-					button_set = self.__button_handlers.get(button, set())
-					button_set.add(handler)
-					self.__button_handlers[button] = button_set
-					
-				else:
-					raise ValueError
-					
-			elif button:
-				raise ValueError
-				
-			self.__handlers[handler] = dict()
+	
+	def add(self, handler, button=0):
+		''' Adds a handler to be handled '''
+		if not handler in self.__handlers_data:
+			handler_data = MouseHandlerData()
+			handler_data.connect("notify::button",
+			                     self._changed_handler_data_button, handler)
+			
+			self.__handlers_data[handler] = handler_data
 			for handler_set in self.__get_handler_sets(handler):
 				handler_set.add(handler)
+			
+			if button:
+				handler_data.button = button
 				
+			return handler_data
+	
 	
 	def remove(self, handler):
-		if handler in self.__handlers:
-			del self.__handlers[handler]
+		''' Removes a handler to be handled '''
+		handler_data = self.__handlers_data.pop(handler, None)
+		if handler_data:
 			for handler_set in self.__get_handler_sets(handler):
 				handler_set.discard(handler)
 			
 			for a_button_set in self.__button_handlers.values():
-				a_button_set.discard(handler)
-	
-	
+				a_button_set.discard(handler_data)
+				
+		handler_data.emit("removed")
+		
+			
 	def get_handlers(self):
-		return self.__handlers.keys()
+		return self.__handlers_data.keys()
+	
+	
+	def _changed_handler_data_button(self, handler_data, spec, handler):
+		for a_button_set in self.__button_handlers.values():
+			a_button_set.discard(handler)
+		
+		button = handler_data.button
+		button_set = self.__button_handlers.get(button, set())
+		button_set.add(handler)
+		self.__button_handlers[button] = button_set
 	
 	def __get_handler_sets(self, handler):
 		if handler.handles(MouseEvents.Scrolling):
@@ -272,7 +287,7 @@ class MetaMouseHandler:
 			]
 			self.__adapters[adapter] = signals
 	
-			
+	
 	def detach(self, adapter):
 		signals = self.__adapters.get(adapter, [])
 		for a_signal in signals:
@@ -296,11 +311,14 @@ class MetaMouseHandler:
 		widget = adapter.get_widget()
 		
 		for a_handler in event_handlers:
-			data = self.__handlers[a_handler].get(adapter, None)
+			handler_data = self.__handlers_data[a_handler]
+			
 			function = getattr(a_handler, function_name)
-			data = function(widget, *(params + (data,)))
-			if data:
-				self.__handlers[a_handler][adapter] = data
+			
+			adapter_data = handler_data[adapter]
+			adapter_data = function(widget, *(params + (adapter_data,)))
+			if adapter_data:
+				handler_data[adapter] = adapter_data
 	
 	
 	def _scroll(self, adapter, point, direction):
@@ -311,10 +329,12 @@ class MetaMouseHandler:
 	
 	def _motion(self, adapter, to_point, from_point):
 		if adapter.is_pressed():
-			hovering = not any((adapter.is_pressed(a_button) \
-			                      for a_button, a_button_handlers \
-			                      in self.__button_handlers.items() \
-			                      if a_button_handlers))
+			# If the adapter is pressed but there is no handler for any button
+			# then we pretend it is not pressed
+			g = (adapter.is_pressed(a_button) for a_button, a_button_handlers \
+			     in self.__button_handlers.items() if a_button_handlers)
+			hovering = not any(g)
+			
 		else:
 			hovering = True
 			
@@ -358,6 +378,26 @@ class MetaMouseHandler:
 			self.__basic_event_dispatch(adapter, active_handlers, 
 				                        "stop_dragging", point)
 
+class MouseHandlerData(GObject.Object):
+	''' MetaMouseHandler data associated to a MouseHandler  '''
+	__gsignals__ = {
+		"removed" : (GObject.SIGNAL_ACTION, None, []),
+	}
+		
+	def __init__(self):
+		GObject.Object.__init__(self)
+		self.adapter_data = dict()
+
+		
+	def __getitem__(self, key):
+		return self.adapter_data.get(key, None)
+
+
+	def __setitem__(self, key, value):
+		self.adapter_data[key] = value
+		
+		
+	button = GObject.Property(type=int, default=0)
 
 class MouseHandler:
 	''' Handles mouse events sent by MetaMouseHandler. '''

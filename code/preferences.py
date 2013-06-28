@@ -19,7 +19,7 @@
 from gi.repository import Gio, GLib, Gtk, Gdk, GObject
 from gettext import gettext as _
 import cairo, math
-import extending, organization
+import extending, organization, notification
 
 Settings = Gio.Settings("com.example.pynorama")
 
@@ -235,6 +235,8 @@ used for various alignment related things in the program''')
 		
 		new_handler_button.connect("clicked", self._clicked_new_handler)
 		remove_handler_button.connect("clicked", self._clicked_remove_handler)
+		configure_handler_button.connect("clicked",
+		                                 self._clicked_configure_handler)
 		handler_listview_selection.connect("changed",
 		                                   self._changed_handler_list_selection,
 		                                   remove_handler_button,
@@ -276,6 +278,19 @@ used for various alignment related things in the program''')
 			del model[a_treeiter]
 	
 	
+	def _clicked_configure_handler(self, *data):
+		selection = self._handler_listview.get_selection()
+		model, row_paths = selection.get_selected_rows()
+		
+		remove_handler = self.app.meta_mouse_handler.remove
+		
+		treeiters = [model.get_iter(a_path) for a_path in row_paths]
+		for a_treeiter in treeiters:
+			a_handler = model[a_treeiter][0]
+			a_handler_data = self.app.meta_mouse_handler[a_handler]
+			dialog = MouseHandlerSettingDialog(a_handler, a_handler_data)
+			dialog.present()
+	
 	def _changed_handler_list_selection(self, selection, 
 	                                    remove_button, configure_button):
 		model, row_paths = selection.get_selected_rows()
@@ -303,9 +318,11 @@ used for various alignment related things in the program''')
 					
 			self._mouse_pseudo_notebook.set_current_page(0)
 	
+	
 	def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
 		factory = model[treeiter][0]
 		renderer.props.text = factory.label
+	
 	
 	def _popup_add_handlers(self, data):
 		time = Gtk.get_current_event_time()
@@ -361,6 +378,88 @@ used for various alignment related things in the program''')
 	target_view = GObject.Property(type=object)
 	target_album = GObject.Property(type=object)
 	
+
+class MouseHandlerSettingDialog(Gtk.Dialog):
+	def __init__(self, handler, handler_data):
+		Gtk.Dialog.__init__(self, _("Mouse Settings"), None,
+			Gtk.DialogFlags.DESTROY_WITH_PARENT,
+			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
+		
+		alignment = Gtk.Alignment()
+		alignment.set_padding(15, 15, 15, 15)
+		vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+		alignment.add(vbox)
+		alignment.show_all()
+		self.get_content_area().pack_start(alignment, True, True, 0)
+		
+		self.handler = handler
+		self.handler_data = handler_data
+		nickname = handler.nickname
+		
+		factory = handler.factory
+		if factory:
+			if not nickname:
+				nickname = factory.label
+			
+			try:
+				settings_widget = factory.create_settings_widget(handler)
+		
+			except Exception:
+				notification.log_exception("Couldn't create settings widget")
+			
+			else:
+				vbox.pack_end(settings_widget, True, True, 0)
+		
+		if nickname:
+			title = _("“{nickname}” Settings").format(nickname=nickname)
+			self.set_title(title)
+		
+		if handler.needs_button:
+			button_line = Gtk.Box(spacing=12,
+			                      orientation=Gtk.Orientation.HORIZONTAL)
+			label = _("Click to change the mouse button")
+			button_label = Gtk.Label(label)
+			
+			mouse_button = self.mouse_button_button = Gtk.Button()
+			mouse_button.connect("button-press-event",
+			                     self._mouse_button_presssed)
+			handler_data.connect("notify::button", self.refresh_mouse_button)
+			
+			button_line.pack_start(button_label, False, True, 0)
+			button_line.pack_start(mouse_button, True, True, 0)
+			vbox.pack_start(button_line, False, True, 0)
+			
+			self.refresh_mouse_button()
+			
+		handler_data.connect("removed", lambda hd: self.destroy())
+		
+		vbox.show_all()
+	
+	
+	def _mouse_button_presssed(self, widget, data):
+		self.handler_data.button = data.button
+	
+	
+	def refresh_mouse_button(self, *data):
+		button = self.handler_data.button
+		if button == 1:
+			label = _("Primary Button")
+			
+		elif button == 2:
+			label = _("Middle Button")
+			
+		elif button == 3:
+			label = _("Secondary Button")
+			
+		else:
+			label = _("Mouse Button #{number}").format(number=button)
+		
+		self.mouse_button_button.set_label(label)
+	
+	
+	def do_response(self, *data):
+		self.destroy()
+
 def LoadForApp(app):
 	app.zoom_effect = Settings.get_double("zoom-effect")
 	app.spin_effect = Settings.get_int("rotation-effect")
