@@ -104,7 +104,7 @@ used for various alignment related things in the program''')
 		sync_flag = GObject.BindingFlags.SYNC_CREATE
 		
 		spin_button_specs = [
-			(_("Spin effect"), "spin-effect", (0, 1, 359, 3, 30)),
+			(_("Spin effect"), "spin-effect", (0, -180, 180, 10, 60)),
 			(_("Zoom in/out effect"), "zoom-effect", (0, 1.02, 4, 0.1, 0.25))
 		]
 		
@@ -129,6 +129,7 @@ used for various alignment related things in the program''')
 		
 		self.spin_effect, self.zoom_effect = spin_buttons
 		self.zoom_effect.set_digits(2)
+		self.spin_effect.set_wrap(True)
 		
 		# Setup mouse tab
 		self._mouse_pseudo_notebook = very_mice_book = Gtk.Notebook()

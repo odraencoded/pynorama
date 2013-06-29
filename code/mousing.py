@@ -843,32 +843,31 @@ class ZoomHandler(MouseHandler):
 class GearHandler(MouseHandler):
 	''' Spins a view with each scroll tick '''
 	
-	def __init__(self, anchor=None, horizontal=False, inverse=False, effect=45):
+	def __init__(self, pivot=None, horizontal=False, inverse=False, effect=30):
 	             
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
-		self.anchor = anchor
+		
+		if pivot:
+			self.pivot = pivot
+		else:
+			self.pivot = MouseHandlerPivot()
+			
 		self.effect = effect
+		self.horizontal = horizontal
+		self.inverse = inverse
 	
+	effect = GObject.Property(type=float, default=30)
 	horizontal = GObject.Property(type=bool, default=False)
-	inverse = GObject.Property(type=bool, default=False)
 	
 	def scroll(self, view, point, direction, data):
 		dx, dy = direction
-		delta = dx if self.horizontal else dy
-			
-		if self.anchor:
-			w, h = view.get_allocated_width(), view.get_allocated_height()
-			anchor_point = self.anchor[0] * w, self.anchor[1] * h
-		else:
-			anchor_point = point
+		delta = (dx if self.horizontal else dy) * -1
+		
+		anchor_point = self.pivot.convert_point(view, point)
 			
 		pin = view.get_pin(anchor_point)
-		
-		angle = view.rotation
-		angle += self.effect * delta
-		view.rotation = angle % 360
-		
+		view.rotate(self.effect * delta)
 		view.adjust_to_pin(pin)
 		
 #-- Factories down this line --#
@@ -1236,6 +1235,7 @@ class ScrollHandlerFactory(extending.MouseHandlerFactory):
 		return _("Scroll to Pan")
 ScrollHandlerFactory = ScrollHandlerFactory()
 
+
 class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 	def __init__(self, handler):
 		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
@@ -1297,7 +1297,7 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		handler.bind_property("horizontal", horizontal_check,
 		                      "active", both_flags)
 
-		
+
 class ZoomHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
 		codename = "zoom"
@@ -1310,19 +1310,57 @@ class ZoomHandlerFactory(extending.MouseHandlerFactory):
 ZoomHandlerFactory = ZoomHandlerFactory()
 
 
+class GearHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
+	def __init__(self, handler):
+		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
+		                 spacing=12)
+		
+		PivotedHandlerSettingsWidget.__init__(self)
+		
+		label = _("Zoom effect")
+		effect_label = Gtk.Label(label)
+		
+		effect_adjust = Gtk.Adjustment(30, -180, 180, 10, 60, 0)
+		effect_entry = Gtk.SpinButton(adjustment=effect_adjust)
+		effect_entry.set_wrap(True)
+		
+		effect_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+		                      spacing=20)
+		
+		effect_line.pack_start(effect_label, False, True, 0)
+		effect_line.pack_start(effect_entry, False, True, 0)
+		
+		pivot_widgets = self.create_pivot_widgets(handler.pivot)
+		
+		label = _("Activate with horizontal scrolling")		
+		horizontal_check = Gtk.CheckButton(label)
+		
+		self.pack_start(effect_line, False, True, 0)
+		for a_widget in pivot_widgets:
+			self.pack_start(a_widget, False, True, 0)
+		self.pack_start(horizontal_check, False, True, 0)
+		
+		self.show_all()
+		
+		# Bind properties
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
+		both_flags = bidi_flag | sync_flag
+		
+		handler.bind_property("effect", effect_adjust, "value", both_flags)
+		handler.bind_property("horizontal", horizontal_check,
+		                      "active", both_flags)
+
 class GearHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
 		codename = "gear"
 		self.create_default = GearHandler
+		self.create_settings_widget = GearHandlerSettingsWidget
+		
 		
 	@property
 	def label(self):
 		return _("Scroll to Spin")
-		
-	def create_settings_widget(self, handler):
-		''' Creates a widget for configuring a mouse handler '''
-		
-		raise NotImplementedError
 GearHandlerFactory = GearHandlerFactory()
 
 extending.MouseHandlerBrands.extend([
