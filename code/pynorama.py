@@ -39,7 +39,11 @@ class ImageViewer(Gtk.Application):
 		self._preferences_dialog = None
 		self.memory_check_queued = False
 		self.meta_mouse_handler = mousing.MetaMouseHandler()
-	
+		self.meta_mouse_handler.connect("handler-removed",
+		                                self._removed_mouse_handler)
+		self.mouse_handler_dialogs = dict()
+		
+		
 	# --- Gtk.Application interface down this line --- #
 	def do_startup(self):
 		Gtk.Application.do_startup(self)
@@ -158,7 +162,30 @@ class ImageViewer(Gtk.Application):
 		self._preferences_dialog = None
 		preferences.SaveFromApp(self)
 		
+	
+	def get_mouse_handler_dialog(self, handler):
+		dialog = self.mouse_handler_dialogs.pop(handler, None)
+		if not dialog:
+			# Create a new dialog if there is not one
+			create_dialog = preferences.MouseHandlerSettingDialog
+			handler_data = self.meta_mouse_handler[handler]
+			dialog = create_dialog(handler, handler_data)
+			self.mouse_handler_dialogs[handler] = dialog
+			dialog.connect("response", lambda d, v: d.destroy())
+			dialog.connect("destroy", self._mouse_handler_dialog_destroyed)
+			
+		return dialog
+	
+	
+	def _mouse_handler_dialog_destroyed(self, dialog, *data):
+		self.mouse_handler_dialogs.pop(dialog.handler, None)
 		
+	def _removed_mouse_handler(self, meta, handler):
+		dialog = self.mouse_handler_dialogs.pop(handler, None)
+		if dialog:
+			dialog.destroy()
+		
+	
 	def show_about_dialog(self, window=None):
 		''' Shows the about dialog '''
 		dialog = Gtk.AboutDialog(program_name="pynorama",

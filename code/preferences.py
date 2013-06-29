@@ -30,6 +30,12 @@ class Dialog(Gtk.Dialog):
 			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
 		
 		self.app = app
+		self._mouse_handler_iters = dict()
+		self._mm_handler_signals = list()
+		self._mouse_handler_signals = dict()
+		self.mm_handler = self.app.meta_mouse_handler
+		
+		self.connect("destroy", self._do_destroy)
 		
 		# Setup notebook
 		self.tabs = tabs = Gtk.Notebook()
@@ -148,15 +154,12 @@ used for various alignment related things in the program''')
 		
 		# Setup handlers grid
 		handler_liststore = Gtk.ListStore(object)
-		
-		for a_handler in self.app.meta_mouse_handler.get_handlers():
-			treeiter = handler_liststore.append([a_handler])
-			a_handler.connect("notify::nickname",
-			                  self._refresh_handler_nickname,
-			                  treeiter)
-		
 		self._handler_listview = handler_listview = Gtk.TreeView()
 		handler_listview.set_model(handler_liststore)
+		
+		# Sync store
+		for a_handler in self.app.meta_mouse_handler.get_handlers():
+			self._add_mouse_handler(a_handler)
 		
 		handler_listview_selection = handler_listview.get_selection()
 		handler_listview_selection.set_mode(Gtk.SelectionMode.MULTIPLE)
@@ -258,12 +261,18 @@ used for various alignment related things in the program''')
 		self._handler_listview.connect("button-press-event",
 		                               self._button_pressed_handlers)
 		self._brand_listview.connect("button-press-event",
-		                       self._button_pressed_brands)
+		                              self._button_pressed_brands)
 		
 		tabs.connect("switch-page", self._refresh_default)
 		very_mice_book.connect("switch-page", self._refresh_default)
 		self._refresh_default()
 		
+		self._mm_handler_signals = [
+			self.mm_handler.connect("handler-added",
+				                    self._added_mouse_handler),
+			self.mm_handler.connect("handler-removed",
+		                            self._removed_mouse_handler)
+		]		
 		tabs.show_all()
 
 	
@@ -284,7 +293,9 @@ used for various alignment related things in the program''')
 		if self.get_default_widget() != new_default:
 			self.set_default(new_default)
 		
+		
 	def _handler_nick_data_func(self, column, renderer, model, treeiter, *data):
+		''' Gets the nickname of a handler for the textrenderer '''
 		handler = model[treeiter][0]
 		text = handler.nickname
 		if not text:
@@ -298,39 +309,55 @@ used for various alignment related things in the program''')
 	
 	
 	def _clicked_new_handler(self, *data):
+		''' Handles a click on the new mouse handler button in the mouse tab '''
 		self._mouse_pseudo_notebook.set_current_page(1)
 	
 	
 	def _clicked_remove_handler(self, *data):
+		''' Handles a click on the remove button in the mouse tab '''
 		selection = self._handler_listview.get_selection()
 		model, row_paths = selection.get_selected_rows()
 		
 		remove_handler = self.app.meta_mouse_handler.remove
-		
 		treeiters = [model.get_iter(a_path) for a_path in row_paths]
 		for a_treeiter in treeiters:
 			a_handler = model[a_treeiter][0]
 			remove_handler(a_handler)
-			
-			del model[a_treeiter]
-	
+		
+		
+	def _removed_mouse_handler(self, meta, handler):
+		''' Handles a handler actually being removed from
+		    the meta mouse handler '''
+		handler_iter = self._mouse_handler_iters.pop(handler, None)
+		handler_signals = self._mouse_handler_signals.pop(handler, [])
+		
+		if handler_iter:
+			del self._handler_listview.get_model()[handler_iter]
+		
+		for a_signal_id in handler_signals:
+			handler.disconnect(a_signal_id)
+		
 	
 	def _clicked_configure_handler(self, *data):
+		''' Pops up the configure dialog of a mouse handler '''
 		selection = self._handler_listview.get_selection()
 		model, row_paths = selection.get_selected_rows()
 		
-		remove_handler = self.app.meta_mouse_handler.remove
+		get_dialog = self.app.get_mouse_handler_dialog
 		
 		treeiters = [model.get_iter(a_path) for a_path in row_paths]
 		for a_treeiter in treeiters:
 			a_handler = model[a_treeiter][0]
-			a_handler_data = self.app.meta_mouse_handler[a_handler]
-			dialog = MouseHandlerSettingDialog(a_handler, a_handler_data)
+			
+			dialog = get_dialog(a_handler)
 			dialog.present()
 			
 	
 	def _changed_handler_list_selection(self, selection, 
 	                                    remove_button, configure_button):
+		''' Update sensitivity of some buttons based on whether anything is
+		    selected in the handlers list view '''
+		
 		model, row_paths = selection.get_selected_rows()
 		
 		selected_anything = bool(row_paths)
@@ -352,10 +379,13 @@ used for various alignment related things in the program''')
 			
 			
 	def _clicked_cancel_add_handler(self, *data):
+		''' Go back to the handlers list when the user doesn't actually
+		    want to create a new mouse handler '''
 		self._mouse_pseudo_notebook.set_current_page(0)
 	
 	
 	def _clicked_add_handler(self, *data):
+		''' Creates and adds a new mouse handler to the meta mouse handler '''
 		selection = self._brand_listview.get_selection()
 		model, treeiter = selection.get_selected()
 		if treeiter is not None:
@@ -363,28 +393,39 @@ used for various alignment related things in the program''')
 			
 			new_handler = factory.produce()
 			
-			handler_button = 1 if new_handler.needs_button else None			
-			self.app.meta_mouse_handler.add(new_handler, button=handler_button)
-			# TODO: Change this to a meta mouse handler "added" signal handler
+			handler_button = 1 if new_handler.needs_button else None
+			self.mm_handler.add(new_handler, button=handler_button)
+			
+			# Go back to the handler list
+			self._mouse_pseudo_notebook.set_current_page(0)
+			
+			# Scroll to new handler
 			listview = self._handler_listview
-			model = listview.get_model()
-			new_treeiter = model.append([new_handler])
-			new_treepath = model.get_path(new_treeiter)
-			
-			# Bind nickname
-			new_handler.connect("notify::nickname",
-			                    self._refresh_handler_nickname,
-			                    new_treeiter)
-			                    
-			# Select and scroll to new cell
-			selection = listview.get_selection()
-			selection.unselect_all()
-			selection.select_iter(new_treeiter)
-			
+			new_treeiter = self._mouse_handler_iters[new_handler]
+			new_treepath = listview.get_model().get_path(new_treeiter)
 			listview.scroll_to_cell(new_treepath, None, False, 0, 0)
 			
-			self._mouse_pseudo_notebook.set_current_page(0)
 	
+	def _added_mouse_handler(self, meta, new_handler):
+		''' Handles a mouse handler being added to the meta mouse handler '''
+		self._add_mouse_handler(new_handler)
+	
+	
+	def _add_mouse_handler(self, new_handler, *data):
+		''' Actually and finally adds the mouse handler to the liststore '''
+		# TODO: Change this to a meta mouse handler "added" signal handler
+		listview = self._handler_listview
+		model = listview.get_model()
+		new_treeiter = model.append([new_handler])
+		
+		self._mouse_handler_iters[new_handler] = new_treeiter
+		# Connect things
+		self._mouse_handler_signals[new_handler] = [
+			new_handler.connect("notify::nickname",
+			                    self._refresh_handler_nickname,
+		                        new_treeiter)
+		]
+		                    
 	
 	def _button_pressed_brands(self, listview, event):
 		''' Creates a new handler on double click '''
@@ -393,17 +434,20 @@ used for various alignment related things in the program''')
 			
 	
 	def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
+		''' Gets the label of a factory for a text cellrenderer '''
 		factory = model[treeiter][0]
 		renderer.props.text = factory.label
 		
 		
 	def _refresh_handler_nickname(self, handler, spec, treeiter):
+		''' Refresh the list view when a handler nickname changes '''
 		model = self._handler_listview.get_model()
 		treepath = model.get_path(treeiter)
 		model.row_changed(treepath, treeiter)
 	
 	
 	def create_widget_group(self, *widgets):
+		''' I don't even remember what this does '''
 		alignment = Gtk.Alignment()
 		alignment.set_padding(0, 0, 20, 0)
 		
@@ -450,6 +494,15 @@ used for various alignment related things in the program''')
 	target_window = GObject.Property(type=object)
 	target_view = GObject.Property(type=object)
 	target_album = GObject.Property(type=object)
+	
+	def _do_destroy(self, *data):
+		''' Disconnect any connected signals '''
+		for a_signal_id in self._mm_handler_signals:
+			self.mm_handler.disconnect(a_signal_id)
+		
+		for a_handler, some_signals in self._mouse_handler_signals.items():
+			for a_signal in some_signals:
+				a_handler.disconnect(a_signal)
 	
 
 class MouseHandlerSettingDialog(Gtk.Dialog):
@@ -557,10 +610,7 @@ the chosen mouse button")
 			label = _("Mouse Button #{number}").format(number=button)
 		
 		self.mouse_button_button.set_label(label)
-	
-	
-	def do_response(self, *data):
-		self.destroy()
+		
 
 def LoadForApp(app):
 	app.zoom_effect = Settings.get_double("zoom-effect")

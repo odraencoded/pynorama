@@ -201,10 +201,17 @@ class MouseEvents:
 	Clicking  = 20 #010100
 	Scrolling = 32 #100000
 	
-class MetaMouseHandler:
+class MetaMouseHandler(GObject.Object):
 	''' Handles mouse events from mouse adapters for mouse handlers '''
+	__gsignals__ = {
+		"handler-added" : (GObject.SIGNAL_ACTION, None, [object]),
+		"handler-removed" : (GObject.SIGNAL_ACTION, None, [object]),
+	}
+	
 	# It's So Meta Even This Acronym
 	def __init__(self):
+		GObject.Object.__init__(self)
+		
 		self.__handlers_data = dict()
 		self.__adapters = dict()
 		self.__pression_handlers = set()
@@ -231,7 +238,9 @@ class MetaMouseHandler:
 			
 			if button:
 				handler_data.button = button
-				
+			
+			self.emit("handler-added", handler)
+			
 			return handler_data
 	
 	
@@ -246,7 +255,7 @@ class MetaMouseHandler:
 				a_button_set.discard(handler_data)
 				
 		handler_data.emit("removed")
-		
+		self.emit("handler-removed", handler)
 			
 	def get_handlers(self):
 		return self.__handlers_data.keys()
