@@ -719,7 +719,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 			
 		view = avl.old_view = avl.view
 		if view is not None:
-			view_signals = [
+			avl.view_signals = [
 				view.connect("offset-change",
 				             self._offset_changed, avl),
 				view.connect("notify::alignment-x",
