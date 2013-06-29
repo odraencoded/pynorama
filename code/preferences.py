@@ -387,7 +387,7 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
 		
 		alignment = Gtk.Alignment()
 		alignment.set_padding(15, 15, 15, 15)
-		vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+		vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
 		alignment.add(vbox)
 		alignment.show_all()
 		self.get_content_area().pack_start(alignment, True, True, 0)
@@ -395,24 +395,6 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
 		self.handler = handler
 		self.handler_data = handler_data
 		nickname = handler.nickname
-		
-		factory = handler.factory
-		if factory:
-			if not nickname:
-				nickname = factory.label
-			
-			try:
-				settings_widget = factory.create_settings_widget(handler)
-		
-			except Exception:
-				notification.log_exception("Couldn't create settings widget")
-			
-			else:
-				vbox.pack_end(settings_widget, True, True, 0)
-		
-		if nickname:
-			title = _("“{nickname}” Settings").format(nickname=nickname)
-			self.set_title(title)
 		
 		if handler.needs_button:
 			button_line = Gtk.Box(spacing=12,
@@ -430,10 +412,32 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
 			vbox.pack_start(button_line, False, True, 0)
 			
 			self.refresh_mouse_button()
+		
+		vbox.pack_end(Gtk.Separator(), False, True, 0)
+		vbox.set_vexpand(True)
+		vbox.show_all()
+		
+		factory = handler.factory
+		if factory:
+			if not nickname:
+				nickname = factory.label
+			
+			try:
+				settings_widget = factory.create_settings_widget(handler)
+			except Exception:
+				notification.log_exception("Couldn't create settings widget")
+			else:
+				vbox.pack_end(settings_widget, True, True, 0)
+				settings_widget.show()
+				a_separator = Gtk.Separator()
+				vbox.pack_end(a_separator, False, True, 0)
+				a_separator.show()
+			
+		if nickname:
+			title = _("“{nickname}” Settings").format(nickname=nickname)
+			self.set_title(title)
 			
 		handler_data.connect("removed", lambda hd: self.destroy())
-		
-		vbox.show_all()
 	
 	
 	def _mouse_button_presssed(self, widget, data):

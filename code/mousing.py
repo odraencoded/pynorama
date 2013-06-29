@@ -399,17 +399,20 @@ class MouseHandlerData(GObject.Object):
 		
 	button = GObject.Property(type=int, default=0)
 
-class MouseHandler:
+class MouseHandler(GObject.Object):
 	''' Handles mouse events sent by MetaMouseHandler. '''
 	# The base of the totem pole
 	
 	def __init__(self):
+		GObject.Object.__init__(self)
 		self.events = MouseEvents.Nothing
 		
 		# These are set by the app.
-		self.nickname = None # A nickname for this instance
 		self.factory = None # The factory that made the handler
-		
+	
+	# An user-set nickname for this instance
+	nickname = GObject.Property(type=str)
+	
 	def handles(self, event_type):
 		return self.events & event_type == event_type \
 		       if event_type != MouseEvents.Nothing \
@@ -453,28 +456,31 @@ class MouseHandler:
 
 class HoverHandler(MouseHandler):
 	''' Pans a view on mouse hovering '''
-	def __init__(self, speed=1.0, magnify=False):
+	def __init__(self, speed=1.0, relative_speed=True):
 		MouseHandler.__init__(self)
-		self.speed = speed
-		self.magnify_speed = magnify
 		self.events = MouseEvents.Hovering
-	
+		
+		self.speed = speed
+		self.relative_speed = relative_speed
 	
 	def hover(self, view, to_point, from_point, data):
 		shift = point.subtract(to_point, from_point)
 		
 		scale = self.speed
-		if not self.magnify_speed:
+		if self.relative_speed:
 			scale /= view.magnification
 		
 		scaled_shift = point.scale(shift, scale)
 		view.pan(scaled_shift)
 		
-
+	
+	speed = GObject.Property(type=float, default=1)
+	relative_speed = GObject.Property(type=bool, default=True)
+	
 class DragHandler(HoverHandler):
 	''' Pans a view on mouse dragging '''
 	
-	def __init__(self, speed=-1.0, magnify=False):
+	def __init__(self, speed=-1.0, relative_speed=True):
 		HoverHandler.__init__(self, speed, magnify)
 		self.events = MouseEvents.Dragging
 		
@@ -798,19 +804,66 @@ class GearHandler(MouseHandler):
 import extending
 from gettext import gettext as _
 
+class HoverAndDragHandlerSettingsWidget(Gtk.Box):
+	''' A settings widget made for a HoverMouseHandler and DragMouseHandler ''' 
+	def __init__(self, handler, drag=True):
+		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
+		                 spacing=12)
+		
+		label = _("Panning speed")
+		speed_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+		                     spacing=20)
+		speed_label = Gtk.Label(label)
+		speed_label.set_alignment(0, .5)
+		
+		speed_adjustment = Gtk.Adjustment(0, -10, 10, .1, 1, 0)
+		speed_entry = Gtk.SpinButton(adjustment=speed_adjustment, digits=2)
+		label = _("Speed relative to zoom")
+		speed_relative = Gtk.CheckButton(label)
+		
+		
+		speed_line.pack_start(speed_label, False, False, 0)
+		speed_line.pack_start(speed_entry, False, False, 0)
+		speed_line.pack_start(speed_relative, False, False, 0)
+		
+		speed_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL,
+		                        adjustment=speed_adjustment)
+		
+		# Setup speed scale marks
+		mark_pos = Gtk.PositionType.BOTTOM
+		speed_scale.add_mark(-10, mark_pos, _("Image"))
+		speed_scale.add_mark(-1, mark_pos, None, )
+		speed_scale.add_mark(0, mark_pos, _("Inertia"))
+		speed_scale.add_mark(1, mark_pos, None)
+		speed_scale.add_mark(10, mark_pos, _("View"))
+		speed_scale.set_has_origin(False)
+		
+		self.pack_start(speed_line, False, True, 0)
+		self.pack_start(speed_scale, False, True, 0)
+		
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
+		both_flags = bidi_flag | sync_flag
+		
+		# Bind properties
+		handler.bind_property("speed", speed_adjustment, "value", both_flags)
+		handler.bind_property("relative-speed", speed_relative,
+		                      "active", both_flags)
+		self.show_all()
+
 class HoverHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
 		codename = "hover"
 		self.create_default = HoverHandler
 		
+		
 	@property
 	def label(self):
 		return _("Move Mouse to Pan")
 		
-	def create_settings_widget(self, handler):
-		''' Creates a widget for configuring a mouse handler '''
 		
-		raise NotImplementedError
+	def create_settings_widget(self, handler):
+		return HoverAndDragHandlerSettingsWidget(handler)
 HoverHandlerFactory = HoverHandlerFactory()
 
 
@@ -819,14 +872,14 @@ class DragHandlerFactory(extending.MouseHandlerFactory):
 		codename = "drag"
 		self.create_default = DragHandler
 		
+		
 	@property
 	def label(self):
 		return _("Drag to Pan")
 		
-	def create_settings_widget(self, handler):
-		''' Creates a widget for configuring a mouse handler '''
 		
-		raise NotImplementedError
+	def create_settings_widget(self, handler):
+		return HoverAndDragHandlerSettingsWidget(handler)
 DragHandlerFactory = DragHandlerFactory()
 
 
