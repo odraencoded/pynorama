@@ -716,30 +716,53 @@ class StretchHandler(PivotedMouseHandler):
 		
 		return data
 
-class ScrollModes:
-	Normal   = 0 # Your garden variety scrolling
-	InverseH = 1 # Invert H axis value
-	InverseV = 2 # Invert V axis value
-	Inverse  = 3 # Invert axis' values
-	Swap     = 4 # Swaps vertical/horizontal scrolling
-	Wide     = 8 # Vertical axis scrolls along the largest side
-	Thin     = 12 # Vertical axis scrolls along the smallest side
-	
+
+class SwapMode:
+	NoSwap = 0 # Don't swap anything
+	Swap = 1 # Swap axes
+	VerticalGreater = 2 # Map vertical scrolling with greater axis
+	HorizontalGreater = 3 # Map horizontal scrolling with greater axis
+
 class ScrollHandler(MouseHandler):
 	''' Scrolls a view '''
 	
-	def __init__(self, mode=ScrollModes.Normal, factor=0.3, rotate=False):
+	def __init__(self, relative_speed=.3, pixel_speed = 300,
+	                   relative_scrolling=True, inverse = (False, False),
+	                   swap_mode = SwapMode.NoSwap, rotate=False):
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
-		self.factor = factor
-		self.mode = mode
-		self.rotate = rotate
 		
+		self.pixel_speed = pixel_speed
+		self.relative_speed = relative_speed
+		self.relative_scrolling = relative_scrolling
+		self.inverse_horizontal, self.inverse_vertical = inverse
+		self.rotate = rotate
+		self.swap_mode = swap_mode
+	
+	# Scrolling speed
+	pixel_speed = GObject.Property(type=int, default=300)
+	relative_speed = GObject.Property(type=float, default=.3)
+	# If this is true, speed is scaled to the view dimensions
+	relative_scrolling = GObject.Property(type=bool, default=False)
+	# Inverse horizontal and vertical axis, this happens after everything else
+	inverse_horizontal = GObject.Property(type=bool, default=False)
+	inverse_vertical = GObject.Property(type=bool, default=False)
+	# Axes swapping mode
+	swap_mode = GObject.Property(type=int, default=0)
+	# Rotate scrolling shift with view rotation
+	rotate = GObject.Property(type=bool, default=False)
+	
+	
 	def scroll(self, view, position, direction, data):
 		xd, yd = direction
-		
 		view_size = view.get_view()[2:]
-		
+		if self.relative_scrolling:
+			scaled_view_size = point.scale(view_size, self.relative_speed)
+			xd, yd = point.multiply((xd, yd), scaled_view_size)
+			
+		else:
+			xd, yd = point.scale((xd, yd), self.pixel_speed)
+			
 		if self.rotate:
 			xd, yd = point.spin((xd, yd), view.get_rotation_radians())
 			scroll_along_size = view.get_frames_outline()[2:]
@@ -747,43 +770,42 @@ class ScrollHandler(MouseHandler):
 		else:
 			scroll_along_size = view.get_boundary()[2:]
 				
-		if self.mode & ScrollModes.Wide:
+		if self.swap_mode & SwapMode.VerticalGreater:
 			unviewed_ratio = point.divide(scroll_along_size, view_size)
 			
 			if point.is_wide(unviewed_ratio):
 				xd, yd = yd, xd
 			
-		if self.mode & ScrollModes.Swap:
+		if self.swap_mode & SwapMode.Swap:
 			xd, yd = yd, xd
 		
-		if self.mode & ScrollModes.InverseH:
+		if self.inverse_horizontal:
 			xd = -xd
 			
-		if self.mode & ScrollModes.InverseV:
+		if self.inverse_vertical:
 			yd = -yd
-		
-		scaled_view_size = point.scale(view_size, self.factor)
-		scaled_shift = point.multiply((xd, yd), scaled_view_size)
-		view.pan(scaled_shift)
-		
+			
+		view.pan((xd, yd))
+
+
 class ZoomHandler(MouseHandler):
 	''' Zooms a view '''
 	
 	def __init__(self, minify_anchor=None, magnify_anchor=None,
-	             mode=ScrollModes.Normal, power=2):
+	             horizontal=False, power=2):
 	             
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
-		self.power = power
-		self.mode = mode
-		self.anchors = minify_anchor, magnify_anchor
 		
+		self.power = power
+		self.anchors = minify_anchor, magnify_anchor
+	
+	horizontal = GObject.Property(type=bool, default=False)
+	inverse = GObject.Property(type=bool, default=False)
+	
 	def scroll(self, view, point, direction, data):
 		dx, dy = direction
-		delta = dx if self.mode & ScrollModes.Swap else dy
-		
-		if not self.mode & ScrollModes.Inverse:
-			delta *= -1
+		delta = dx if self.horizontal else dy
 		
 		if self.power and delta:
 			anchor = self.anchors[0 if delta < 0 else 1]
@@ -801,23 +823,23 @@ class ZoomHandler(MouseHandler):
 			
 			view.adjust_to_pin(pin)
 
+
 class GearHandler(MouseHandler):
 	''' Spins a view with each scroll tick '''
 	
-	def __init__(self, anchor=None, mode=ScrollModes.Normal, effect=45):
+	def __init__(self, anchor=None, horizontal=False, inverse=False, effect=45):
 	             
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
 		self.anchor = anchor
-		self.mode = mode
 		self.effect = effect
-		
+	
+	horizontal = GObject.Property(type=bool, default=False)
+	inverse = GObject.Property(type=bool, default=False)
+	
 	def scroll(self, view, point, direction, data):
 		dx, dy = direction
-		delta = dx if self.mode & ScrollModes.Swap else dy
-		
-		if not self.mode & ScrollModes.Inverse:
-			delta *= -1
+		delta = dx if self.horizontal else dy
 			
 		if self.anchor:
 			w, h = view.get_allocated_width(), view.get_allocated_height()
@@ -865,12 +887,15 @@ class HoverAndDragHandlerSettingsWidget(Gtk.Box):
 		
 		# Setup speed scale marks
 		mark_pos = Gtk.PositionType.BOTTOM
-		speed_scale.add_mark(-10, mark_pos, _("Image"))
+		speed_scale.add_mark(-10, mark_pos, _("Pan Image"))
 		speed_scale.add_mark(-1, mark_pos, None, )
 		speed_scale.add_mark(0, mark_pos, _("Inertia"))
 		speed_scale.add_mark(1, mark_pos, None)
-		speed_scale.add_mark(10, mark_pos, _("View"))
+		speed_scale.add_mark(10, mark_pos, _("Pan View"))
 		speed_scale.set_has_origin(False)
+		# Show as percent
+		value_to_percent = lambda w, v: "{:.0%}".format(abs(v))
+		speed_scale.connect("format-value", value_to_percent)
 		
 		self.pack_start(speed_line, False, True, 0)
 		self.pack_start(speed_scale, False, True, 0)
@@ -885,19 +910,17 @@ class HoverAndDragHandlerSettingsWidget(Gtk.Box):
 		                      "active", both_flags)
 		self.show_all()
 
+
 class HoverHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
 		codename = "hover"
 		self.create_default = HoverHandler
+		self.create_settings_widget = HoverAndDragHandlerSettingsWidget
 		
 		
 	@property
 	def label(self):
 		return _("Move Mouse to Pan")
-		
-		
-	def create_settings_widget(self, handler):
-		return HoverAndDragHandlerSettingsWidget(handler)
 HoverHandlerFactory = HoverHandlerFactory()
 
 
@@ -905,15 +928,12 @@ class DragHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
 		codename = "drag"
 		self.create_default = DragHandler
+		self.create_settings_widget = HoverAndDragHandlerSettingsWidget
 		
 		
 	@property
 	def label(self):
 		return _("Drag to Pan")
-		
-		
-	def create_settings_widget(self, handler):
-		return HoverAndDragHandlerSettingsWidget(handler)
 DragHandlerFactory = DragHandlerFactory()
 
 
@@ -966,7 +986,7 @@ class PivotedHandlerSettingsWidget:
 		fixed_pivot_widgets = [xlabel, xspin, ylabel, yspin, point_scale]
 		for a_pivot_widget in fixed_pivot_widgets:		
 			self.pivot_fixed.bind_property("active", a_pivot_widget,
-			                               "sensitive", both_flags)
+			                               "sensitive", sync_flag)
 		
 		self.pivot_mouse.connect("toggled", self._pivot_mode_chosen)
 		self.pivot_alignment.connect("toggled", self._pivot_mode_chosen)
@@ -1025,19 +1045,20 @@ class SpinHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		
 		handler.bind_property("frequency", frequency_adjustment,
 		                      "value", both_flags)
-		
+
+
 class SpinHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
 		codename = "spin"
 		self.create_default = SpinHandler
+		self.create_settings_widget = SpinHandlerSettingsWidget
+		
 		
 	@property
 	def label(self):
 		return _("Drag to Spin")
-		
-	def create_settings_widget(self, handler):
-		return SpinHandlerSettingsWidget(handler)
 SpinHandlerFactory = SpinHandlerFactory()
+
 
 class StretchHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 	def __init__(self, handler):
@@ -1053,33 +1074,149 @@ class StretchHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		
 		self.show_all()
 
+
 class StretchHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
 		codename = "stretch"
 		self.create_default = StretchHandler
+		self.create_settings_widget = StretchHandlerSettingsWidget
+		
 		
 	@property
 	def label(self):
 		return _("Drag to Stretch")
-		
-	def create_settings_widget(self, handler):
-		return StretchHandlerSettingsWidget(handler)
 StretchHandlerFactory = StretchHandlerFactory()
 
 
+class ScrollHandlerSettingsWidget(Gtk.Box):
+	def __init__(self, handler):
+		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
+		                 spacing=12)
+		
+		self.handler = handler
+		
+		label = _("Relative percentage scrolling speed")
+		relative_radio = Gtk.RadioButton(label=label)
+		relative_adjust = Gtk.Adjustment(1, 0, 3, .05, .5, 0)
+		relative_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL,
+		                           adjustment=relative_adjust, digits=2)
+		
+		value_to_percent = lambda w, v: "{:.0%}".format(v)
+		relative_scale.connect("format-value", value_to_percent)
+		relative_scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Inertia"))
+		relative_scale.add_mark(1, Gtk.PositionType.BOTTOM, _("Entire Window"))
+		self.relative_radio = relative_radio
+		
+		label = _("Fixed pixel scrolling speed")
+		pixel_radio = Gtk.RadioButton(label=label, group=relative_radio)
+		pixel_adjust = Gtk.Adjustment(300, 0, 9001, 20, 150, 0)
+		pixel_entry = Gtk.SpinButton(adjustment=pixel_adjust)
+		pixel_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+		                     spacing=20)
+		pixel_line.pack_start(pixel_radio, False, True, 0)
+		pixel_line.pack_start(pixel_entry, False, True, 0)
+		self.pixel_radio = pixel_radio
+		
+		label = _("Inverse vertical scrolling")
+		inversev = Gtk.CheckButton(label=label)
+		label = _("Inverse horizontal scrolling")
+		inverseh = Gtk.CheckButton(label=label)
+		
+		label = _("Rotate scrolling to image coordinates")
+		rotate = Gtk.CheckButton(label)
+		
+		label = _("Do not swap axes")
+		noswap = Gtk.RadioButton(label=label)
+		label = _("Swap vertical and horizontal scrolling")
+		doswap = Gtk.RadioButton(label=label, group=noswap)
+		label = _("Vertical scrolling scrolls greatest side")
+		vgreater = Gtk.RadioButton(label=label, group=doswap)
+		label = _("Vertical scrolling scrolls smallest side")
+		hgreater = Gtk.RadioButton(label=label, group=vgreater)
+		
+		self.pack_start(pixel_line, False, True, 0)
+		self.pack_start(relative_radio, False, True, 0)
+		self.pack_start(relative_scale, False, True, 0)
+		self.pack_start(inverseh, False, True, 0)
+		self.pack_start(inversev, False, True, 0)
+		self.pack_start(rotate, False, True, 0)
+		self.pack_start(noswap, False, True, 0)
+		self.pack_start(doswap, False, True, 0)
+		self.pack_start(vgreater, False, True, 0)
+		self.pack_start(hgreater, False, True, 0)
+		
+		self.show_all()
+		
+		# Bind properties
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
+		both_flags = bidi_flag | sync_flag
+		inv_flag = GObject.BindingFlags.INVERT_BOOLEAN
+		
+		handler.connect("notify::pivot-mode", self._refresh_swap_mode)
+		self.swap_options = {
+			SwapMode.NoSwap : noswap, SwapMode.Swap : doswap,
+			SwapMode.VerticalGreater : vgreater,
+			SwapMode.HorizontalGreater : hgreater
+		}
+		
+		for value, radio in self.swap_options.items():
+			radio.connect("toggled", self._swap_mode_chosen, value)
+		
+		handler.connect("notify::relative-scrolling", self._refresh_speed_mode)
+		pixel_radio.connect("toggled", self._speed_mode_chosen, False)
+		relative_radio.connect("toggled", self._speed_mode_chosen, True)
+		
+		pixel_radio.bind_property("active", pixel_entry,
+		                          "sensitive", sync_flag)
+		relative_radio.bind_property("active", relative_scale,
+		                             "sensitive", sync_flag)
+		                             
+		handler.bind_property("relative-speed", relative_adjust,
+		                      "value", both_flags)
+		handler.bind_property("pixel-speed", pixel_adjust,
+		                      "value", both_flags)
+		handler.bind_property("inverse-horizontal", inverseh,
+		                      "active", both_flags)
+		handler.bind_property("inverse-vertical", inversev,
+		                      "active", both_flags)
+		handler.bind_property("rotate", rotate, "active", both_flags)
+			
+		self._refresh_swap_mode(handler)
+		self._refresh_speed_mode(handler)
+		
+		
+	def _refresh_swap_mode(self, handler, *data):
+		self.swap_options[handler.swap_mode].set_active(True)
+		
+		
+	def _swap_mode_chosen(self, radio, value):
+		if radio.get_active():
+			self.handler.swap_mode = value
+	
+	
+	def _refresh_speed_mode(self, handler, *data):
+		if handler.relative_scrolling:
+			self.relative_radio.set_active(True)
+		else:
+			self.pixel_radio.set_active(True)
+	
+	
+	def _speed_mode_chosen(self, radio, value):
+		if radio.get_active():
+			self.handler.relative_scrolling = value
+			
+	
 class ScrollHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
 		codename = "scroll"
 		self.create_default = ScrollHandler
+		self.create_settings_widget = ScrollHandlerSettingsWidget
+		
 		
 	@property
 	def label(self):
 		return _("Scroll to Pan")
-		
-	def create_settings_widget(self, handler):
-		''' Creates a widget for configuring a mouse handler '''
-		
-		raise NotImplementedError
 ScrollHandlerFactory = ScrollHandlerFactory()
 
 
