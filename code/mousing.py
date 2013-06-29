@@ -795,39 +795,48 @@ class ScrollHandler(MouseHandler):
 class ZoomHandler(MouseHandler):
 	''' Zooms a view '''
 	
-	def __init__(self, minify_anchor=None, magnify_anchor=None,
+	def __init__(self, minify_pivot=None, magnify_pivot=None,
 	             horizontal=False, effect=2):
 	             
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
 		
-		self.effect = effect
-		self.horizontal = horizontal
+		if not minify_pivot:
+			minify_pivot = MouseHandlerPivot(mode=PivotMode.Fixed)
+			
+		if not magnify_pivot:
+			magnify_pivot = MouseHandlerPivot(mode=PivotMode.Fixed)
+			
+		self.minify_pivot = minify_pivot
+		self.magnify_pivot = magnify_pivot
 		
-		self.anchors = minify_anchor, magnify_anchor
+		if effect < 0:
+			self.effect = 1.0 / effect
+			self.inverse_effect = True
+		else:
+			self.effect = effect
+			
+		self.horizontal = horizontal
 	
+	effect = GObject.Property(type=float, default=2)
+	inverse_effect = GObject.Property(type=bool, default=False)
 	horizontal = GObject.Property(type=bool, default=False)
-	effect = GObject.Property(type=float, default=2)
-	effect = GObject.Property(type=float, default=2)
 	
 	def scroll(self, view, point, direction, data):
 		dx, dy = direction
-		delta = dx if self.horizontal else dy
+		delta = (dx if self.horizontal else dy) * -1
 		
-		if self.power and delta:
-			anchor = self.anchors[0 if delta < 0 else 1]
-			if anchor:
-				w, h = view.get_allocated_width(), view.get_allocated_height()
-				anchor_point = anchor[0] * w, anchor[1] * h
+		if delta and self.effect:
+			if self.inverse_effect:
+				power = (1.0 / self.effect) ** delta
 			else:
-				anchor_point = point
+				power = self.effect ** delta
+			
+			pivot = self.minify_pivot if power < 0 else self.magnify_pivot
+			anchor_point = pivot.convert_point(view, point)
 			
 			pin = view.get_pin(anchor_point)
-			
-			zoom = view.magnification
-			zoom *= self.power ** delta
-			view.magnification = zoom
-			
+			view.magnification *= power
 			view.adjust_to_pin(pin)
 
 
@@ -1227,20 +1236,77 @@ class ScrollHandlerFactory(extending.MouseHandlerFactory):
 		return _("Scroll to Pan")
 ScrollHandlerFactory = ScrollHandlerFactory()
 
+class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
+	def __init__(self, handler):
+		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
+		                 spacing=12)
+		
+		PivotedHandlerSettingsWidget.__init__(self)
+		
+		label = _("Zoom effect")
+		effect_label = Gtk.Label(label)
+		
+		effect_adjust = Gtk.Adjustment(0, 0, 4, .05, .25, 0)
+		effect_entry = Gtk.SpinButton(adjustment=effect_adjust, digits=2)
+		
+		effect_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+		                      spacing=20)
+		label = _("Inverse effect")
+		effect_inverse = Gtk.CheckButton(label)
+		
+		effect_line.pack_start(effect_label, False, True, 0)
+		effect_line.pack_start(effect_entry, False, True, 0)
+		effect_line.pack_start(effect_inverse, False, True, 0)
+		
+		label = _("Activate with horizontal scrolling")		
+		horizontal_check = Gtk.CheckButton(label)
+		
+		# Create magnify and minify pivot widgets in a notebook
+		pivot_book = Gtk.Notebook()
+		pivot_labels = (
+			(handler.magnify_pivot, _("Zoom in anchor")),
+			(handler.minify_pivot, _("Zoom out anchor")),
+		)
+		for a_pivot, a_label in pivot_labels:
+			a_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+			a_box_widgets = self.create_pivot_widgets(a_pivot)
+			for a_widget in a_box_widgets:
+				a_box.pack_start(a_widget, False, True, 0)
+			
+			# Add widgets to notebook
+			an_alignment = Gtk.Alignment()
+			an_alignment.set_padding(12, 12, 12, 12)
+			an_alignment.add(a_box)
+			a_tab_label = Gtk.Label(a_label)		
+			pivot_book.append_page(an_alignment, a_tab_label)
+		
+		self.pack_start(effect_line, False, True, 0)
+		self.pack_start(pivot_book, False, True, 0)
+		self.pack_start(horizontal_check, False, True, 0)
+		
+		self.show_all()
+		
+		# Bind properties
+		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
+		sync_flag = GObject.BindingFlags.SYNC_CREATE
+		both_flags = bidi_flag | sync_flag
+		
+		handler.bind_property("effect", effect_adjust, "value", both_flags)
+		handler.bind_property("inverse-effect", effect_inverse,
+		                       "active", both_flags)
+		handler.bind_property("horizontal", horizontal_check,
+		                      "active", both_flags)
 
+		
 class ZoomHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
 		codename = "zoom"
 		self.create_default = ZoomHandler
+		self.create_settings_widget=ZoomHandlerSettingsWidget
 		
 	@property
 	def label(self):
 		return _("Scroll to Zoom")
-		
-	def create_settings_widget(self, handler):
-		''' Creates a widget for configuring a mouse handler '''
-		
-		raise NotImplementedError
 ZoomHandlerFactory = ZoomHandlerFactory()
 
 
