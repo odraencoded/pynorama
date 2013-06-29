@@ -62,7 +62,8 @@ class Dialog(Gtk.Dialog):
 		alignment_tooltip = _('''This alignment setting is \
 used for various alignment related things in the program''')
 		
-		point_label.set_alignment(0, 0)
+		point_label.set_hexpand(True)
+		point_label.set_alignment(0, .5)
 		point_label.set_line_wrap(True)
 		
 		hadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
@@ -111,7 +112,6 @@ used for various alignment related things in the program''')
 		spin_buttons = []
 		for a_label_string, a_property, an_adjustment_args in spin_button_specs:
 			a_button_label = Gtk.Label(a_label_string)
-			a_button_label.set_hexpand(True)
 			a_button_label.set_alignment(0, 0.5)
 			
 			an_adjustment = Gtk.Adjustment(*(an_adjustment_args + (0,)))
@@ -149,7 +149,10 @@ used for various alignment related things in the program''')
 		handler_liststore = Gtk.ListStore(object)
 		
 		for a_handler in self.app.meta_mouse_handler.get_handlers():
-			handler_liststore.append([a_handler])
+			treeiter = handler_liststore.append([a_handler])
+			a_handler.connect("notify::nickname",
+			                  self._refresh_handler_nickname,
+			                  treeiter)
 		
 		self._handler_listview = handler_listview = Gtk.TreeView()
 		handler_listview.set_model(handler_liststore)
@@ -291,6 +294,7 @@ used for various alignment related things in the program''')
 			a_handler_data = self.app.meta_mouse_handler[a_handler]
 			dialog = MouseHandlerSettingDialog(a_handler, a_handler_data)
 			dialog.present()
+			
 	
 	def _changed_handler_list_selection(self, selection, 
 	                                    remove_button, configure_button):
@@ -321,6 +325,11 @@ used for various alignment related things in the program''')
 			new_treeiter = model.append([new_handler])
 			new_treepath = model.get_path(new_treeiter)
 			
+			# Bind nickname
+			new_handler.connect("notify::nickname",
+			                    self._refresh_handler_nickname,
+			                    new_treeiter)
+			                    
 			# Select and scroll to new cell
 			selection = listview.get_selection()
 			selection.unselect_all()
@@ -334,13 +343,12 @@ used for various alignment related things in the program''')
 	def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
 		factory = model[treeiter][0]
 		renderer.props.text = factory.label
-	
-	
-	def _popup_add_handlers(self, data):
-		time = Gtk.get_current_event_time()
-		menu = self._add_handlers_menu
-		menu.popup( None, None, None, None, 0, time)
-	
+		
+		
+	def _refresh_handler_nickname(self, handler, spec, treeiter):
+		model = self._handler_listview.get_model()
+		treepath = model.get_path(treeiter)
+		model.row_changed(treepath, treeiter)
 	
 	def create_widget_group(self, *widgets):
 		alignment = Gtk.Alignment()
@@ -393,7 +401,7 @@ used for various alignment related things in the program''')
 
 class MouseHandlerSettingDialog(Gtk.Dialog):
 	def __init__(self, handler, handler_data):
-		Gtk.Dialog.__init__(self, _("Mouse Settings"), None,
+		Gtk.Dialog.__init__(self, _("Mouse Navigation Settings"), None,
 			Gtk.DialogFlags.DESTROY_WITH_PARENT,
 			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
 		
@@ -406,24 +414,37 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
 		
 		self.handler = handler
 		self.handler_data = handler_data
-		nickname = handler.nickname
 		
+		# Create nickname widgets
+		label = _("Nickname")
+		nickname_label = Gtk.Label(label)
+		nickname_entry = Gtk.Entry()
+		nickname_entry.set_hexpand(True)
+		# Binding entry
+		flags = GObject.BindingFlags
+		handler.bind_property("nickname", nickname_entry, "text", 
+		                      flags.BIDIRECTIONAL | flags.SYNC_CREATE)
+		# Pack nickname entry
+		nickname_line = Gtk.Box(spacing=20,
+		                        orientation=Gtk.Orientation.HORIZONTAL)
+		nickname_line.pack_start(nickname_label, False, True, 0)
+		nickname_line.pack_start(nickname_entry, False, True, 0)
+		vbox.pack_start(nickname_line, False, True, 0)
+		
+		# Create button setting widgets for handlers that need button setting
 		if handler.needs_button:
-			button_line = Gtk.Box(spacing=12,
-			                      orientation=Gtk.Orientation.HORIZONTAL)
-			label = _("Click to change the mouse button")
-			button_label = Gtk.Label(label)
+			tooltip = _("Click here with a mouse button to change \
+the chosen mouse button")
 			
 			mouse_button = self.mouse_button_button = Gtk.Button()
+			mouse_button.set_tooltip_text(tooltip)
+			mouse_button.set_size_request(200, -1)
 			mouse_button.connect("button-press-event",
 			                     self._mouse_button_presssed)
-			handler_data.connect("notify::button", self.refresh_mouse_button)
+			handler_data.connect("notify::button", self._refresh_mouse_button)
 			
-			button_line.pack_start(button_label, False, True, 0)
-			button_line.pack_start(mouse_button, True, True, 0)
-			vbox.pack_start(button_line, False, True, 0)
-			
-			self.refresh_mouse_button()
+			nickname_line.pack_end(mouse_button, False, True, 0)
+			self._refresh_mouse_button()
 		
 		vbox.pack_end(Gtk.Separator(), False, True, 0)
 		vbox.set_vexpand(True)
@@ -431,10 +452,8 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
 		
 		factory = handler.factory
 		if factory:
-			if not nickname:
-				nickname = factory.label
-			
 			try:
+				
 				settings_widget = factory.create_settings_widget(handler)
 			except Exception:
 				notification.log_exception("Couldn't create settings widget")
@@ -444,19 +463,34 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
 				a_separator = Gtk.Separator()
 				vbox.pack_end(a_separator, False, True, 0)
 				a_separator.show()
+		
+		nickname_entry.connect("notify::text", self._refresh_title)
+		handler_data.connect("removed", lambda hd: self.destroy())
+		
+		self._refresh_title()
+	
+	def _refresh_title(self, *data):
+		nickname = self.handler.nickname
+		factory =self.handler.factory
+		if not nickname and factory:
+			try:
+				nickname = factory.label
+				
+			except Exception:
+				notification.log_exception("Couldn't get factory label")
 			
 		if nickname:
 			title = _("“{nickname}” Settings").format(nickname=nickname)
-			self.set_title(title)
 			
-		handler_data.connect("removed", lambda hd: self.destroy())
-	
+		else:
+			title = _("Mouse Navigation Settings")
+			
+		self.set_title(title)
 	
 	def _mouse_button_presssed(self, widget, data):
 		self.handler_data.button = data.button
 	
-	
-	def refresh_mouse_button(self, *data):
+	def _refresh_mouse_button(self, *data):
 		button = self.handler_data.button
 		if button == Gdk.BUTTON_PRIMARY:
 			label = _("Primary Button")
