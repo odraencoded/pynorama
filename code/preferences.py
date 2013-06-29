@@ -32,7 +32,7 @@ class Dialog(Gtk.Dialog):
 		self.app = app
 		
 		# Setup notebook
-		tabs = Gtk.Notebook()
+		self.tabs = tabs = Gtk.Notebook()
 		tabs_align = Gtk.Alignment()
 		tabs_align.set_padding(15, 15, 15, 15)
 		tabs_align.add(tabs)
@@ -133,6 +133,7 @@ used for various alignment related things in the program''')
 		
 		# Setup mouse tab
 		self._mouse_pseudo_notebook = very_mice_book = Gtk.Notebook()
+		
 		very_mice_book.set_show_tabs(False)
 		very_mice_book.set_show_border(False)
 		view_handlers_box = Gtk.Box(spacing=8,
@@ -180,6 +181,7 @@ used for various alignment related things in the program''')
 		# These are insensitive until something is selected
 		remove_handler_button.set_sensitive(False)
 		configure_handler_button.set_sensitive(False)
+		configure_handler_button.set_can_default(True)
 		
 		edit_handler_buttonbox.add(configure_handler_button)
 		edit_handler_buttonbox.add(new_handler_button)
@@ -226,11 +228,15 @@ used for various alignment related things in the program''')
 			Gtk.Button.new_from_stock(Gtk.STOCK_CANCEL),
 			Gtk.Button.new_from_stock(Gtk.STOCK_ADD),
 		)
+		add_button.set_can_default(True)
 		add_handler_buttonbox.add(cancel_add_button)
 		add_handler_buttonbox.add(add_button)
 		
 		add_handler_box.pack_start(brand_listscroller, True, True, 0)
 		add_handler_box.pack_start(add_handler_buttonbox, False, True, 0)
+		
+		self._configure_handler_button = configure_handler_button
+		self._add_handler_button = add_button
 		
 		# Bindings and events
 		self._window_bindings, self._view_bindings = [], []
@@ -248,10 +254,36 @@ used for various alignment related things in the program''')
 		
 		cancel_add_button.connect("clicked", self._clicked_cancel_add_handler)
 		add_button.connect("clicked", self._clicked_add_handler)
+		very_mice_book.connect("key-press-event", self._key_pressed_mice_book)
+		self._handler_listview.connect("button-press-event",
+		                               self._button_pressed_handlers)
+		self._brand_listview.connect("button-press-event",
+		                       self._button_pressed_brands)
+		
+		tabs.connect("switch-page", self._refresh_default)
+		very_mice_book.connect("switch-page", self._refresh_default)
+		self._refresh_default()
 		
 		tabs.show_all()
 
 	
+	def _refresh_default(self, *data):
+		''' Resets the default widget of the window '''
+		tab = self.tabs.get_current_page()
+		if tab == 1:
+			pseudo_tab = self._mouse_pseudo_notebook.get_current_page()
+			if pseudo_tab == 0:
+				new_default = self._configure_handler_button
+			
+			else:
+				new_default = self._add_handler_button
+				
+		else:
+			new_default = None
+			
+		if self.get_default_widget() != new_default:
+			self.set_default(new_default)
+		
 	def _handler_nick_data_func(self, column, renderer, model, treeiter, *data):
 		handler = model[treeiter][0]
 		text = handler.nickname
@@ -263,6 +295,7 @@ used for various alignment related things in the program''')
 				text = "???"
 				
 		renderer.props.text = text
+	
 	
 	def _clicked_new_handler(self, *data):
 		self._mouse_pseudo_notebook.set_current_page(1)
@@ -305,6 +338,19 @@ used for various alignment related things in the program''')
 		configure_button.set_sensitive(selected_anything)
 	
 	
+	def _button_pressed_handlers(self, listview, event):
+		''' Opens the configure dialog on double click '''
+		if event.type == Gdk.EventType._2BUTTON_PRESS:
+			self._clicked_configure_handler()
+	
+	
+	def _key_pressed_mice_book(self, widget, event):
+		''' Handles delete key on handlers listview '''
+		if event.keyval == Gdk.KEY_Delete and \
+		   self._mouse_pseudo_notebook.get_current_page() == 0:
+			self._clicked_remove_handler()
+			
+			
 	def _clicked_cancel_add_handler(self, *data):
 		self._mouse_pseudo_notebook.set_current_page(0)
 	
@@ -340,6 +386,12 @@ used for various alignment related things in the program''')
 			self._mouse_pseudo_notebook.set_current_page(0)
 	
 	
+	def _button_pressed_brands(self, listview, event):
+		''' Creates a new handler on double click '''
+		if event.type == Gdk.EventType._2BUTTON_PRESS:
+			self._clicked_add_handler()
+			
+	
 	def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
 		factory = model[treeiter][0]
 		renderer.props.text = factory.label
@@ -349,6 +401,7 @@ used for various alignment related things in the program''')
 		model = self._handler_listview.get_model()
 		treepath = model.get_path(treeiter)
 		model.row_changed(treepath, treeiter)
+	
 	
 	def create_widget_group(self, *widgets):
 		alignment = Gtk.Alignment()
