@@ -81,7 +81,7 @@ used for various alignment related things in the program''')
 		xspin.set_digits(2)
 		yspin.set_digits(2)
 		
-		point_scale = PointScale(hadjust, vadjust)
+		point_scale = PointScale(hadjust, vadjust, square=True)
 		
 		# Set tooltip
 		xspin.set_tooltip_text(alignment_tooltip)
@@ -491,12 +491,11 @@ the chosen mouse button")
 			
 			mouse_button = self.mouse_button_button = Gtk.Button()
 			mouse_button.set_tooltip_text(tooltip)
-			mouse_button.set_size_request(200, -1)
 			mouse_button.connect("button-press-event",
 			                     self._mouse_button_presssed)
 			handler_data.connect("notify::button", self._refresh_mouse_button)
 			
-			nickname_line.pack_end(mouse_button, False, True, 0)
+			vbox.pack_start(mouse_button, False, True, 0)
 			self._refresh_mouse_button()
 		
 		vbox.pack_end(Gtk.Separator(), False, True, 0)
@@ -680,12 +679,20 @@ def SaveFromView(view):
 
 class PointScale(Gtk.DrawingArea):
 	''' A widget like a Gtk.HScale and Gtk.VScale together. '''
-	def __init__(self, hrange, vrange):
+	def __init__(self, hrange, vrange, square=False):
 		Gtk.DrawingArea.__init__(self)
 		self.set_size_request(50, 50)
-		self.padding = 0
-		self.mark_width = 24
-		self.mark_height = 24
+		self.square = square
+		if square:
+			self.padding = 0
+			self.mark_width = 32
+			self.mark_height = 32
+			
+		else:
+			self.padding = 4
+			self.mark_width = 8
+			self.mark_height = 8
+			
 		self.dragging = False
 		self.__hrange = self.__vrange = None
 		self.hrange_signal = self.vrange_signal = None
@@ -698,10 +705,14 @@ class PointScale(Gtk.DrawingArea):
 			
 	def adjust_from_point(self, x, y):
 		w, h = self.get_allocated_width(), self.get_allocated_height()
-		t, l = (self.padding + self.mark_height / 2,
-		        self.padding + self.mark_width / 2)
-		r = w - (self.padding + self.mark_width / 2)
-		b = h - (self.padding + self.mark_height / 2)
+		if self.square:
+			hpadding = self.padding + self.mark_width / 2
+			vpadding = self.padding + self.mark_height / 2
+		else:
+			hpadding, vpadding = self.padding, self.padding
+		
+		t, l = vpadding, hpadding
+		r, b = w - hpadding, h - vpadding
 		
 		x, y = (max(0, min(r - l, x - l)) / (r - l),
 		        max(0, min(b - t, y - t)) / (b - t))
@@ -768,11 +779,15 @@ class PointScale(Gtk.DrawingArea):
 	
 	def do_draw(self, cr):
 		w, h = self.get_allocated_width(), self.get_allocated_height()		
-		t, l = (self.padding + self.mark_height / 2,
-		        self.padding + self.mark_width / 2)
-		r = w - (self.padding + self.mark_width / 2)
-		b = h - (self.padding + self.mark_height / 2)
+		if self.square:
+			hpadding = self.padding + self.mark_width / 2
+			vpadding = self.padding + self.mark_height / 2
+		else:
+			hpadding, vpadding = self.padding, self.padding
 		
+		t, l = vpadding, hpadding
+		r, b = w - hpadding, h - vpadding
+				
 		hrange = self.get_hrange()
 		if hrange:
 			lx, ux = hrange.get_lower(), hrange.get_upper()
@@ -809,29 +824,46 @@ class PointScale(Gtk.DrawingArea):
 		cr.clip()
 		
 		cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
+		x, y = round(x), round(y)
 		
-		ml, mt = x - self.mark_width / 2, y - self.mark_height / 2
-		mr, mb = ml + self.mark_width, mt + self.mark_height
+		if self.square:
+			ml, mt = x - self.mark_width / 2, y - self.mark_height / 2
+			mr, mb = ml + self.mark_width, mt + self.mark_height
+			ml, mt, mr, mb = round(ml), round(mt), round(mr), round(mb)
+			
+			cr.set_line_width(1)
+			cr.set_dash([3, 7], x + y)
+			cr.move_to(ml, 0); cr.line_to(ml, h); cr.stroke()
+			cr.move_to(mr, 0); cr.line_to(mr, h); cr.stroke()
+			cr.move_to(0, mt); cr.line_to(w, mt); cr.stroke()
+			cr.move_to(0, mb); cr.line_to(w, mb); cr.stroke()
+			
+			cr.set_dash([], 0)
+			cr.rectangle(ml, mt, self.mark_width, self.mark_height)
+			cr.stroke()
 		
-		ml, mt, mr, mb = round(ml), round(mt), round(mr), round(mb)
-		
-		cr.set_line_width(1)
-		cr.set_dash([1, 7], x + y)
-		Gtk.render_line(style, cr, ml, 0, ml, h)
-		Gtk.render_line(style, cr, mr, 0, mr, h)
-		cr.set_dash([1, 7], x + y)
-		Gtk.render_line(style, cr, 0, mt, w, mt)
-		Gtk.render_line(style, cr, 0, mb, w, mb)
-		
-		cr.set_line_width(3)
-		cr.set_dash([], 0)
-		Gtk.render_line(style, cr, ml, mt, ml, mb)
-		Gtk.render_line(style, cr, mr, mt, mr, mb)
-		Gtk.render_line(style, cr, ml, mt, mr, mt)
-		Gtk.render_line(style, cr, ml, mb, mr, mb)
-		
-		cr.stroke()
-		
+		else:
+			cr.set_line_width(1)
+			cr.set_dash([3, 7], x + y)
+			cr.move_to(x, 0); cr.line_to(x, h); cr.stroke()
+			cr.move_to(0, y); cr.line_to(w, y); cr.stroke()
+			
+			cr.save()
+			cr.translate(x, y)
+			cr.scale(self.mark_width * 3, self.mark_height * 3)
+			cr.arc(0, 0, 1, 0, 2 * math.pi)
+			cr.restore()
+			cr.stroke()
+			
+			cr.set_dash([], 0)
+			
+			cr.save()
+			cr.translate(x, y)
+			cr.scale(self.mark_width / 2, self.mark_height / 2)
+			cr.arc(0, 0, 1, 0, 2 * math.pi)
+			cr.restore()
+			cr.fill()
+			
 		cr.restore()
 		Gtk.render_frame(style, cr, 0, 0, w, h)
 		

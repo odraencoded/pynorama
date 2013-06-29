@@ -889,13 +889,12 @@ class HoverAndDragHandlerSettingsWidget(Gtk.Box):
 		
 		speed_adjustment = Gtk.Adjustment(0, -10, 10, .1, 1, 0)
 		speed_entry = Gtk.SpinButton(adjustment=speed_adjustment, digits=2)
-		label = _("Speed relative to zoom")
-		speed_relative = Gtk.CheckButton(label)
-		
 		
 		speed_line.pack_start(speed_label, False, False, 0)
 		speed_line.pack_start(speed_entry, False, False, 0)
-		speed_line.pack_start(speed_relative, False, False, 0)
+		
+		label = _("Speed relative to zoom")
+		speed_relative = Gtk.CheckButton(label)
 		
 		speed_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL,
 		                        adjustment=speed_adjustment)
@@ -913,6 +912,7 @@ class HoverAndDragHandlerSettingsWidget(Gtk.Box):
 		speed_scale.connect("format-value", value_to_percent)
 		
 		self.pack_start(speed_line, False, True, 0)
+		self.pack_start(speed_relative, False, True, 0)
 		self.pack_start(speed_scale, False, True, 0)
 		
 		# Bind properties
@@ -960,13 +960,22 @@ class PivotedHandlerSettingsWidget:
 		self.pivot_widgets = dict()
 		self.pivot_radios = dict()
 	
-	def create_pivot_widgets(self, pivot):
-		label = _("Use mouse pointer as pivot")
-		pivot_mouse = Gtk.RadioButton(label=label)
-		label = _("Use view alignment as pivot")
-		pivot_alignment = Gtk.RadioButton(label=label, group=pivot_mouse)
-		label = _("Use a fixed point as pivot")
-		pivot_fixed = Gtk.RadioButton(label=label, group=pivot_alignment)
+	def create_pivot_widgets(self, pivot, anchor=False):
+		if anchor:
+			mouse_label = _("Use mouse pointer as anchor")
+			alignment_label = _("Use view alignment as anchor")
+			fixed_label = _("Use a fixed point as anchor")
+			
+		else:
+			mouse_label = _("Use mouse pointer as pivot")
+			alignment_label = _("Use view alignment as pivot")
+			fixed_label = _("Use a fixed point as pivot")
+		
+		pivot_mouse = Gtk.RadioButton(label=mouse_label)
+		pivot_alignment = Gtk.RadioButton(label=alignment_label,
+		                                  group=pivot_mouse)
+
+		pivot_fixed = Gtk.RadioButton(label=fixed_label, group=pivot_alignment)
 		                                   
 		fixed_point_grid = fixed_point_grid = Gtk.Grid()
 		fixed_point_grid.set_row_spacing(12)
@@ -1084,7 +1093,8 @@ class StretchHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		
 		PivotedHandlerSettingsWidget.__init__(self)
 		
-		mouse, alignment, fixed = self.create_pivot_widgets(handler.pivot)
+		widgets = self.create_pivot_widgets(handler.pivot, anchor=True)
+		alignment, fixed = widgets[1:]
 		self.pack_start(alignment, False, True, 0)
 		self.pack_start(fixed, False, True, 0)
 		
@@ -1269,7 +1279,7 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		)
 		for a_pivot, a_label in pivot_labels:
 			a_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-			a_box_widgets = self.create_pivot_widgets(a_pivot)
+			a_box_widgets = self.create_pivot_widgets(a_pivot, anchor=True)
 			for a_widget in a_box_widgets:
 				a_box.pack_start(a_widget, False, True, 0)
 			
@@ -1317,7 +1327,7 @@ class GearHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		
 		PivotedHandlerSettingsWidget.__init__(self)
 		
-		label = _("Zoom effect")
+		label = _("Spin effect")
 		effect_label = Gtk.Label(label)
 		
 		effect_adjust = Gtk.Adjustment(30, -180, 180, 10, 60, 0)
