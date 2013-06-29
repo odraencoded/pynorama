@@ -446,13 +446,13 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
 	
 	def refresh_mouse_button(self, *data):
 		button = self.handler_data.button
-		if button == 1:
+		if button == Gdk.BUTTON_PRIMARY:
 			label = _("Primary Button")
 			
-		elif button == 2:
+		elif button == Gdk.BUTTON_MIDDLE:
 			label = _("Middle Button")
 			
-		elif button == 3:
+		elif button == Gdk.BUTTON_SECONDARY:
 			label = _("Secondary Button")
 			
 		else:
@@ -620,21 +620,39 @@ class PointScale(Gtk.DrawingArea):
 			self.vrange.set_value(vy)
 	
 	def do_get_request_mode(self):
-		return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
-		
-	def do_get_preferred_width_for_height(self, height):
+		return Gtk.SizeRequestMode.WIDTH_FOR_HEIGHT
+
+	def do_get_preferred_width(self):
 		hrange = self.get_hrange()
-		vrange = self.get_vrange()
 		lx, ux = hrange.get_lower(), hrange.get_upper()
+		
+		return 24, max(24, ux - lx)
+					
+	def do_get_preferred_height(self):
+		vrange = self.get_vrange()
 		ly, uy = vrange.get_lower(), vrange.get_upper()
-		return 24, max(24, int((ux - lx) / (uy - ly) * height))
+		
+		return 24, max(24, uy - ly)
 	
 	def do_get_preferred_height_for_width(self, width):
 		hrange = self.get_hrange()
 		vrange = self.get_vrange()
 		lx, ux = hrange.get_lower(), hrange.get_upper()
 		ly, uy = vrange.get_lower(), vrange.get_upper()
-		return 24, max(24, int((uy - ly) / (ux - lx) * width))
+		
+		ratio = (uy - ly) / (ux - lx)
+		
+		return width * ratio, width * ratio
+			
+	def do_get_preferred_width_for_height(self, height):
+		hrange = self.get_hrange()
+		vrange = self.get_vrange()
+		lx, ux = hrange.get_lower(), hrange.get_upper()
+		ly, uy = vrange.get_lower(), vrange.get_upper()
+		
+		ratio = (ux - lx) / (uy - ly)
+		
+		return height * ratio, height * ratio
 		
 	def do_button_press_event(self, data):
 		self.dragging = True
