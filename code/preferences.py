@@ -314,8 +314,19 @@ used for various alignment related things in the program''')
 			
 			handler_button = 1 if new_handler.needs_button else None			
 			self.app.meta_mouse_handler.add(new_handler, button=handler_button)
-			self._handler_listview.get_model().append([new_handler])
-					
+			# TODO: Change this to a meta mouse handler "added" signal handler
+			listview = self._handler_listview
+			model = listview.get_model()
+			new_treeiter = model.append([new_handler])
+			new_treepath = model.get_path(new_treeiter)
+			
+			# Select and scroll to new cell
+			selection = listview.get_selection()
+			selection.unselect_all()
+			selection.select_iter(new_treeiter)
+			
+			listview.scroll_to_cell(new_treepath, None, False, 0, 0)
+			
 			self._mouse_pseudo_notebook.set_current_page(0)
 	
 	
