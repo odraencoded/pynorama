@@ -339,7 +339,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
 		return (hadjust.get_value() if hadjust else 0,
 		        vadjust.get_value() if vadjust else 0)
 	def get_rotation_radians(self):
-		return self.rotation / 180 * math.pi * -1
+		return self.rotation / 180 * math.pi
 		
 	def get_magnified_width(self):
 		return self.get_allocated_width() / self.magnification
