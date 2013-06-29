@@ -453,7 +453,40 @@ class MouseHandler(GObject.Object):
 		''' Finish dragging '''
 		pass
 		
-
+class PivotMode:
+	Mouse = 0
+	Alignment = 1
+	Fixed = 2
+	
+	
+class MouseHandlerPivot(GObject.Object):
+	mode = GObject.Property(type=int, default=PivotMode.Mouse)
+	# Fixed pivot point
+	fixed_x = GObject.Property(type=float, default=.5)
+	fixed_y = GObject.Property(type=float, default=.5)
+	
+	@property
+	def fixed_point(self):
+		return self.fixed_x, self.fixed_y
+	
+	@fixed_point.setter
+	def fixed_point(self, value):
+		self.fixed_x, self.fixed_y = value
+	
+	def convert_point(self, view, point):
+		if self.mode == PivotMode.Mouse:
+			result = point
+		else:
+			w, h = view.get_allocated_width(), view.get_allocated_height()
+			
+			if self.mode == PivotMode.Alignment:
+				sx, sy = view.alignment_point
+			else:
+				sx, sy = self.fixed_point
+				
+			result = sx * w, sy * h
+		return result
+		
 class HoverHandler(MouseHandler):
 	''' Pans a view on mouse hovering '''
 	def __init__(self, speed=1.0, relative_speed=True):
@@ -585,41 +618,8 @@ class MapHandler(MouseHandler):
 		else:
 			return (allocation.x, allocation.y,
 			        allocation.width, allocation.height)
-			        
-class PivotMode:
-	Mouse = 0
-	Alignment = 1
-	Fixed = 2
-
-class PivotedMouseHandler(MouseHandler):
-	pivot_mode = GObject.Property(type=int, default=PivotMode.Mouse)
-	# Fixed pivot point
-	fixed_x = GObject.Property(type=float, default=.5)
-	fixed_y = GObject.Property(type=float, default=.5)
-	
-	@property
-	def fixed_pivot(self):
-		return self.fixed_x, self.fixed_y
-	
-	@fixed_pivot.setter
-	def fixed_pivot(self, value):
-		self.fixed_x, self.fixed_y = value
-	
-	def convert_pivot(self, view, point):
-		if self.pivot_mode == PivotMode.Mouse:
-			result = point
-		else:
-			w, h = view.get_allocated_width(), view.get_allocated_height()
-			
-			if self.pivot_mode == PivotMode.Alignment:
-				sx, sy = view.alignment_point
-			else:
-				sx, sy = self.fixed_pivot
-				
-			result = sx * w, sy * h
-		return result
 		
-class SpinHandler(PivotedMouseHandler):
+class SpinHandler(MouseHandler):
 	''' Spins a view '''
 	
 	SpinThreshold = 5
@@ -627,18 +627,20 @@ class SpinHandler(PivotedMouseHandler):
 	
 	def __init__(self, frequency=1, pivot_mode=PivotMode.Mouse,
 	             fixed_pivot=(.5, .5)):
-		PivotedMouseHandler.__init__(self)
+		MouseHandler.__init__(self)
+		
 		self.events = MouseEvents.Dragging
 		
 		self.frequency = frequency 
-		self.fixed_pivot = fixed_pivot
-		self.pivot_mode = pivot_mode
+		self.pivot = MouseHandlerPivot()
+		self.pivot.fixed_point = fixed_pivot
+		self.pivot.mode = pivot_mode
 	
 	# Number of complete turns in the view per revolution around the pivot
 	frequency = GObject.Property(type=float, default=1)
 	
 	def start_dragging(self, view, point, data):
-		widget_pivot = self.convert_pivot(view, point)
+		widget_pivot = self.pivot.convert_point(view, point)
 		
 		return widget_pivot, view.get_pin(widget_pivot)
 	
@@ -678,7 +680,7 @@ class SpinHandler(PivotedMouseHandler):
 			
 		return data
 
-class StretchHandler(PivotedMouseHandler):
+class StretchHandler(MouseHandler):
 	''' Stretches/shrinks a view '''
 	
 	MinDistance = 10
@@ -687,12 +689,14 @@ class StretchHandler(PivotedMouseHandler):
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Dragging
 		
-		self.pivot_mode = pivot_mode
-		self.fixed_pivot = fixed_pivot
+		self.pivot = MouseHandlerPivot()
+		
+		self.pivot.mode = pivot_mode
+		self.pivot.fixed_point = fixed_pivot
 		
 	def start_dragging(self, view, start_point, data):
 		widget_size = view.get_widget_size()
-		widget_pivot = self.convert_pivot(view, start_point)
+		widget_pivot = self.pivot.convert_point(view, start_point)
 		
 		start_diff = point.subtract(start_point, widget_pivot)
 		distance = max(StretchHandler.MinDistance, point.length(start_diff))
@@ -792,16 +796,19 @@ class ZoomHandler(MouseHandler):
 	''' Zooms a view '''
 	
 	def __init__(self, minify_anchor=None, magnify_anchor=None,
-	             horizontal=False, power=2):
+	             horizontal=False, effect=2):
 	             
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
 		
-		self.power = power
+		self.effect = effect
+		self.horizontal = horizontal
+		
 		self.anchors = minify_anchor, magnify_anchor
 	
 	horizontal = GObject.Property(type=bool, default=False)
-	inverse = GObject.Property(type=bool, default=False)
+	effect = GObject.Property(type=float, default=2)
+	effect = GObject.Property(type=float, default=2)
 	
 	def scroll(self, view, point, direction, data):
 		dx, dy = direction
@@ -941,19 +948,19 @@ DragHandlerFactory = DragHandlerFactory()
 
 from preferences import PointScale
 class PivotedHandlerSettingsWidget:
-	def __init__(self, handler):
-		self.handler = handler
-		
+	def __init__(self):
+		self.pivot_widgets = dict()
+		self.pivot_radios = dict()
+	
+	def create_pivot_widgets(self, pivot):
 		label = _("Use mouse pointer as pivot")
-		self.pivot_mouse = Gtk.RadioButton(label=label)
+		pivot_mouse = Gtk.RadioButton(label=label)
 		label = _("Use view alignment as pivot")
-		self.pivot_alignment = Gtk.RadioButton(label=label,
-		                                       group=self.pivot_mouse)
+		pivot_alignment = Gtk.RadioButton(label=label, group=pivot_mouse)
 		label = _("Use a fixed point as pivot")
-		self.pivot_fixed = Gtk.RadioButton(label=label,
-		                                   group=self.pivot_alignment)
+		pivot_fixed = Gtk.RadioButton(label=label, group=pivot_alignment)
 		                                   
-		self.fixed_point_grid = fixed_point_grid = Gtk.Grid()
+		fixed_point_grid = fixed_point_grid = Gtk.Grid()
 		fixed_point_grid.set_row_spacing(12)
 		fixed_point_grid.set_column_spacing(20)
 		
@@ -967,47 +974,49 @@ class PivotedHandlerSettingsWidget:
 		
 		point_scale = PointScale(xadjust, yadjust)
 		
-		fixed_point_grid.attach(self.pivot_fixed, 0, 0, 2, 1)
+		fixed_point_grid.attach(pivot_fixed, 0, 0, 2, 1)
 		fixed_point_grid.attach(xlabel, 0, 1, 1, 1)
 		fixed_point_grid.attach(ylabel, 0, 2, 1, 1)
 		fixed_point_grid.attach(xspin, 1, 1, 1, 1)
 		fixed_point_grid.attach(yspin, 1, 2, 1, 1)
 		fixed_point_grid.attach(point_scale, 2, 0, 1, 3)
 		
+		self.pivot_radios[pivot] = pivot_radios = {
+			PivotMode.Mouse : pivot_mouse,
+			PivotMode.Alignment : pivot_alignment,
+			PivotMode.Fixed : pivot_fixed
+		}
+		self.pivot_widgets[pivot] = pivot_widgets = [
+			pivot_mouse, pivot_alignment, fixed_point_grid
+		]
+		
 		# Bind properties
 		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
 		sync_flag = GObject.BindingFlags.SYNC_CREATE
 		both_flags = bidi_flag | sync_flag
 		
-		handler.bind_property("fixed-x", xadjust, "value", both_flags)
-		handler.bind_property("fixed-y", yadjust, "value", both_flags)
-		handler.connect("notify::pivot-mode", self._changed_pivot_mode)
+		pivot.bind_property("fixed-x", xadjust, "value", both_flags)
+		pivot.bind_property("fixed-y", yadjust, "value", both_flags)
+		pivot.connect("notify::mode", self._refresh_pivot_mode)
 		
 		fixed_pivot_widgets = [xlabel, xspin, ylabel, yspin, point_scale]
 		for a_pivot_widget in fixed_pivot_widgets:		
-			self.pivot_fixed.bind_property("active", a_pivot_widget,
-			                               "sensitive", sync_flag)
+			pivot_fixed.bind_property("active", a_pivot_widget,
+			                          "sensitive", sync_flag)
+			                               
+		for value, radio in pivot_radios.items():
+			radio.connect("toggled", self._pivot_mode_chosen, pivot, value)
 		
-		self.pivot_mouse.connect("toggled", self._pivot_mode_chosen)
-		self.pivot_alignment.connect("toggled", self._pivot_mode_chosen)
-		self.pivot_fixed.connect("toggled", self._pivot_mode_chosen)
+		self._refresh_pivot_mode(pivot)
+		
+		return pivot_widgets
+		
+	def _refresh_pivot_mode(self, pivot, *data):
+		self.pivot_radios[pivot][pivot.mode].set_active(True)
 	
-	def _changed_pivot_mode(self, handler, *data):
-		if handler.pivot_mode == PivotMode.Mouse:
-			self.pivot_mouse.set_active(True)
-		elif handler.pivot_mode == PivotMode.Alignment:
-			self.pivot_alignment.set_active(True)
-		else:
-			self.pivot_fixed.set_active(True)
-	
-	
-	def _pivot_mode_chosen(self, *data):
-		if self.pivot_mouse.get_active():
-			self.handler.pivot_mode = PivotMode.Mouse
-		elif self.pivot_alignment.get_active():
-			self.handler.pivot_mode = PivotMode.Alignment
-		else:
-			self.handler.pivot_mode = PivotMode.Fixed
+	def _pivot_mode_chosen(self, radio, pivot, value):
+		if radio.get_active() and pivot.mode != value:
+			pivot.mode = value
 	
 	
 class SpinHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
@@ -1015,7 +1024,7 @@ class SpinHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
 		                 spacing=12)
 		
-		PivotedHandlerSettingsWidget.__init__(self, handler)
+		PivotedHandlerSettingsWidget.__init__(self)
 		
 		self.handler = handler
 		
@@ -1030,11 +1039,11 @@ class SpinHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		frequency_line.pack_start(frequency_label, False, True, 0)
 		frequency_line.pack_start(frequency_entry, False, True, 0)
 		
+		pivot_widgets = self.create_pivot_widgets(handler.pivot)
 		
 		self.pack_start(frequency_line, False, True, 0)
-		self.pack_start(self.pivot_mouse, False, True, 0)
-		self.pack_start(self.pivot_alignment, False, True, 0)
-		self.pack_start(self.fixed_point_grid, False, True, 0)
+		for pivot_widget in pivot_widgets:
+			self.pack_start(pivot_widget, False, True, 0)
 		
 		self.show_all()
 		
@@ -1065,12 +1074,11 @@ class StretchHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
 		                 spacing=12)
 		
-		PivotedHandlerSettingsWidget.__init__(self, handler)
+		PivotedHandlerSettingsWidget.__init__(self)
 		
-		self.handler = handler
-		
-		self.pack_start(self.pivot_alignment, False, True, 0)
-		self.pack_start(self.fixed_point_grid, False, True, 0)
+		mouse, alignment, fixed = self.create_pivot_widgets(handler.pivot)
+		self.pack_start(alignment, False, True, 0)
+		self.pack_start(fixed, False, True, 0)
 		
 		self.show_all()
 
@@ -1191,7 +1199,7 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
 		
 		
 	def _swap_mode_chosen(self, radio, value):
-		if radio.get_active():
+		if radio.get_active() and self.handler.swap_mode != value:
 			self.handler.swap_mode = value
 	
 	
@@ -1203,7 +1211,7 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
 	
 	
 	def _speed_mode_chosen(self, radio, value):
-		if radio.get_active():
+		if radio.get_active() and self.handler.relative_scrolling != value:
 			self.handler.relative_scrolling = value
 			
 	
