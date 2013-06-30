@@ -31,6 +31,7 @@ class Dialog(Gtk.Dialog):
 			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
 		
 		self.app = app
+		self.set_default_size(400, 400)
 		self._mouse_handler_iters = dict()
 		self._mm_handler_signals = list()
 		self._mouse_handler_signals = dict()
@@ -140,20 +141,45 @@ used for various alignment related things in the program''')
 		
 		# Setup mouse tab
 		self._mouse_pseudo_notebook = very_mice_book = Gtk.Notebook()
-		
 		very_mice_book.set_show_tabs(False)
 		very_mice_book.set_show_border(False)
+		
+		# This one is used for the labels on top of the pseudo notebook
+		mouse_label_notebook = Gtk.Notebook()
+		mouse_label_notebook.set_show_tabs(False)
+		mouse_label_notebook.set_show_border(False)				
+		
+		# Add handler list label and widget container
+		label = _('''Mouse based navigation programs currently used \
+in the image viewer''')
+		handlers_description = Gtk.Label(label)
+		handlers_description.set_line_wrap(True)
+		handlers_description.set_alignment(0, 0)
+		mouse_label_notebook.append_page(handlers_description, None)
 		view_handlers_box = Gtk.Box(spacing=8,
 		                            orientation=Gtk.Orientation.VERTICAL)
+		very_mice_book.append_page(view_handlers_box, None)
+		
+		# Add handler factory list label and widget container
+		label = _('''Types of mouse based navigators currently avaiable \
+for the image viewer''')
+		brands_description = Gtk.Label(label)
+		brands_description.set_line_wrap(True)
+		brands_description.set_alignment(0, 0)
+		mouse_label_notebook.append_page(brands_description, None)
 		add_handler_box = Gtk.Box(spacing=8,
 		                          orientation=Gtk.Orientation.VERTICAL)
-		
-		very_mice_book.append_page(view_handlers_box, None)
 		very_mice_book.append_page(add_handler_box, None)
 		
-		mouse_tab_align.add(very_mice_book)
+		# Pack both notebooks in the mouse tab
+		pseudo_notebook_box = Gtk.Box(spacing=12,
+		                              orientation=Gtk.Orientation.VERTICAL)
+		pseudo_notebook_box.pack_start(mouse_label_notebook, False, True, 0)
+		pseudo_notebook_box.pack_start(very_mice_book, True, True, 0)
 		
-		# Setup handlers grid
+		mouse_tab_align.add(pseudo_notebook_box)
+		
+		# Setup handler list tab
 		handler_liststore = Gtk.ListStore(object)
 		self._handler_listview = handler_listview = Gtk.TreeView()
 		handler_listview.set_model(handler_liststore)
@@ -246,6 +272,11 @@ used for various alignment related things in the program''')
 		self._window_bindings, self._view_bindings = [], []
 		self.connect("notify::target-window", self._changed_target_window)
 		self.connect("notify::target-view", self._changed_target_view)
+		
+		# This is a bind for syncing pages betwen the label and widget books
+		very_mice_book.bind_property("page", mouse_label_notebook,
+		                             "page", sync_flag)
+		
 		
 		new_handler_button.connect("clicked", self._clicked_new_handler)
 		remove_handler_button.connect("clicked", self._clicked_remove_handler)
