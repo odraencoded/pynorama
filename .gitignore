@@ -1,4 +1,18 @@
 syntax: glob
 *~
 *.pyc
+*.pyo
 __pycache__
+
+*Makefile
+*Makefile.in
+aclocal.m4
+config.*
+configure
+autom4te.cache
+missing
+install-sh
+py-compile
+pynorama
+pynorama.in
+*.gschema.valid
