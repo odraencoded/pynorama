@@ -30,7 +30,7 @@ DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
 	Version = "v0.2.3"
-	
+		
 	def __init__(self):
 		Gtk.Application.__init__(self)
 		self.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
@@ -49,18 +49,6 @@ class ImageViewer(Gtk.Application):
 		Gtk.Application.do_startup(self)
 		
 		preferences.LoadForApp(self)
-		
-		drag_handler = mousing.DragHandlerFactory.produce()
-		hover_handler = mousing.HoverHandler(0.2)
-		scroll_handler = mousing.ScrollHandlerFactory.produce()
-		spin_handler = mousing.SpinHandler()
-		stretch_handler = mousing.StretchHandler((.5, .5))
-		
-		self.meta_mouse_handler.add(scroll_handler)
-		self.meta_mouse_handler.add(hover_handler)
-		self.meta_mouse_handler.add(drag_handler, Gdk.BUTTON_PRIMARY)
-		self.meta_mouse_handler.add(spin_handler, Gdk.BUTTON_SECONDARY)
-		self.meta_mouse_handler.add(stretch_handler, Gdk.BUTTON_MIDDLE)
 		
 		self.memory = loading.Memory()
 		self.memory.connect("thing-requested", self.queue_memory_check)

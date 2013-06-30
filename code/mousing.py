@@ -408,6 +408,7 @@ class MouseHandlerData(GObject.Object):
 		
 	button = GObject.Property(type=int, default=0)
 
+
 class MouseHandler(GObject.Object):
 	''' Handles mouse events sent by MetaMouseHandler. '''
 	# The base of the totem pole
@@ -462,6 +463,7 @@ class MouseHandler(GObject.Object):
 		''' Finish dragging '''
 		pass
 		
+		
 class PivotMode:
 	Mouse = 0
 	Alignment = 1
@@ -474,13 +476,16 @@ class MouseHandlerPivot(GObject.Object):
 	fixed_x = GObject.Property(type=float, default=.5)
 	fixed_y = GObject.Property(type=float, default=.5)
 	
+	
 	@property
 	def fixed_point(self):
 		return self.fixed_x, self.fixed_y
 	
+	
 	@fixed_point.setter
 	def fixed_point(self, value):
 		self.fixed_x, self.fixed_y = value
+	
 	
 	def convert_point(self, view, point):
 		if self.mode == PivotMode.Mouse:
@@ -496,6 +501,7 @@ class MouseHandlerPivot(GObject.Object):
 			result = sx * w, sy * h
 		return result
 		
+		
 class HoverHandler(MouseHandler):
 	''' Pans a view on mouse hovering '''
 	def __init__(self, speed=1.0, relative_speed=True):
@@ -504,6 +510,11 @@ class HoverHandler(MouseHandler):
 		
 		self.speed = speed
 		self.relative_speed = relative_speed
+	
+	
+	speed = GObject.Property(type=float, default=1)
+	relative_speed = GObject.Property(type=bool, default=True)
+	
 	
 	def hover(self, view, to_point, from_point, data):
 		shift = point.subtract(to_point, from_point)
@@ -514,19 +525,22 @@ class HoverHandler(MouseHandler):
 		
 		scaled_shift = point.scale(shift, scale)
 		view.pan(scaled_shift)
-		
 	
-	speed = GObject.Property(type=float, default=1)
-	relative_speed = GObject.Property(type=bool, default=True)
 	
-class DragHandler(HoverHandler):
+class DragHandler(MouseHandler):
 	''' Pans a view on mouse dragging '''
 	
 	def __init__(self, speed=-1.0, relative_speed=True):
 		HoverHandler.__init__(self, speed, relative_speed)
 		self.events = MouseEvents.Dragging
 		
-		
+		self.speed = speed
+		self.relative_speed = speed
+	
+	speed = GObject.Property(type=float, default=1)
+	relative_speed = GObject.Property(type=bool, default=True)
+	
+	
 	def start_dragging(self, view, *etc):
 		fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
 		view.get_window().set_cursor(fleur_cursor)
@@ -634,16 +648,20 @@ class SpinHandler(MouseHandler):
 	SpinThreshold = 5
 	SoftRadius = 25
 	
-	def __init__(self, frequency=1, pivot_mode=PivotMode.Mouse,
-	             fixed_pivot=(.5, .5)):
+	
+	def __init__(self, frequency=1, pivot=None):
 		MouseHandler.__init__(self)
 		
 		self.events = MouseEvents.Dragging
 		
-		self.frequency = frequency 
-		self.pivot = MouseHandlerPivot()
-		self.pivot.fixed_point = fixed_pivot
-		self.pivot.mode = pivot_mode
+		self.frequency = frequency
+		
+		if pivot:
+			self.pivot = pivot
+			
+		else:
+			self.pivot = MouseHandlerPivot()
+	
 	
 	# Number of complete turns in the view per revolution around the pivot
 	frequency = GObject.Property(type=float, default=1)
@@ -652,6 +670,7 @@ class SpinHandler(MouseHandler):
 		widget_pivot = self.pivot.convert_point(view, point)
 		
 		return widget_pivot, view.get_pin(widget_pivot)
+	
 	
 	def drag(self, view, to_point, from_point, data):
 		pivot, pin = data
@@ -689,19 +708,21 @@ class SpinHandler(MouseHandler):
 			
 		return data
 
+
 class StretchHandler(MouseHandler):
 	''' Stretches/shrinks a view '''
 	
 	MinDistance = 10
 	
-	def __init__(self, fixed_pivot=(.5, .5), pivot_mode=PivotMode.Fixed):
+	def __init__(self, pivot=None):
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Dragging
 		
-		self.pivot = MouseHandlerPivot()
-		
-		self.pivot.mode = pivot_mode
-		self.pivot.fixed_point = fixed_pivot
+		if pivot:
+			self.pivot = pivot
+		else:
+			self.pivot = MouseHandlerPivot(mode=PivotMode.Fixed)
+	
 		
 	def start_dragging(self, view, start_point, data):
 		widget_size = view.get_widget_size()
@@ -714,6 +735,7 @@ class StretchHandler(MouseHandler):
 		zoom_ratio = zoom / distance
 		
 		return zoom_ratio, widget_pivot, view.get_pin(widget_pivot)
+	
 	
 	def drag(self, view, to_point, from_point, data):
 		zoom_ratio, widget_pivot, pin = data
@@ -735,6 +757,7 @@ class SwapMode:
 	Swap = 1 # Swap axes
 	VerticalGreater = 2 # Map vertical scrolling with greater axis
 	HorizontalGreater = 3 # Map horizontal scrolling with greater axis
+
 
 class ScrollHandler(MouseHandler):
 	''' Scrolls a view '''
@@ -804,44 +827,42 @@ class ScrollHandler(MouseHandler):
 class ZoomHandler(MouseHandler):
 	''' Zooms a view '''
 	
-	def __init__(self, minify_pivot=None, magnify_pivot=None,
-	             horizontal=False, effect=2):
+	def __init__(self, effect=2, minify_anchor=None, magnify_anchor=None,
+	                   horizontal=False, inverse=False):
 	             
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
 		
-		if not minify_pivot:
-			minify_pivot = MouseHandlerPivot(mode=PivotMode.Fixed)
+		if not minify_anchor:
+			minify_anchor = MouseHandlerPivot(mode=PivotMode.Fixed)
 			
-		if not magnify_pivot:
-			magnify_pivot = MouseHandlerPivot(mode=PivotMode.Fixed)
+		if not magnify_anchor:
+			magnify_anchor = MouseHandlerPivot(mode=PivotMode.Fixed)
 			
-		self.minify_pivot = minify_pivot
-		self.magnify_pivot = magnify_pivot
+		self.minify_anchor = minify_anchor
+		self.magnify_anchor = magnify_anchor
 		
-		if effect < 0:
-			self.effect = 1.0 / effect
-			self.inverse_effect = True
-		else:
-			self.effect = effect
-			
+		self.effect = effect
+		self.inverse = inverse
 		self.horizontal = horizontal
 	
+	
 	effect = GObject.Property(type=float, default=2)
-	inverse_effect = GObject.Property(type=bool, default=False)
+	inverse = GObject.Property(type=bool, default=False)
 	horizontal = GObject.Property(type=bool, default=False)
+	
 	
 	def scroll(self, view, point, direction, data):
 		dx, dy = direction
 		delta = (dx if self.horizontal else dy) * -1
 		
 		if delta and self.effect:
-			if self.inverse_effect:
-				power = (1.0 / self.effect) ** delta
+			if self.inverse:
+				power = self.effect ** -delta
 			else:
 				power = self.effect ** delta
 			
-			pivot = self.minify_pivot if power < 0 else self.magnify_pivot
+			pivot = self.minify_anchor if power < 0 else self.magnify_anchor
 			anchor_point = pivot.convert_point(view, point)
 			
 			pin = view.get_pin(anchor_point)
@@ -852,7 +873,7 @@ class ZoomHandler(MouseHandler):
 class GearHandler(MouseHandler):
 	''' Spins a view with each scroll tick '''
 	
-	def __init__(self, pivot=None, horizontal=False, inverse=False, effect=30):
+	def __init__(self, pivot=None, horizontal=False, effect=30):
 	             
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
@@ -864,10 +885,11 @@ class GearHandler(MouseHandler):
 			
 		self.effect = effect
 		self.horizontal = horizontal
-		self.inverse = inverse
+	
 	
 	effect = GObject.Property(type=float, default=30)
 	horizontal = GObject.Property(type=bool, default=False)
+	
 	
 	def scroll(self, view, point, direction, data):
 		dx, dy = direction
@@ -883,6 +905,28 @@ class GearHandler(MouseHandler):
 
 import extending
 from gettext import gettext as _
+import xml.etree.ElementTree as ET
+
+def FillPivotXml(pivot, el):
+	mode = ["mouse", "alignment", "fixed"][pivot.mode]
+	el.set("mode", mode)
+	if pivot.mode == PivotMode.Fixed:
+		point_el = ET.SubElement(el, "point")
+		point_el.set("x", str(pivot.fixed_x))
+		point_el.set("y", str(pivot.fixed_y))
+	
+
+def PivotFromXml(el):
+	result = MouseHandlerPivot()
+	mode_at = el.get("mode", "alignment")
+	result.mode = ["mouse", "alignment", "fixed"].index(mode_at)
+	if result.mode == PivotMode.Fixed:
+		point_el = el.find("point")
+		result.fixed_x = float(point_el.get("x", str(.5)))
+		result.fixed_y = float(point_el.get("y", str(.5)))
+	
+	return result
+		
 
 class HoverAndDragHandlerSettingsWidget(Gtk.Box):
 	''' A settings widget made for a HoverMouseHandler and DragMouseHandler ''' 
@@ -937,7 +981,9 @@ class HoverAndDragHandlerSettingsWidget(Gtk.Box):
 
 class HoverHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
-		codename = "hover"
+		extending.MouseHandlerFactory.__init__(self)
+		
+		self.codename = "hover"
 		self.create_default = HoverHandler
 		self.create_settings_widget = HoverAndDragHandlerSettingsWidget
 		
@@ -945,12 +991,28 @@ class HoverHandlerFactory(extending.MouseHandlerFactory):
 	@property
 	def label(self):
 		return _("Move Mouse to Pan")
-HoverHandlerFactory = HoverHandlerFactory()
-
+		
+	
+	def fill_xml(self, handler, el):
+		speed_el = ET.SubElement(el, "speed")
+		speed_el.text = str(handler.speed)
+		if handler.relative_speed:
+			speed_el.set("relative", "relative")
+		
+		
+	def load_xml(self, el):
+		speed_el = el.find("speed")
+		return HoverHandler(
+			speed = float(speed_el.text),
+			relative_speed = bool(speed_el.get("relative", None))
+		)
+		
 
 class DragHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
-		codename = "drag"
+		extending.MouseHandlerFactory.__init__(self)
+		
+		self.codename = "drag"
 		self.create_default = DragHandler
 		self.create_settings_widget = HoverAndDragHandlerSettingsWidget
 		
@@ -958,8 +1020,23 @@ class DragHandlerFactory(extending.MouseHandlerFactory):
 	@property
 	def label(self):
 		return _("Drag to Pan")
-DragHandlerFactory = DragHandlerFactory()
+	
+	def fill_xml(self, handler, el):
+		speed_el = ET.SubElement(el, "speed")
+		speed_el.text = str(handler.speed)
+		if handler.relative_speed:
+			speed_el.set("relative", "relative")
+		
+		
+	def load_xml(self, el):
+		speed_el = el.find("speed")
+		return DragHandler(
+			speed = float(speed_el.text),
+			relative_speed = bool(speed_el.get("relative", None))
+		)
 
+DragHandlerFactory = DragHandlerFactory()
+HoverHandlerFactory = HoverHandlerFactory()	
 
 # TODO: Fix MapHandler for multi-image layouts and create its factory
 
@@ -1084,7 +1161,7 @@ class SpinHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 
 class SpinHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
-		codename = "spin"
+		self.codename = "spin"
 		self.create_default = SpinHandler
 		self.create_settings_widget = SpinHandlerSettingsWidget
 		
@@ -1092,6 +1169,22 @@ class SpinHandlerFactory(extending.MouseHandlerFactory):
 	@property
 	def label(self):
 		return _("Drag to Spin")
+		
+		
+	def fill_xml(self, handler, el):
+		freq_el = ET.SubElement(el, "frequency")
+		freq_el.text = str(handler.frequency)
+		pivot_el = ET.SubElement(el, "pivot")
+		FillPivotXml(handler.pivot, pivot_el)
+		
+		
+	def load_xml(self, el):
+		freq_el = el.find("frequency")
+		pivot_el = el.find("pivot")
+		return SpinHandler(
+			frequency = float(freq_el.text),
+			pivot = PivotFromXml(pivot_el)
+		)
 SpinHandlerFactory = SpinHandlerFactory()
 
 
@@ -1112,7 +1205,7 @@ class StretchHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 
 class StretchHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
-		codename = "stretch"
+		self.codename = "stretch"
 		self.create_default = StretchHandler
 		self.create_settings_widget = StretchHandlerSettingsWidget
 		
@@ -1120,6 +1213,17 @@ class StretchHandlerFactory(extending.MouseHandlerFactory):
 	@property
 	def label(self):
 		return _("Drag to Stretch")
+		
+	def fill_xml(self, handler, el):
+		pivot_el = ET.SubElement(el, "pivot")
+		FillPivotXml(handler.pivot, pivot_el)
+		
+		
+	def load_xml(self, el):
+		pivot_el = el.find("pivot")
+		return StretchHandler(
+			pivot=PivotFromXml(pivot_el)
+		)
 StretchHandlerFactory = StretchHandlerFactory()
 
 
@@ -1244,7 +1348,7 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
 	
 class ScrollHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
-		codename = "scroll"
+		self.codename = "scroll"
 		self.create_default = ScrollHandler
 		self.create_settings_widget = ScrollHandlerSettingsWidget
 		
@@ -1252,6 +1356,75 @@ class ScrollHandlerFactory(extending.MouseHandlerFactory):
 	@property
 	def label(self):
 		return _("Scroll to Pan")
+		
+			
+	def fill_xml(self, handler, el):
+		speed_el = ET.SubElement(el, "speed")
+		if handler.relative_scrolling:	
+			speed_el.set("relative", "relative")
+			speed_el.text = str(handler.relative_speed)
+		else:
+			speed_el.text = str(handler.pixel_speed)
+		
+		scrolling_el = ET.SubElement(el, "scrolling")
+		if handler.rotate:
+			scrolling_el.set("rotate", "rotate")
+			
+		if handler.swap_mode == SwapMode.Swap:
+			scrolling_el.set("swap", "swap")
+			
+		horizontal_el = ET.SubElement(scrolling_el, "horizontal")
+		if handler.swap_mode == SwapMode.HorizontalGreater:
+			horizontal_el.set("greater", "greater")
+		
+		if handler.inverse_horizontal:
+			horizontal_el.set("inverse", "inverse")
+		
+		vertical_el = ET.SubElement(scrolling_el, "vertical")
+		if handler.swap_mode == SwapMode.VerticalGreater:
+			vertical_el.set("greater", "greater")
+		
+		if handler.inverse_vertical:
+			vertical_el.set("inverse", "inverse")
+			
+		
+	def load_xml(self, el):
+		speed_el = el.find("speed")
+		kwargs = {}
+		relative_scrolling = bool(speed_el.get("relative", None))
+		
+		if relative_scrolling:
+			kwargs["relative_speed"] = float(speed_el.text)
+		else:
+			kwargs["pixel_speed"] = float(speed_el.text)
+		
+		scrolling_el = el.find("scrolling")
+		rotate = bool(scrolling_el.get("rotate", None))
+		swap = bool(scrolling_el.get("swap", None))
+		
+		horizontal_el = scrolling_el.find("horizontal")
+		hgreater = bool(horizontal_el.get("greater", None))
+		hinverse = bool(horizontal_el.get("inverse", None))
+		
+		vertical_el = scrolling_el.find("vertical")
+		vgreater = bool(vertical_el.get("greater", None))
+		vinverse = bool(vertical_el.get("inverse", None))
+		
+		if swap:
+			swap_mode = SwapMode.Swap
+		elif hgreater:
+			swap_mode = SwapMode.HorizontalGreater
+		elif vgreater:
+			swap_mode = SwapMode.VerticalGreater
+		else:
+			swap_mode = SwapMode.NoSwap
+		
+		return ScrollHandler(
+			relative_scrolling=relative_scrolling,
+			inverse=(hinverse, vinverse), rotate=rotate,
+			swap_mode=swap_mode, **kwargs
+		)
+			
 ScrollHandlerFactory = ScrollHandlerFactory()
 
 
@@ -1283,8 +1456,8 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		# Create magnify and minify pivot widgets in a notebook
 		pivot_book = Gtk.Notebook()
 		pivot_labels = (
-			(handler.magnify_pivot, _("Zoom in anchor")),
-			(handler.minify_pivot, _("Zoom out anchor")),
+			(handler.magnify_anchor, _("Zoom in anchor")),
+			(handler.minify_anchor, _("Zoom out anchor")),
 		)
 		for a_pivot, a_label in pivot_labels:
 			a_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -1311,21 +1484,62 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		both_flags = bidi_flag | sync_flag
 		
 		handler.bind_property("effect", effect_adjust, "value", both_flags)
-		handler.bind_property("inverse-effect", effect_inverse,
+		handler.bind_property("inverse", effect_inverse,
 		                       "active", both_flags)
 		handler.bind_property("horizontal", horizontal_check,
 		                      "active", both_flags)
-
-
+		
 class ZoomHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
-		codename = "zoom"
+		self.codename = "zoom"
 		self.create_default = ZoomHandler
 		self.create_settings_widget=ZoomHandlerSettingsWidget
 		
 	@property
 	def label(self):
 		return _("Scroll to Zoom")
+		
+		
+	def fill_xml(self, handler, el):
+		effect_el = ET.SubElement(el, "effect")
+		effect_el.text = str(handler.effect)
+		
+		scrolling_el = ET.SubElement(el, "scrolling")
+		if handler.horizontal:
+			scrolling_el.set("horizontal", "horizontal")
+		
+		if handler.inverse:
+			scrolling_el.set("inverse", "inverse")
+		
+		magnify_el = ET.SubElement(el, "magnify")
+		mag_anchor_el = ET.SubElement(magnify_el, "anchor")
+		FillPivotXml(handler.magnify_anchor, mag_anchor_el)
+		
+		minify_el = ET.SubElement(el, "minify")
+		min_anchor_el = ET.SubElement(minify_el, "anchor")
+		FillPivotXml(handler.minify_anchor, min_anchor_el)
+		
+		
+	def load_xml(self, el):
+		effect_el = el.find("effect")
+		effect = float(effect_el.text)
+		
+		scrolling_el = el.find("scrolling")
+		horizontal = bool(scrolling_el.get("horizontal", None))
+		inverse = bool(scrolling_el.get("inverse", None))
+		
+		magnify_el = el.find("magnify")
+		mag_anchor_el = magnify_el.find("anchor")
+		mag_anchor = PivotFromXml(mag_anchor_el)
+
+		minify_el = el.find("minify")
+		min_anchor_el = minify_el.find("anchor")
+		min_anchor = PivotFromXml(min_anchor_el)
+		
+		return ZoomHandler(
+			effect=effect, magnify_anchor=mag_anchor, minify_anchor=min_anchor,
+			horizontal=horizontal, inverse=inverse
+		)
 ZoomHandlerFactory = ZoomHandlerFactory()
 
 
@@ -1372,7 +1586,7 @@ class GearHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 
 class GearHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
-		codename = "gear"
+		self.codename = "gear"
 		self.create_default = GearHandler
 		self.create_settings_widget = GearHandlerSettingsWidget
 		
@@ -1380,6 +1594,33 @@ class GearHandlerFactory(extending.MouseHandlerFactory):
 	@property
 	def label(self):
 		return _("Scroll to Spin")
+		
+		
+	def fill_xml(self, handler, el):
+		effect_el = ET.SubElement(el, "effect")
+		effect_el.text = str(handler.effect)
+		
+		scrolling_el = ET.SubElement(el, "scrolling")
+		if handler.horizontal:
+			scrolling_el.set("horizontal", "horizontal")
+		
+		pivot_el = ET.SubElement(el, "pivot")
+		FillPivotXml(handler.pivot, pivot_el)
+		
+		
+	def load_xml(self, el):
+		effect_el = el.find("effect")
+		effect = float(effect_el.text)
+		
+		scrolling_el = el.find("scrolling")
+		horizontal = bool(scrolling_el.get("horizontal", None))
+		
+		pivot_el = el.find("pivot")
+		pivot = PivotFromXml(pivot_el)
+		
+		return GearHandler(
+			effect=effect, pivot=pivot, horizontal=horizontal,
+		)
 GearHandlerFactory = GearHandlerFactory()
 
 extending.MouseHandlerBrands.extend([

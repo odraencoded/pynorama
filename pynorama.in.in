@@ -10,6 +10,9 @@ from pynorama import ImageViewer as just_an_image_viewer
 just_an_image_viewer.Version = "v@PACKAGE_VERSION@"
 just_an_image_viewer.DataDirectory = "@pkgdatadir@"
 
+import preferences
+preferences.Directory = "~/.pynorama"
+
 # START!!!
 application = just_an_image_viewer()
 application.run(sys.argv)

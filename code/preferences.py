@@ -18,10 +18,11 @@
 
 from gi.repository import Gio, GLib, Gtk, Gdk, GObject
 from gettext import gettext as _
-import cairo, math
+import cairo, math, os
 import extending, organization, notification
 
 Settings = Gio.Settings("com.example.pynorama")
+Directory = "preferences"
 
 class Dialog(Gtk.Dialog):
 	def __init__(self, app):
@@ -612,15 +613,35 @@ the chosen mouse button")
 		self.mouse_button_button.set_label(label)
 		
 
+import pynorama
+
 def LoadForApp(app):
 	app.zoom_effect = Settings.get_double("zoom-effect")
 	app.spin_effect = Settings.get_int("rotation-effect")
-
-
+	
+	try:
+		navigators_path = os.path.join(Directory, "navigators.xml")
+		if not os.path.exists(navigators_path):
+			data_dir = pynorama.ImageViewer.DataDirectory
+			navigators_path = os.path.join(data_dir, "navigators.xml")
+		
+		LoadForMouseHandler(app.meta_mouse_handler, navigators_path)
+		
+	except Exception:
+		notification.log_exception("Couldn't load mouse handler preferences")
+		
+		
 def SaveFromApp(app):
 	Settings.set_double("zoom-effect", app.zoom_effect)
 	Settings.set_int("rotation-effect", app.spin_effect)
-
+	
+	try:
+		os.makedirs(Directory, exist_ok=True)
+		navigators_path = os.path.join(Directory, "navigators.xml")
+		SaveFromMouseHandler(app.meta_mouse_handler, navigators_path)
+		
+	except Exception:
+		notification.log_exception("Couldn't save mouse handler preferences")
 
 def LoadForWindow(window):	
 	window.toolbar_visible = Settings.get_boolean("interface-toolbar")
@@ -696,6 +717,7 @@ def SaveFromAlbum(album):
 	comparer_value = organization.SortingKeys.Enum.index(album.comparer)
 	Settings.set_enum("sort-mode", comparer_value)	
 
+
 def LoadForView(view):
 	view.freeze_notify()
 	try:
@@ -714,6 +736,7 @@ def LoadForView(view):
 	finally:
 		view.thaw_notify()
 	
+	
 def SaveFromView(view):
 	# Save alignment
 	Settings.set_double("view-horizontal-alignment", view.alignment_x)
@@ -726,6 +749,57 @@ def SaveFromView(view):
 	interp_mag_value = interp_map.index(view.magnify_filter)
 	Settings.set_enum("interpolation-minify", interp_min_value)
 	Settings.set_enum("interpolation-magnify", interp_mag_value)
+
+
+import xml.etree.ElementTree as ET
+import collections
+
+def LoadForMouseHandler(meta_mouse_handler, path):
+	tree = ET.parse(path)
+	mouse_el = tree.getroot()
+	
+	navigator_brands = dict()	
+	for a_brand in extending.MouseHandlerBrands:
+		navigator_brands[a_brand.codename] = a_brand
+	
+	# Create data structure for saving
+	for a_handler_el in mouse_el:
+		a_factory_codename = a_handler_el.get("brand", None)
+		a_factory = navigator_brands.get(a_factory_codename, None)
+		if a_factory:
+			a_handler = a_factory.produce(element=a_handler_el)
+			a_handler.nickname = a_handler_el.get("nickname", "")
+			if a_handler.needs_button:
+				button = int(a_handler_el.get("button", "0"))
+			else:
+				button = None
+				
+			meta_mouse_handler.add(a_handler, button=button)
+			
+
+def SaveFromMouseHandler(meta_mouse_handler, path):
+	mouse_el = ET.Element("mouse")
+	
+	# Create data structure for saving
+	for a_handler in meta_mouse_handler.get_handlers():
+		a_factory = a_handler.factory
+		if a_factory:
+			a_handler_el = ET.SubElement(mouse_el, "navigator")
+			# Set standard settings
+			a_handler_data = meta_mouse_handler[a_handler]
+			a_handler_el.set("brand", a_factory.codename)
+			if a_handler.nickname:
+				a_handler_el.set("nickname", a_handler.nickname)
+	
+			if a_handler.needs_button:
+				a_handler_el.set("button", str(a_handler_data.button))
+			
+			# Fill element with abstract data
+			a_factory.fill_xml(a_handler, a_handler_el)
+			
+	tree = ET.ElementTree(element=mouse_el)
+	tree.write(path)
+
 
 class PointScale(Gtk.DrawingArea):
 	''' A widget like a Gtk.HScale and Gtk.VScale together. '''
