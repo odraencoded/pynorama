@@ -35,3 +35,48 @@ class LayoutOption:
 	def create_layout(self):
 		''' Replaces this with something that creates a layout '''
 		raise NotImplementedError
+		
+
+class MouseHandlerFactory:
+	''' Manufacturates mouse handlers & accessories '''
+	
+	def __init__(self):
+		self.codename = "" # A string identifier
+		
+	
+	def produce(self, element=None):
+		if element:
+			product = self.load_xml(element)
+		else:
+			product = self.create_default()
+			
+		product.factory = self
+		return product
+		
+	
+	@property
+	def label(self):
+		''' A label for the UI '''
+		return ""
+	
+	def create_default(self):
+		''' This should create a mouse handler with default attributes '''
+		
+		raise NotImplementedError
+		
+		
+	def create_settings_widget(self, handler):
+		''' Creates a widget for configuring a mouse handler '''
+		
+		raise NotImplementedError
+		
+	def fill_xml(self, handler, element):
+		''' This should fill element with data so that handler
+		    can be recreated from it in the load_xml method '''
+		raise NotImplementedError
+		
+	def load_xml(self, element):
+		''' This should create a mouse handler from an etree element '''
+		raise NotImplementedError
+
+MouseHandlerBrands = list()

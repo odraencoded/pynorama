@@ -23,14 +23,14 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
 import extending
-import organization, navigation, loading, preferences, viewing, notification
+import organization, mousing, loading, preferences, viewing, notification
 from viewing import ZoomMode
 from loading import DirectoryLoader
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
 	Version = "v0.2.3"
-	
+		
 	def __init__(self):
 		Gtk.Application.__init__(self)
 		self.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
@@ -38,25 +38,17 @@ class ImageViewer(Gtk.Application):
 		# Default prefs stuff
 		self._preferences_dialog = None
 		self.memory_check_queued = False
-		self.meta_mouse_handler = navigation.MetaMouseHandler()
-	
+		self.meta_mouse_handler = mousing.MetaMouseHandler()
+		self.meta_mouse_handler.connect("handler-removed",
+		                                self._removed_mouse_handler)
+		self.mouse_handler_dialogs = dict()
+		
+		
 	# --- Gtk.Application interface down this line --- #
 	def do_startup(self):
 		Gtk.Application.do_startup(self)
 		
 		preferences.LoadForApp(self)
-		
-		drag_handler = navigation.DragHandler(-1)
-		hover_handler = navigation.HoverHandler(0.2)
-		scroll_handler = navigation.ScrollHandler(navigation.ScrollModes.Wide)
-		spin_handler = navigation.SpinHandler()
-		stretch_handler = navigation.StretchHandler((.5, .5))
-		
-		self.meta_mouse_handler.add(scroll_handler)
-		self.meta_mouse_handler.add(hover_handler)
-		self.meta_mouse_handler.add(drag_handler, Gdk.BUTTON_PRIMARY)
-		self.meta_mouse_handler.add(spin_handler, Gdk.BUTTON_SECONDARY)
-		self.meta_mouse_handler.add(stretch_handler, Gdk.BUTTON_MIDDLE)
 		
 		self.memory = loading.Memory()
 		self.memory.connect("thing-requested", self.queue_memory_check)
@@ -158,7 +150,30 @@ class ImageViewer(Gtk.Application):
 		self._preferences_dialog = None
 		preferences.SaveFromApp(self)
 		
+	
+	def get_mouse_handler_dialog(self, handler):
+		dialog = self.mouse_handler_dialogs.pop(handler, None)
+		if not dialog:
+			# Create a new dialog if there is not one
+			create_dialog = preferences.MouseHandlerSettingDialog
+			handler_data = self.meta_mouse_handler[handler]
+			dialog = create_dialog(handler, handler_data)
+			self.mouse_handler_dialogs[handler] = dialog
+			dialog.connect("response", lambda d, v: d.destroy())
+			dialog.connect("destroy", self._mouse_handler_dialog_destroyed)
+			
+		return dialog
+	
+	
+	def _mouse_handler_dialog_destroyed(self, dialog, *data):
+		self.mouse_handler_dialogs.pop(dialog.handler, None)
 		
+	def _removed_mouse_handler(self, meta, handler):
+		dialog = self.mouse_handler_dialogs.pop(handler, None)
+		if dialog:
+			dialog.destroy()
+		
+	
 	def show_about_dialog(self, window=None):
 		''' Shows the about dialog '''
 		dialog = Gtk.AboutDialog(program_name="pynorama",
@@ -203,7 +218,7 @@ class ImageViewer(Gtk.Application):
 				
 			a_window.show()
 			image_view = a_window.view
-			image_view.mouse_adapter = navigation.MouseAdapter(image_view)
+			image_view.mouse_adapter = mousing.MouseAdapter(image_view)
 			self.meta_mouse_handler.attach(image_view.mouse_adapter)
 			
 			fillscreen = preferences.Settings.get_boolean("start-fullscreen")

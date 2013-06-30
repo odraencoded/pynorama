@@ -62,7 +62,7 @@
 		</key>
 		<key name="rotation-effect" type="i">
 			<summary>Rotation increment in degrees</summary>
-			<range min="1" max="359" />
+			<range min="-180" max="180" />
 			<default>90</default>
 		</key>
 		<key name="sort-auto" type="b">
