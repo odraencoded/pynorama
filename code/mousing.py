@@ -1051,11 +1051,15 @@ class PivotedHandlerSettingsWidget:
 			mouse_label = _("Use mouse pointer as anchor")
 			alignment_label = _("Use view alignment as anchor")
 			fixed_label = _("Use a fixed point as anchor")
-			
+			xlabel = Gtk.Label("Anchor X")
+			ylabel = Gtk.Label("Anchor Y")
+						
 		else:
 			mouse_label = _("Use mouse pointer as pivot")
 			alignment_label = _("Use view alignment as pivot")
 			fixed_label = _("Use a fixed point as pivot")
+			xlabel = Gtk.Label("Pivot X")
+			ylabel = Gtk.Label("Pivot Y")
 		
 		pivot_mouse = Gtk.RadioButton(label=mouse_label)
 		pivot_alignment = Gtk.RadioButton(label=alignment_label,
@@ -1069,10 +1073,7 @@ class PivotedHandlerSettingsWidget:
 		
 		xadjust = Gtk.Adjustment(.5, 0, 1, .1, .25, 0)
 		yadjust = Gtk.Adjustment(.5, 0, 1, .1, .25, 0)
-		
-		xlabel = Gtk.Label("Pivot X")
 		xspin = Gtk.SpinButton(adjustment=xadjust, digits=2)
-		ylabel = Gtk.Label("Pivot Y")
 		yspin = Gtk.SpinButton(adjustment=yadjust, digits=2)
 		
 		point_scale = PointScale(xadjust, yadjust)
