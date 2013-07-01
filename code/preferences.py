@@ -19,7 +19,7 @@
 from gi.repository import Gio, GLib, Gtk, Gdk, GObject
 from gettext import gettext as _
 import cairo, math, os
-import extending, organization, notification
+import extending, organization, notification, utility
 
 Settings = Gio.Settings("com.example.pynorama")
 Directory = "preferences"
@@ -30,114 +30,58 @@ class Dialog(Gtk.Dialog):
 			Gtk.DialogFlags.DESTROY_WITH_PARENT,
 			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
 		
-		self.app = app
 		self.set_default_size(400, 400)
+		self.app = app
+		self.mm_handler = self.app.meta_mouse_handler
+		
+		# Variables to remember what to remove or disconnect later.
+		# Treeiters for mouse handlers, signal ids from mm_handler and
+		# signal ids from individual mouse handlers
 		self._mouse_handler_iters = dict()
 		self._mm_handler_signals = list()
 		self._mouse_handler_signals = dict()
-		self.mm_handler = self.app.meta_mouse_handler
 		
+		# TODO: Check if do_destroy can be used instead
 		self.connect("destroy", self._do_destroy)
-		
-		# Setup notebook
-		self.tabs = tabs = Gtk.Notebook()
-		tabs_align = Gtk.Alignment()
-		tabs_align.set_padding(15, 15, 15, 15)
-		tabs_align.add(tabs)
-		self.get_content_area().pack_start(tabs_align, True, True, 0)
-		tabs_align.show_all()
-		
-		# Create tabs
-		tab_labels = [_("View"), _("Mouse")]
-		tab_aligns = []
-		for a_tab_label in tab_labels:
-			a_tab_align = Gtk.Alignment()
-			
-			a_tab_align.set_padding(10, 15, 20, 20)
-			tabs.append_page(a_tab_align, Gtk.Label(a_tab_label))
-			tab_aligns.append(a_tab_align)
-		
-		view_tab_align, mouse_tab_align = tab_aligns
 					
 		# Setup view tad
-		
-		view_grid = Gtk.Grid()
-		view_grid.set_column_spacing(20)
-		view_grid.set_row_spacing(5)
-		view_tab_align.add(view_grid)
-				
-		point_label = Gtk.Label(_("Image alignment"))
+		alignment_label = Gtk.Label(_("Image alignment"))
 		alignment_tooltip = _('''This alignment setting is \
 used for various alignment related things in the program''')
 		
-		point_label.set_hexpand(True)
-		point_label.set_alignment(0, .5)
-		point_label.set_line_wrap(True)
-		
 		hadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
-		xlabel = Gtk.Label(_("Horizontal "))
-		xlabel.set_alignment(0, 0.5)
-		xspin = Gtk.SpinButton()
-		xspin.set_adjustment(hadjust)
-		
 		vadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
-		ylabel = Gtk.Label(_("Vertical "))
-		ylabel.set_alignment(0, 0.5)
-		yspin = Gtk.SpinButton()
-		yspin.set_adjustment(vadjust)
-		
-		xspin.set_digits(2)
-		yspin.set_digits(2)
-		
-		point_scale = PointScale(hadjust, vadjust, square=True)
-		
-		# Set tooltip
-		xspin.set_tooltip_text(alignment_tooltip)
-		yspin.set_tooltip_text(alignment_tooltip)
-		xlabel.set_tooltip_text(alignment_tooltip)
-		ylabel.set_tooltip_text(alignment_tooltip)
-		point_label.set_tooltip_text(alignment_tooltip)
-		point_scale.set_tooltip_text(alignment_tooltip)
-		
-		view_grid.attach(point_label, 0, 0, 2, 1)
-		
-		view_grid.attach(xlabel, 0, 1, 1, 1)
-		view_grid.attach(ylabel, 0, 2, 1, 1)
-		view_grid.attach(xspin, 1, 1, 1, 1)
-		view_grid.attach(yspin, 1, 2, 1, 1)
-		view_grid.attach(point_scale, 2, 0, 1, 3)
 		self.alignment_x_adjust = hadjust
 		self.alignment_y_adjust = vadjust
 		
+		point_scale = PointScale(hadjust, vadjust, square=True)
+		view_tab_grid, xspin, yspin = utility.PointScaleGrid(
+			point_scale, _("Horizontal"), _("Vertical"),
+			corner=alignment_label, align=True
+		)
+		for a_widget in (point_scale, xspin, yspin):
+			a_widget.set_tooltip_text(alignment_tooltip)
+		
+		label = _("Spin effect")
+		spin_effect_label = Gtk.Label(label)
+		spin_effect_entry, spin_effect_adjust = utility.SpinAdjustment(
+			0, -180, 180, 10, 60, align=True, digits=2, wrap=True
+		)
+		label = _("Zoom in/out effect")
+		zoom_effect_label = Gtk.Label(label)
+		zoom_effect_entry, zoom_effect_adjust = utility.SpinAdjustment(
+			0, 1.02, 4, 0.1, 0.25, align=True, digits=2
+		)
+		
+		utility.WidgetGrid(
+			(spin_effect_label, spin_effect_entry),
+			(zoom_effect_label, zoom_effect_entry),
+			align_first=True, expand_first=True,
+			grid=view_tab_grid, start_row=1
+		)
+		
 		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
 		sync_flag = GObject.BindingFlags.SYNC_CREATE
-		
-		spin_button_specs = [
-			(_("Spin effect"), "spin-effect", (0, -180, 180, 10, 60)),
-			(_("Zoom in/out effect"), "zoom-effect", (0, 1.02, 4, 0.1, 0.25))
-		]
-		
-		spin_buttons = []
-		for a_label_string, a_property, an_adjustment_args in spin_button_specs:
-			a_button_label = Gtk.Label(a_label_string)
-			a_button_label.set_alignment(0, 0.5)
-			
-			an_adjustment = Gtk.Adjustment(*(an_adjustment_args + (0,)))
-			if a_property:
-				self.app.bind_property(a_property, an_adjustment, "value",
-				                       bidi_flag | sync_flag)
-				
-			a_spin_button = Gtk.SpinButton()
-			a_spin_button.set_adjustment(an_adjustment)
-			
-			row = len(spin_buttons) + 3
-			view_grid.attach(a_button_label, 0, row, 2, 1)
-			view_grid.attach(a_spin_button, 2, row, 1, 1)
-			spin_buttons.append(a_spin_button)
-		
-		self.spin_effect, self.zoom_effect = spin_buttons
-		self.zoom_effect.set_digits(2)
-		self.spin_effect.set_wrap(True)
 		
 		# Setup mouse tab
 		self._mouse_pseudo_notebook = very_mice_book = Gtk.Notebook()
@@ -150,81 +94,72 @@ used for various alignment related things in the program''')
 		mouse_label_notebook.set_show_border(False)				
 		
 		# Add handler list label and widget container
-		label = _('''Mouse based navigation programs currently used \
+		text = _('''Mouse based navigation programs currently used \
 in the image viewer''')
-		handlers_description = Gtk.Label(label)
-		handlers_description.set_line_wrap(True)
-		handlers_description.set_alignment(0, 0)
-		mouse_label_notebook.append_page(handlers_description, None)
-		view_handlers_box = Gtk.Box(spacing=8,
-		                            orientation=Gtk.Orientation.VERTICAL)
-		very_mice_book.append_page(view_handlers_box, None)
+		view_handlers_description = utility.LoneLabel(text)
+		mouse_label_notebook.append_page(view_handlers_description, None)
 		
 		# Add handler factory list label and widget container
-		label = _('''Types of mouse based navigators currently avaiable \
+		text = _('''Types of mouse based navigators currently avaiable \
 for the image viewer''')
-		brands_description = Gtk.Label(label)
-		brands_description.set_line_wrap(True)
-		brands_description.set_alignment(0, 0)
+		brands_description = utility.LoneLabel(text)
 		mouse_label_notebook.append_page(brands_description, None)
-		add_handler_box = Gtk.Box(spacing=8,
-		                          orientation=Gtk.Orientation.VERTICAL)
-		very_mice_book.append_page(add_handler_box, None)
 		
 		# Pack both notebooks in the mouse tab
-		pseudo_notebook_box = Gtk.Box(spacing=12,
-		                              orientation=Gtk.Orientation.VERTICAL)
-		pseudo_notebook_box.pack_start(mouse_label_notebook, False, True, 0)
-		pseudo_notebook_box.pack_start(very_mice_book, True, True, 0)
-		
-		mouse_tab_align.add(pseudo_notebook_box)
+		mouse_tab_stack = utility.WidgetStack(
+			mouse_label_notebook, very_mice_book,
+			expand=very_mice_book
+		)
 		
 		# Setup handler list tab
-		handler_liststore = Gtk.ListStore(object)
-		self._handler_listview = handler_listview = Gtk.TreeView()
-		handler_listview.set_model(handler_liststore)
-		
-		# Sync store
-		for a_handler in self.app.meta_mouse_handler.get_handlers():
+		# Create and sync mouse handler list store
+		self._handlers_liststore = handlers_liststore = Gtk.ListStore(object)
+		for a_handler in self.mm_handler.get_handlers():
 			self._add_mouse_handler(a_handler)
 		
+		# Create mouse handler list view, set selection mode to multiple
+		self._handlers_listview = handler_listview = Gtk.TreeView()
+		handler_listview.set_model(handlers_liststore)
 		handler_listview_selection = handler_listview.get_selection()
 		handler_listview_selection.set_mode(Gtk.SelectionMode.MULTIPLE)
 		
+		# Create and setup "Nickname" column
 		name_renderer = Gtk.CellRendererText()
 		name_column = Gtk.TreeViewColumn("Nickname")
 		name_column.pack_start(name_renderer, True)
 		name_column.set_cell_data_func(name_renderer, 
 		                               self._handler_nick_data_func)
-		
 		handler_listview.append_column(name_column)
 		
-		# Create edit button box
-		edit_handler_buttonbox = Gtk.ButtonBox(spacing=8,
-		                             orientation=Gtk.Orientation.HORIZONTAL)
-		edit_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.START)
+		# Make it scrollable
+		handler_listscroller = Gtk.ScrolledWindow()
+		handler_listscroller.add(handler_listview)
+		handler_listscroller.set_shadow_type(Gtk.ShadowType.IN)
+		
+		# Create the add/remove/configure button box
 		new_handler_button, configure_handler_button, remove_handler_button = (
 			Gtk.Button.new_from_stock(Gtk.STOCK_NEW),
 			Gtk.Button.new_from_stock(Gtk.STOCK_PROPERTIES),
 			Gtk.Button.new_from_stock(Gtk.STOCK_DELETE),
 		)
+		
 		# These are insensitive until something is selected
 		remove_handler_button.set_sensitive(False)
 		configure_handler_button.set_sensitive(False)
 		configure_handler_button.set_can_default(True)
+		self._configure_handler_button = configure_handler_button
 		
-		edit_handler_buttonbox.add(configure_handler_button)
-		edit_handler_buttonbox.add(new_handler_button)
-		edit_handler_buttonbox.add(remove_handler_button)
-		edit_handler_buttonbox.set_child_secondary(
-		                       configure_handler_button, True)
+		edit_handler_buttonbox = utility.ButtonBox(
+			configure_handler_button,
+			secondary=[new_handler_button, remove_handler_button]
+		)
 		
-		handler_listscroller = Gtk.ScrolledWindow()
-		handler_listscroller.add(handler_listview)
-		handler_listscroller.set_shadow_type(Gtk.ShadowType.IN)
-		
-		view_handlers_box.pack_start(handler_listscroller, True, True, 0)
-		view_handlers_box.pack_start(edit_handler_buttonbox, False, True, 0)
+		# Pack widgets into the notebook
+		view_handlers_box = utility.WidgetStack(
+			handler_listscroller, edit_handler_buttonbox,
+			expand=handler_listscroller
+		)
+		very_mice_book.append_page(view_handlers_box, None)
 		
 		# Setup add handlers grid (it is used to add handlers)
 		brand_liststore = Gtk.ListStore(object)
@@ -232,12 +167,13 @@ for the image viewer''')
 		for a_brand in extending.MouseHandlerBrands:
 			brand_liststore.append([a_brand])
 		
+		# Setup listview and selection
 		self._brand_listview = brand_listview = Gtk.TreeView()
 		brand_listview.set_model(brand_liststore)
-		
 		brand_selection = brand_listview.get_selection()
 		brand_selection.set_mode(Gtk.SelectionMode.BROWSE)
 		
+		# Add "type" column
 		type_column = Gtk.TreeViewColumn("Type")
 		label_renderer = Gtk.CellRendererText()
 		type_column.pack_start(label_renderer, True)
@@ -246,32 +182,56 @@ for the image viewer''')
 		
 		brand_listview.append_column(type_column)
 		
+		# Make it scrollable
 		brand_listscroller = Gtk.ScrolledWindow()
 		brand_listscroller.add(brand_listview)
 		brand_listscroller.set_shadow_type(Gtk.ShadowType.IN)
 		
-		# Create button box
-		add_handler_buttonbox = Gtk.ButtonBox(spacing=8,
-		                             orientation=Gtk.Orientation.HORIZONTAL)
-		add_handler_buttonbox.set_layout(Gtk.ButtonBoxStyle.END)
+		# Create add/cancel button box
 		cancel_add_button, add_button = (
 			Gtk.Button.new_from_stock(Gtk.STOCK_CANCEL),
 			Gtk.Button.new_from_stock(Gtk.STOCK_ADD),
 		)
 		add_button.set_can_default(True)
-		add_handler_buttonbox.add(cancel_add_button)
-		add_handler_buttonbox.add(add_button)
-		
-		add_handler_box.pack_start(brand_listscroller, True, True, 0)
-		add_handler_box.pack_start(add_handler_buttonbox, False, True, 0)
-		
-		self._configure_handler_button = configure_handler_button
 		self._add_handler_button = add_button
+		
+		add_handler_buttonbox = utility.ButtonBox(
+			cancel_add_button, add_button
+		)
+		
+		# Pack widgets into the pseudo notebook
+		add_handler_box = utility.WidgetStack(
+			brand_listscroller, add_handler_buttonbox,
+			expand=brand_listscroller
+		)
+		very_mice_book.append_page(add_handler_box, None)
+		
+		# Create tabs
+		self.tabs = tabs = Gtk.Notebook()
+		tab_specs = [
+			(_("View"), view_tab_grid),
+			(_("Mouse"), mouse_tab_stack),
+		]
+		for a_label, a_stack in tab_specs:
+			a_tab_pad = utility.PadNotebookContent(a_stack)
+			a_tab_label = Gtk.Label(a_label)
+			tabs.append_page(a_tab_pad, a_tab_label)
+			
+		# Pack tabs into dialog
+		padded_tabs = utility.PadDialogContent(tabs)
+		padded_tabs.show_all()
+		self.get_content_area().pack_start(padded_tabs, True, True, 0)
 		
 		# Bindings and events
 		self._window_bindings, self._view_bindings = [], []
 		self.connect("notify::target-window", self._changed_target_window)
 		self.connect("notify::target-view", self._changed_target_view)
+		
+		utility.Bind(self.app,
+			("spin-effect", spin_effect_adjust, "value"),
+			("zoom-effect", zoom_effect_adjust, "value"),
+			bidirectional=True, synchronize=True
+		)
 		
 		# This is a bind for syncing pages betwen the label and widget books
 		very_mice_book.bind_property("page", mouse_label_notebook,
@@ -290,13 +250,13 @@ for the image viewer''')
 		cancel_add_button.connect("clicked", self._clicked_cancel_add_handler)
 		add_button.connect("clicked", self._clicked_add_handler)
 		very_mice_book.connect("key-press-event", self._key_pressed_mice_book)
-		self._handler_listview.connect("button-press-event",
+		self._handlers_listview.connect("button-press-event",
 		                               self._button_pressed_handlers)
 		self._brand_listview.connect("button-press-event",
 		                              self._button_pressed_brands)
 		
-		tabs.connect("switch-page", self._refresh_default)
-		very_mice_book.connect("switch-page", self._refresh_default)
+		tabs.connect("notify::page", self._refresh_default)
+		very_mice_book.connect("notify::page", self._refresh_default)
 		self._refresh_default()
 		
 		self._mm_handler_signals = [
@@ -304,8 +264,7 @@ for the image viewer''')
 				                    self._added_mouse_handler),
 			self.mm_handler.connect("handler-removed",
 		                            self._removed_mouse_handler)
-		]		
-		tabs.show_all()
+		]
 
 	
 	def _refresh_default(self, *data):
@@ -335,7 +294,7 @@ for the image viewer''')
 				text = handler.factory.label
 				
 			else:
-				text = "???"
+				text = _("???")
 				
 		renderer.props.text = text
 	
@@ -347,7 +306,7 @@ for the image viewer''')
 	
 	def _clicked_remove_handler(self, *data):
 		''' Handles a click on the remove button in the mouse tab '''
-		selection = self._handler_listview.get_selection()
+		selection = self._handlers_listview.get_selection()
 		model, row_paths = selection.get_selected_rows()
 		
 		remove_handler = self.app.meta_mouse_handler.remove
@@ -364,7 +323,7 @@ for the image viewer''')
 		handler_signals = self._mouse_handler_signals.pop(handler, [])
 		
 		if handler_iter:
-			del self._handler_listview.get_model()[handler_iter]
+			del self._handlers_liststore[handler_iter]
 		
 		for a_signal_id in handler_signals:
 			handler.disconnect(a_signal_id)
@@ -372,7 +331,7 @@ for the image viewer''')
 	
 	def _clicked_configure_handler(self, *data):
 		''' Pops up the configure dialog of a mouse handler '''
-		selection = self._handler_listview.get_selection()
+		selection = self._handlers_listview.get_selection()
 		model, row_paths = selection.get_selected_rows()
 		
 		get_dialog = self.app.get_mouse_handler_dialog
@@ -432,7 +391,7 @@ for the image viewer''')
 			self._mouse_pseudo_notebook.set_current_page(0)
 			
 			# Scroll to new handler
-			listview = self._handler_listview
+			listview = self._handlers_listview
 			new_treeiter = self._mouse_handler_iters[new_handler]
 			new_treepath = listview.get_model().get_path(new_treeiter)
 			listview.scroll_to_cell(new_treepath, None, False, 0, 0)
@@ -446,9 +405,7 @@ for the image viewer''')
 	def _add_mouse_handler(self, new_handler, *data):
 		''' Actually and finally adds the mouse handler to the liststore '''
 		# TODO: Change this to a meta mouse handler "added" signal handler
-		listview = self._handler_listview
-		model = listview.get_model()
-		new_treeiter = model.append([new_handler])
+		new_treeiter = self._handlers_liststore.append([new_handler])
 		
 		self._mouse_handler_iters[new_handler] = new_treeiter
 		# Connect things
@@ -473,7 +430,7 @@ for the image viewer''')
 		
 	def _refresh_handler_nickname(self, handler, spec, treeiter):
 		''' Refresh the list view when a handler nickname changes '''
-		model = self._handler_listview.get_model()
+		model = self._handlers_liststore
 		treepath = model.get_path(treeiter)
 		model.row_changed(treepath, treeiter)
 	
@@ -543,30 +500,21 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
 			Gtk.DialogFlags.DESTROY_WITH_PARENT,
 			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
 		
-		alignment = Gtk.Alignment()
-		alignment.set_padding(15, 15, 15, 15)
-		vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-		alignment.add(vbox)
-		alignment.show_all()
-		self.get_content_area().pack_start(alignment, True, True, 0)
-		
 		self.handler = handler
 		self.handler_data = handler_data
+		
+		vbox = utility.WidgetStack()
+		vbox_pad = utility.PadDialogContent(vbox)
+		self.get_content_area().pack_start(vbox_pad, True, True, 0)
 		
 		# Create nickname widgets
 		label = _("Nickname")
 		nickname_label = Gtk.Label(label)
 		nickname_entry = Gtk.Entry()
-		nickname_entry.set_hexpand(True)
-		# Binding entry
-		flags = GObject.BindingFlags
-		handler.bind_property("nickname", nickname_entry, "text", 
-		                      flags.BIDIRECTIONAL | flags.SYNC_CREATE)
 		# Pack nickname entry
-		nickname_line = Gtk.Box(spacing=20,
-		                        orientation=Gtk.Orientation.HORIZONTAL)
-		nickname_line.pack_start(nickname_label, False, True, 0)
-		nickname_line.pack_start(nickname_entry, False, True, 0)
+		nickname_line = utility.WidgetLine(
+			nickname_label, nickname_entry, expand=nickname_entry
+		)
 		vbox.pack_start(nickname_line, False, True, 0)
 		
 		# Create button setting widgets for handlers that need button setting
@@ -583,24 +531,26 @@ the chosen mouse button")
 			vbox.pack_start(mouse_button, False, True, 0)
 			self._refresh_mouse_button()
 		
-		vbox.pack_end(Gtk.Separator(), False, True, 0)
+		vbox.pack_start(Gtk.Separator(), False, True, 0)
 		vbox.set_vexpand(True)
-		vbox.show_all()
+		vbox_pad.show_all()
 		
 		factory = handler.factory
 		if factory:
 			try:
-				
 				settings_widget = factory.create_settings_widget(handler)
+				
 			except Exception:
 				notification.log_exception("Couldn't create settings widget")
+				
 			else:
 				vbox.pack_end(settings_widget, True, True, 0)
 				settings_widget.show()
-				a_separator = Gtk.Separator()
-				vbox.pack_end(a_separator, False, True, 0)
-				a_separator.show()
-		
+				
+		# Binding entry
+		flags = GObject.BindingFlags
+		handler.bind_property("nickname", nickname_entry, "text", 
+		                      flags.BIDIRECTIONAL | flags.SYNC_CREATE)
 		nickname_entry.connect("notify::text", self._refresh_title)
 		handler_data.connect("removed", lambda hd: self.destroy())
 		
@@ -890,19 +840,27 @@ class PointScale(Gtk.DrawingArea):
 			self.vrange.set_value(vy)
 	
 	def do_get_request_mode(self):
-		return Gtk.SizeRequestMode.WIDTH_FOR_HEIGHT
+		return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
 
 	def do_get_preferred_width(self):
 		hrange = self.get_hrange()
-		lx, ux = hrange.get_lower(), hrange.get_upper()
-		
-		return 24, max(24, ux - lx)
-					
-	def do_get_preferred_height(self):
 		vrange = self.get_vrange()
+		lx, ux = hrange.get_lower(), hrange.get_upper()
 		ly, uy = vrange.get_lower(), vrange.get_upper()
 		
-		return 24, max(24, uy - ly)
+		ratio = (ux - lx) / (uy - ly)
+		w = self.get_allocated_height()
+		return w * ratio, w * ratio
+					
+	def do_get_preferred_height(self):
+		hrange = self.get_hrange()
+		vrange = self.get_vrange()
+		lx, ux = hrange.get_lower(), hrange.get_upper()
+		ly, uy = vrange.get_lower(), vrange.get_upper()
+		
+		ratio = (uy - ly) / (ux - lx)
+		h = self.get_allocated_height()
+		return h * ratio, h * ratio
 	
 	def do_get_preferred_height_for_width(self, width):
 		hrange = self.get_hrange()

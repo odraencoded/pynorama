@@ -1369,14 +1369,16 @@ screen height or width, depending on the strip direction''')
 
 			label = _("Pixels to fill before the center")
 			space_before_label = Gtk.Label(label)
-			space_before_adjust = Gtk.Adjustment(0, 0, 8192, 32, 256)
-			space_before_entry = Gtk.SpinButton(adjustment=space_before_adjust)
+			space_before_entry, space_before_adjust = utility.SpinAdjustment(
+			 	0, 0, 8192, 32, 256, align=True,
+		 	)
 			space_before_entry.set_tooltip_text(space_tooltip)
 			
 			label = _("Pixels to fill after the center")
 			space_after_label = Gtk.Label(label)
-			space_after_adjust = Gtk.Adjustment(0, 0, 8192, 32, 256)
-			space_after_entry = Gtk.SpinButton(adjustment=space_after_adjust)
+			space_after_entry, space_after_adjust = utility.SpinAdjustment(
+				0, 0, 8192, 32, 256, align=True,
+			)
 			space_after_entry.set_tooltip_text(space_tooltip)
 			
 			# Count limits
@@ -1386,59 +1388,41 @@ are too small to breach the pixel count limit''')
 						
 			label = _("Image limit before the center")
 			limit_before_label = Gtk.Label(label)
-			limit_before_adjust = Gtk.Adjustment(0, 0, 512, 1, 10)
-			limit_before_entry = Gtk.SpinButton(adjustment=limit_before_adjust)
+			limit_before_entry, limit_before_adjust = utility.SpinAdjustment(
+				0, 0, 512, 1, 10, align=True)
 			limit_before_entry.set_tooltip_text(limits_tooltip)
 			
 			label = _("Image limit after the center")
 			limit_after_label = Gtk.Label(label)
-			limit_after_adjust = Gtk.Adjustment(0, 0, 512, 1, 10)
-			limit_after_entry = Gtk.SpinButton(adjustment=limit_after_adjust)
+			limit_after_entry, limit_after_adjust = utility.SpinAdjustment(
+				0, 0, 512, 1, 10, align=True)
 			limit_after_entry.set_tooltip_text(limits_tooltip)
 			
 			# Bind properties
-			direction_selector.connect("changed",
-			                           self._refresh_marks, alignment_scale)
-			binding_flags = GObject.BindingFlags
-			flags = binding_flags.BIDIRECTIONAL | binding_flags.SYNC_CREATE
-			self.layout.bind_property("direction", direction_selector,
-			                          "active-id", flags)
-			
-			self.layout.bind_property("own-alignment", alignment_button,
-			                          "active", flags)
-			                          
-			self.layout.bind_property("alignment", alignment_adjust,
-			                          "value", flags)
-			                          			                          
-			self.layout.bind_property("loop", loop_button,
-			                          "active", flags)
-			
-			self.layout.bind_property("repeat", repeat_button,
-			                          "active", flags)
-			                          
-			self.layout.bind_property("margin-before", margin_before_adjust,
-			                          "value", flags)
-			self.layout.bind_property("margin-after", margin_after_adjust,
-			                          "value", flags)
-			                          			
-			self.layout.bind_property("limit-before", limit_before_adjust,
-			                          "value", flags)
-			self.layout.bind_property("limit-after", limit_after_adjust,
-			                          "value", flags)
-			self.layout.bind_property("space-before", space_before_adjust,
-			                          "value", flags)
-			self.layout.bind_property("space-after", space_after_adjust,
-			                          "value", flags)
-			
-			self.layout.bind_property("own-alignment", alignment_scale,
-			                          "sensitive", flags)
+			direction_selector.connect(
+				"changed", self._refresh_marks, alignment_scale)
+			utility.Bind(self.layout,
+				("direction", direction_selector, "active-id"),
+				("own-alignment", alignment_button, "active"),
+				("alignment", alignment_adjust, "value"),
+				("loop", loop_button, "active"),
+				("repeat", repeat_button, "active"),
+				("margin-before", margin_before_adjust, "value"),
+				("margin-after", margin_after_adjust, "value"),
+				("limit-before", limit_before_adjust, "value"),
+				("limit-after", limit_after_adjust, "value"),
+				("space-before", space_before_adjust, "value"),
+				("space-after", space_after_adjust, "value"),
+				("own-alignment", alignment_scale, "sensitive"),
+				bidirectional=True, synchronize=True
+			)
 			
 			# Add tabs, pack lines
 			def add_tab(self, label):
 				gtk_label = Gtk.Label(label)
-				box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-				box.set_border_width(24)
-				self.append_page(box, gtk_label)
+				box = utility.WidgetStack()
+				box_pad = utility.PadNotebookContent(box)
+				self.append_page(box_pad, gtk_label)
 				return box
 			
 			left_aligned_labels = [
@@ -1446,8 +1430,8 @@ are too small to breach the pixel count limit''')
 				margin_before_label, margin_after_label,
 				performance_label,
 				space_before_label, space_after_label,
-				limit_before_label, limit_after_label
-			]
+				limit_before_label, limit_after_label]
+				
 			for label in left_aligned_labels:
 				label.set_alignment(0, .5)
 				
@@ -1455,64 +1439,49 @@ are too small to breach the pixel count limit''')
 			space_before_label.set_hexpand(True)
 			performance_label.set_line_wrap(True)
 			
-			appearance_grid = Gtk.Grid()
-			appearance_grid.set_row_spacing(12)
-			appearance_grid.set_column_spacing(24)
-			
-			appearance_grid.attach(direction_label, 0, 0, 1, 1)
-			appearance_grid.attach(direction_selector, 1, 0, 1, 1)
-			
-			appearance_grid.attach(alignment_button, 0, 1, 1, 1)
-			appearance_grid.attach(alignment_scale, 1, 1, 1, 1)
+			appearance_grid = utility.WidgetGrid(
+				(direction_label, direction_selector),
+				(alignment_button, alignment_scale)
+			)
 			
 			appearance_grid.attach(Gtk.Separator(), 0, 2, 2, 1)
-			
-			appearance_grid.attach(margin_before_label, 0, 3, 1, 1)
-			appearance_grid.attach(margin_before_entry, 1, 3, 1, 1)
-			appearance_grid.attach(margin_after_label, 0, 4, 1, 1)
-			appearance_grid.attach(margin_after_entry, 1, 4, 1, 1)
+			utility.WidgetGrid(
+				(margin_before_label, margin_before_entry),
+				(margin_after_label, margin_after_entry),
+				grid=appearance_grid, start_row=3
+			)
 			
 			appearance_grid.attach(Gtk.Separator(), 0, 5, 2, 1)
-			
-			loop_line = Gtk.Box(**line_args)
-			loop_line.pack_start(loop_button, False, True, 0)
-			loop_line.pack_start(repeat_button, False, True, 0)
-			
+			loop_line = utility.WidgetLine(loop_button, repeat_button)
 			appearance_grid.attach(loop_line, 0, 6, 2, 1)
 			
-			performance_grid = Gtk.Grid()
-			performance_grid.set_row_spacing(12)
-			performance_grid.set_column_spacing(24)
-			
+			performance_grid = utility.WidgetGrid()
 			performance_grid.attach(performance_label, 0, 0, 2, 1)
+			
 			performance_grid.attach(Gtk.Separator(), 0, 1, 2, 1)
+			utility.WidgetGrid(
+				(space_before_label, space_before_entry),
+				(space_after_label, space_after_entry),
+				grid=performance_grid, start_row=2,
+			)
 			
-			performance_grid.attach(space_before_label, 0, 2, 1, 1)
-			performance_grid.attach(space_before_entry, 1, 2, 1, 1)
-			performance_grid.attach(space_after_label, 0, 3, 1, 1)
-			performance_grid.attach(space_after_entry, 1, 3, 1, 1)
 			performance_grid.attach(Gtk.Separator(), 0, 4, 2, 1)
+			utility.WidgetGrid(
+				(limit_before_label, limit_before_entry),
+				(limit_after_label, limit_after_entry),
+				grid=performance_grid, start_row=5,
+			)
 			
-			performance_grid.attach(limit_before_label, 0, 5, 1, 1)
-			performance_grid.attach(limit_before_entry, 1, 5, 1, 1)
-			performance_grid.attach(limit_after_label, 0, 6, 1, 1)
-			performance_grid.attach(limit_after_entry, 1, 6, 1, 1)
-			
-			appearance_alignment = Gtk.Alignment()
-			appearance_alignment.set_padding(12, 12, 24, 24)
-			appearance_alignment.add(appearance_grid)
-			
-			performance_alignment = Gtk.Alignment()
-			performance_alignment.set_padding(12, 12, 24, 24)
-			performance_alignment.add(performance_grid)
-			
+			appearance_pad = utility.PadNotebookContent(appearance_grid)
+			performance_pad = utility.PadNotebookContent(performance_grid)
+				
 			label = _("Appearance")
 			appearance_label = Gtk.Label(label)
-			self.append_page(appearance_alignment, appearance_label)
+			self.append_page(appearance_pad, appearance_label)
 			
 			label = _("Performance")
 			performance_label = Gtk.Label(label)
-			self.append_page(performance_alignment, performance_label)
+			self.append_page(performance_pad, performance_label)
 			
 			self.show_all()
 			
@@ -1603,7 +1572,7 @@ are too small to breach the pixel count limit''')
 			"image-strip-layout-direction-up" : (0, direction_group),
 			"image-strip-layout-direction-right" : (1, direction_group),
 			"image-strip-layout-direction-down" : (2, direction_group),
-			"image-strip-layout-direction-left" : (3, direction_group),
+			"image-strip-layout-direction-left" : (3, direction_group)
 		}
 		
 		for name, label, tip, stock in action_params:
@@ -1640,11 +1609,11 @@ are too small to breach the pixel count limit''')
 		loop_action = actions.get_action("image-strip-layout-loop")
 		repeat_action = actions.get_action("image-strip-layout-repeat")
 		
-		binding_flags = GObject.BindingFlags
-		flags = binding_flags.BIDIRECTIONAL | binding_flags.SYNC_CREATE
-		
-		self.bind_property("loop", loop_action, "active", flags)
-		self.bind_property("repeat", repeat_action, "active", flags)
+		utility.Bind(self, 
+			("loop", loop_action, "active"),
+			("repeat", repeat_action, "active"),
+			bidirectional=True, synchronize=True
+		)
 		
 		up_option = actions.get_action("image-strip-layout-direction-up")
 		self.connect("notify::direction", direction_changed, up_option)

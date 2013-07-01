@@ -22,7 +22,7 @@ import gc, math, random, os, sys
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
-import extending
+import extending, utility
 import organization, mousing, loading, preferences, viewing, notification
 from viewing import ZoomMode
 from loading import DirectoryLoader
@@ -1395,12 +1395,16 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				dialog = Gtk.Dialog(_("Layout Settings"), self,
 					     flags.DESTROY_WITH_PARENT,
 					     (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
-			
+				
+				widget_pad = utility.PadDialogContent(widget)
+				widget_pad.show()
+				
 				content_area = dialog.get_content_area()
-				content_area.pack_start(widget, True, True, 0)
+				content_area.pack_start(widget_pad, True, True, 0)
 				
 				dialog.connect("response", self._layout_dialog_response)
 				dialog.present()
+				
 				self.layout_dialog = dialog
 
 

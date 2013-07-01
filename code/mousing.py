@@ -903,7 +903,7 @@ class GearHandler(MouseHandler):
 		
 #-- Factories down this line --#
 
-import extending
+import extending, utility
 from gettext import gettext as _
 import xml.etree.ElementTree as ET
 
@@ -931,51 +931,33 @@ def PivotFromXml(el):
 class HoverAndDragHandlerSettingsWidget(Gtk.Box):
 	''' A settings widget made for a HoverMouseHandler and DragMouseHandler ''' 
 	def __init__(self, handler, drag=True):
-		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
-		                 spacing=12)
-		
 		label = _("Panning speed")
-		speed_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-		                     spacing=20)
 		speed_label = Gtk.Label(label)
-		speed_label.set_alignment(0, .5)
+		speed_entry, speed_adjustment = utility.SpinAdjustment(
+			0, -10, 10, .1, 1, align=True, digits=2
+		)
+		speed_line = utility.WidgetLine(speed_label, speed_entry)
 		
-		speed_adjustment = Gtk.Adjustment(0, -10, 10, .1, 1, 0)
-		speed_entry = Gtk.SpinButton(adjustment=speed_adjustment, digits=2)
-		
-		speed_line.pack_start(speed_label, False, False, 0)
-		speed_line.pack_start(speed_entry, False, False, 0)
+		speed_scale = utility.ScaleAdjustment(adjustment=speed_adjustment,
+			marks=[
+				(-10, _("Pan Image")), (-1, None),
+				(0, _("Inertia")),
+				(10, _("Pan View")), (1, None)
+			], origin=False, percent=True, absolute=True
+		)
 		
 		label = _("Speed relative to zoom")
 		speed_relative = Gtk.CheckButton(label)
 		
-		speed_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL,
-		                        adjustment=speed_adjustment)
-		
-		# Setup speed scale marks
-		mark_pos = Gtk.PositionType.BOTTOM
-		speed_scale.add_mark(-10, mark_pos, _("Pan Image"))
-		speed_scale.add_mark(-1, mark_pos, None, )
-		speed_scale.add_mark(0, mark_pos, _("Inertia"))
-		speed_scale.add_mark(1, mark_pos, None)
-		speed_scale.add_mark(10, mark_pos, _("Pan View"))
-		speed_scale.set_has_origin(False)
-		# Show as percent
-		value_to_percent = lambda w, v: "{:.0%}".format(abs(v))
-		speed_scale.connect("format-value", value_to_percent)
-		
-		self.pack_start(speed_line, False, True, 0)
-		self.pack_start(speed_relative, False, True, 0)
-		self.pack_start(speed_scale, False, True, 0)
+		utility.InitWidgetStack(self, speed_line, speed_scale, speed_relative)
 		
 		# Bind properties
-		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
-		sync_flag = GObject.BindingFlags.SYNC_CREATE
-		both_flags = bidi_flag | sync_flag
+		utility.Bind(handler,
+			("speed", speed_adjustment, "value"),
+			("relative-speed", speed_relative, "active"),
+			bidirectional=True, synchronize=True
+		)
 		
-		handler.bind_property("speed", speed_adjustment, "value", both_flags)
-		handler.bind_property("relative-speed", speed_relative,
-		                      "active", both_flags)
 		self.show_all()
 
 
@@ -1021,6 +1003,7 @@ class DragHandlerFactory(extending.MouseHandlerFactory):
 	def label(self):
 		return _("Drag to Pan")
 	
+	
 	def fill_xml(self, handler, el):
 		speed_el = ET.SubElement(el, "speed")
 		speed_el.text = str(handler.speed)
@@ -1051,39 +1034,28 @@ class PivotedHandlerSettingsWidget:
 			mouse_label = _("Use mouse pointer as anchor")
 			alignment_label = _("Use view alignment as anchor")
 			fixed_label = _("Use a fixed point as anchor")
-			xlabel = Gtk.Label("Anchor X")
-			ylabel = Gtk.Label("Anchor Y")
+			xlabel = _("Anchor X")
+			ylabel = _("Anchor Y")
 						
 		else:
 			mouse_label = _("Use mouse pointer as pivot")
 			alignment_label = _("Use view alignment as pivot")
 			fixed_label = _("Use a fixed point as pivot")
-			xlabel = Gtk.Label("Pivot X")
-			ylabel = Gtk.Label("Pivot Y")
+			xlabel = _("Pivot X")
+			ylabel = _("Pivot Y")
 		
 		pivot_mouse = Gtk.RadioButton(label=mouse_label)
 		pivot_alignment = Gtk.RadioButton(label=alignment_label,
 		                                  group=pivot_mouse)
 
 		pivot_fixed = Gtk.RadioButton(label=fixed_label, group=pivot_alignment)
-		                                   
-		fixed_point_grid = fixed_point_grid = Gtk.Grid()
-		fixed_point_grid.set_row_spacing(12)
-		fixed_point_grid.set_column_spacing(20)
-		
 		xadjust = Gtk.Adjustment(.5, 0, 1, .1, .25, 0)
 		yadjust = Gtk.Adjustment(.5, 0, 1, .1, .25, 0)
-		xspin = Gtk.SpinButton(adjustment=xadjust, digits=2)
-		yspin = Gtk.SpinButton(adjustment=yadjust, digits=2)
-		
 		point_scale = PointScale(xadjust, yadjust)
 		
-		fixed_point_grid.attach(pivot_fixed, 0, 0, 2, 1)
-		fixed_point_grid.attach(xlabel, 0, 1, 1, 1)
-		fixed_point_grid.attach(ylabel, 0, 2, 1, 1)
-		fixed_point_grid.attach(xspin, 1, 1, 1, 1)
-		fixed_point_grid.attach(yspin, 1, 2, 1, 1)
-		fixed_point_grid.attach(point_scale, 2, 0, 1, 3)
+		fixed_point_grid, xspin, yspin = utility.PointScaleGrid(
+			point_scale, xlabel, ylabel, corner=pivot_fixed
+		)
 		
 		self.pivot_radios[pivot] = pivot_radios = {
 			PivotMode.Mouse : pivot_mouse,
@@ -1095,19 +1067,18 @@ class PivotedHandlerSettingsWidget:
 		]
 		
 		# Bind properties
-		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
-		sync_flag = GObject.BindingFlags.SYNC_CREATE
-		both_flags = bidi_flag | sync_flag
+		utility.Bind(pivot,
+			("fixed-x", xadjust, "value"), ("fixed-y", yadjust, "value"),
+			bidirectional=True, synchronize=True
+		)
 		
-		pivot.bind_property("fixed-x", xadjust, "value", both_flags)
-		pivot.bind_property("fixed-y", yadjust, "value", both_flags)
+		fixed_widgets = [xspin, yspin, point_scale]
+		utility.Bind(pivot_fixed,
+			*[("active", widget, "sensitive") for widget in fixed_widgets],
+			synchronize=True
+		)
+		
 		pivot.connect("notify::mode", self._refresh_pivot_mode)
-		
-		fixed_pivot_widgets = [xlabel, xspin, ylabel, yspin, point_scale]
-		for a_pivot_widget in fixed_pivot_widgets:		
-			pivot_fixed.bind_property("active", a_pivot_widget,
-			                          "sensitive", sync_flag)
-			                               
 		for value, radio in pivot_radios.items():
 			radio.connect("toggled", self._pivot_mode_chosen, pivot, value)
 		
@@ -1125,39 +1096,29 @@ class PivotedHandlerSettingsWidget:
 	
 class SpinHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 	def __init__(self, handler):
-		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
-		                 spacing=12)
-		
 		PivotedHandlerSettingsWidget.__init__(self)
-		
 		self.handler = handler
 		
-		frequency_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-		                         spacing=20)
+		# Add line for fequency
 		label = _("Frequency of turns")
 		frequency_label = Gtk.Label(label)
+		frequency_entry, frequency_adjustment = utility.SpinAdjustment(
+			1, -9, 9, .1, 1, digits=2, align=True
+		)
+		frequency_line = utility.WidgetLine(
+			frequency_label, frequency_entry, expand=frequency_entry
+		)
 		
-		frequency_adjustment = Gtk.Adjustment(1, -9, 9, .1, 1, 0)
-		frequency_entry = Gtk.SpinButton(adjustment=frequency_adjustment,
-		                                 digits=2)
-		frequency_line.pack_start(frequency_label, False, True, 0)
-		frequency_line.pack_start(frequency_entry, False, True, 0)
-		
+		# Get pivot widgets, pack everyting
 		pivot_widgets = self.create_pivot_widgets(handler.pivot)
-		
-		self.pack_start(frequency_line, False, True, 0)
-		for pivot_widget in pivot_widgets:
-			self.pack_start(pivot_widget, False, True, 0)
-		
+		utility.InitWidgetStack(self, frequency_line, *pivot_widgets)
 		self.show_all()
 		
 		# Bind properties
-		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
-		sync_flag = GObject.BindingFlags.SYNC_CREATE
-		both_flags = bidi_flag | sync_flag
-		
-		handler.bind_property("frequency", frequency_adjustment,
-		                      "value", both_flags)
+		utility.Bind(handler,
+			("frequency", frequency_adjustment, "value"),
+			bidirectional=True, synchronize=True
+		)
 
 
 class SpinHandlerFactory(extending.MouseHandlerFactory):
@@ -1191,15 +1152,9 @@ SpinHandlerFactory = SpinHandlerFactory()
 
 class StretchHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 	def __init__(self, handler):
-		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
-		                 spacing=12)
-		
 		PivotedHandlerSettingsWidget.__init__(self)
-		
 		widgets = self.create_pivot_widgets(handler.pivot, anchor=True)
-		alignment, fixed = widgets[1:]
-		self.pack_start(alignment, False, True, 0)
-		self.pack_start(fixed, False, True, 0)
+		utility.InitWidgetStack(self, *widgets[1:])
 		
 		self.show_all()
 
@@ -1230,32 +1185,27 @@ StretchHandlerFactory = StretchHandlerFactory()
 
 class ScrollHandlerSettingsWidget(Gtk.Box):
 	def __init__(self, handler):
-		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
-		                 spacing=12)
-		
 		self.handler = handler
 		
-		label = _("Relative percentage scrolling speed")
-		relative_radio = Gtk.RadioButton(label=label)
-		relative_adjust = Gtk.Adjustment(1, 0, 3, .05, .5, 0)
-		relative_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL,
-		                           adjustment=relative_adjust, digits=2)
-		
-		value_to_percent = lambda w, v: "{:.0%}".format(v)
-		relative_scale.connect("format-value", value_to_percent)
-		relative_scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Inertia"))
-		relative_scale.add_mark(1, Gtk.PositionType.BOTTOM, _("Entire Window"))
-		self.relative_radio = relative_radio
-		
+		# Fixed pixel speed
 		label = _("Fixed pixel scrolling speed")
-		pixel_radio = Gtk.RadioButton(label=label, group=relative_radio)
-		pixel_adjust = Gtk.Adjustment(300, 0, 9001, 20, 150, 0)
-		pixel_entry = Gtk.SpinButton(adjustment=pixel_adjust)
-		pixel_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-		                     spacing=20)
-		pixel_line.pack_start(pixel_radio, False, True, 0)
-		pixel_line.pack_start(pixel_entry, False, True, 0)
+		pixel_radio = Gtk.RadioButton(label=label)
+		pixel_entry, pixel_adjust = utility.SpinAdjustment(
+			300, 0, 9001, 20, 150, align=True
+		)
+		pixel_line = utility.WidgetLine(
+			pixel_radio, pixel_entry, expand=pixel_entry
+		)
 		self.pixel_radio = pixel_radio
+		
+		# Relative pixel speed
+		label = _("Relative percentage scrolling speed")
+		relative_radio = Gtk.RadioButton(label=label, group=pixel_radio)
+		relative_scale, relative_adjust = utility.ScaleAdjustment(
+			1, 0, 3, .04, .5, percent=True,
+			marks = [(0, _("Inertia")), (1, _("Entire Window"))]
+		)
+		self.relative_radio = relative_radio
 		
 		label = _("Inverse vertical scrolling")
 		inversev = Gtk.CheckButton(label=label)
@@ -1274,25 +1224,13 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
 		label = _("Vertical scrolling scrolls smallest side")
 		hgreater = Gtk.RadioButton(label=label, group=vgreater)
 		
-		self.pack_start(pixel_line, False, True, 0)
-		self.pack_start(relative_radio, False, True, 0)
-		self.pack_start(relative_scale, False, True, 0)
-		self.pack_start(inverseh, False, True, 0)
-		self.pack_start(inversev, False, True, 0)
-		self.pack_start(rotate, False, True, 0)
-		self.pack_start(noswap, False, True, 0)
-		self.pack_start(doswap, False, True, 0)
-		self.pack_start(vgreater, False, True, 0)
-		self.pack_start(hgreater, False, True, 0)
-		
+		utility.InitWidgetStack(self,
+			pixel_line, relative_radio, relative_scale,
+			inverseh, inversev, rotate, doswap, noswap, vgreater, hgreater
+		)
 		self.show_all()
 		
 		# Bind properties
-		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
-		sync_flag = GObject.BindingFlags.SYNC_CREATE
-		both_flags = bidi_flag | sync_flag
-		inv_flag = GObject.BindingFlags.INVERT_BOOLEAN
-		
 		handler.connect("notify::pivot-mode", self._refresh_swap_mode)
 		self.swap_options = {
 			SwapMode.NoSwap : noswap, SwapMode.Swap : doswap,
@@ -1307,21 +1245,19 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
 		pixel_radio.connect("toggled", self._speed_mode_chosen, False)
 		relative_radio.connect("toggled", self._speed_mode_chosen, True)
 		
-		pixel_radio.bind_property("active", pixel_entry,
-		                          "sensitive", sync_flag)
-		relative_radio.bind_property("active", relative_scale,
-		                             "sensitive", sync_flag)
-		                             
-		handler.bind_property("relative-speed", relative_adjust,
-		                      "value", both_flags)
-		handler.bind_property("pixel-speed", pixel_adjust,
-		                      "value", both_flags)
-		handler.bind_property("inverse-horizontal", inverseh,
-		                      "active", both_flags)
-		handler.bind_property("inverse-vertical", inversev,
-		                      "active", both_flags)
-		handler.bind_property("rotate", rotate, "active", both_flags)
-			
+		utility.BindSame("active", "sensitive",
+			(relative_radio, relative_scale),
+			(pixel_radio, pixel_entry),
+			synchronize=True
+		)
+		utility.Bind(handler, 
+			("pixel-speed", pixel_adjust, "value"),
+			("relative-speed", relative_adjust, "value"),
+			("inverse-horizontal", inverseh, "active"),
+			("inverse-vertical", inversev, "active"),
+			("rotate", rotate, "active"),
+			bidirectional=True, synchronize=True
+		)	
 		self._refresh_swap_mode(handler)
 		self._refresh_speed_mode(handler)
 		
@@ -1431,28 +1367,21 @@ ScrollHandlerFactory = ScrollHandlerFactory()
 
 class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 	def __init__(self, handler):
-		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
-		                 spacing=12)
-		
 		PivotedHandlerSettingsWidget.__init__(self)
 		
+		# Zoom effect label, entry and invert checkbox
 		label = _("Zoom effect")
 		effect_label = Gtk.Label(label)
-		
-		effect_adjust = Gtk.Adjustment(0, 0, 4, .05, .25, 0)
-		effect_entry = Gtk.SpinButton(adjustment=effect_adjust, digits=2)
-		
-		effect_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-		                      spacing=20)
+		effect_entry, effect_adjust = utility.SpinAdjustment(
+			0, 0, 4, .05, .25, align=True, digits=2
+		)
 		label = _("Inverse effect")
 		effect_inverse = Gtk.CheckButton(label)
 		
-		effect_line.pack_start(effect_label, False, True, 0)
-		effect_line.pack_start(effect_entry, False, True, 0)
-		effect_line.pack_start(effect_inverse, False, True, 0)
-		
-		label = _("Activate with horizontal scrolling")		
-		horizontal_check = Gtk.CheckButton(label)
+		# Pack effect widgets in a line
+		effect_line = utility.WidgetLine(
+			effect_label, effect_entry, effect_inverse, expand=effect_entry
+		)
 		
 		# Create magnify and minify pivot widgets in a notebook
 		pivot_book = Gtk.Notebook()
@@ -1461,34 +1390,30 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 			(handler.minify_anchor, _("Zoom out anchor")),
 		)
 		for a_pivot, a_label in pivot_labels:
-			a_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+			# Create anchor widgets
 			a_box_widgets = self.create_pivot_widgets(a_pivot, anchor=True)
-			for a_widget in a_box_widgets:
-				a_box.pack_start(a_widget, False, True, 0)
+			a_box = utility.WidgetStack(*a_box_widgets)
 			
 			# Add widgets to notebook
-			an_alignment = Gtk.Alignment()
-			an_alignment.set_padding(12, 12, 12, 12)
-			an_alignment.add(a_box)
+			a_box_pad = utility.PadNotebookContent(a_box)
 			a_tab_label = Gtk.Label(a_label)		
-			pivot_book.append_page(an_alignment, a_tab_label)
+			pivot_book.append_page(a_box_pad, a_tab_label)
 		
-		self.pack_start(effect_line, False, True, 0)
-		self.pack_start(pivot_book, False, True, 0)
-		self.pack_start(horizontal_check, False, True, 0)
+		# Horizontal scrolling check
+		label = _("Activate with horizontal scrolling")		
+		horizontal_check = Gtk.CheckButton(label)
 		
+		# Pack everything
+		utility.InitWidgetStack(self, effect_line, pivot_book, horizontal_check)
 		self.show_all()
 		
 		# Bind properties
-		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
-		sync_flag = GObject.BindingFlags.SYNC_CREATE
-		both_flags = bidi_flag | sync_flag
-		
-		handler.bind_property("effect", effect_adjust, "value", both_flags)
-		handler.bind_property("inverse", effect_inverse,
-		                       "active", both_flags)
-		handler.bind_property("horizontal", horizontal_check,
-		                      "active", both_flags)
+		utility.Bind(handler,
+			("effect", effect_adjust, "value"),
+			("inverse", effect_inverse, "active"),
+			("horizontal", horizontal_check, "active"),
+			synchronize=True, bidirectional=True
+		)
 		
 class ZoomHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
@@ -1546,44 +1471,37 @@ ZoomHandlerFactory = ZoomHandlerFactory()
 
 class GearHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 	def __init__(self, handler):
-		Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL,
-		                 spacing=12)
-		
 		PivotedHandlerSettingsWidget.__init__(self)
 		
+		# Create effect line
 		label = _("Spin effect")
 		effect_label = Gtk.Label(label)
+		effect_entry, effect_adjust = utility.SpinAdjustment(
+			30, -180, 180, 10, 60, align=True, wrap=True
+		)
+		effect_line = utility.WidgetLine(
+			effect_label, effect_entry
+		)
 		
-		effect_adjust = Gtk.Adjustment(30, -180, 180, 10, 60, 0)
-		effect_entry = Gtk.SpinButton(adjustment=effect_adjust)
-		effect_entry.set_wrap(True)
-		
-		effect_line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
-		                      spacing=20)
-		
-		effect_line.pack_start(effect_label, False, True, 0)
-		effect_line.pack_start(effect_entry, False, True, 0)
-		
+		# Create pivot point widgets
 		pivot_widgets = self.create_pivot_widgets(handler.pivot)
 		
+		# Create horizontal scrolling checkbox
 		label = _("Activate with horizontal scrolling")		
 		horizontal_check = Gtk.CheckButton(label)
 		
-		self.pack_start(effect_line, False, True, 0)
-		for a_widget in pivot_widgets:
-			self.pack_start(a_widget, False, True, 0)
-		self.pack_start(horizontal_check, False, True, 0)
-		
+		# Pack everything
+		utility.InitWidgetStack(self,
+			*([effect_line] + pivot_widgets + [horizontal_check])
+		)
 		self.show_all()
 		
 		# Bind properties
-		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
-		sync_flag = GObject.BindingFlags.SYNC_CREATE
-		both_flags = bidi_flag | sync_flag
-		
-		handler.bind_property("effect", effect_adjust, "value", both_flags)
-		handler.bind_property("horizontal", horizontal_check,
-		                      "active", both_flags)
+		utility.bind(handler,
+			("effect", effect_adjust, "value"),
+			("horizontal", horizontal_check, "active"),
+			bidirectional=True, synchronize=True
+		)
 
 class GearHandlerFactory(extending.MouseHandlerFactory):
 	def __init__(self):
