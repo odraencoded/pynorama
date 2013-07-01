@@ -668,6 +668,11 @@ def SaveFromApp(app):
 	
 	try:
 		os.makedirs(Directory, exist_ok=True)
+		
+	except FileExistsError:
+		pass
+	
+	try:
 		navigators_path = os.path.join(Directory, "navigators.xml")
 		SaveFromMouseHandler(app.meta_mouse_handler, navigators_path)
 		
