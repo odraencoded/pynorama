@@ -1373,7 +1373,7 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		label = _("Zoom effect")
 		effect_label = Gtk.Label(label)
 		effect_entry, effect_adjust = utility.SpinAdjustment(
-			0, 0, 4, .05, .25, align=True, digits=2
+			2, 1, 4, .05, .25, align=True, digits=2
 		)
 		label = _("Inverse effect")
 		effect_inverse = Gtk.CheckButton(label)

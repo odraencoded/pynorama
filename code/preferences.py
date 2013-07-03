@@ -72,7 +72,7 @@ used for various alignment related things in the program''')
 		label = _("Zoom in/out effect")
 		zoom_effect_label = Gtk.Label(label)
 		zoom_effect_entry, zoom_effect_adjust = utility.SpinAdjustment(
-			0, 1.02, 4, 0.1, 0.25, align=True, digits=2
+			2, 1, 4, 0.1, 0.25, align=True, digits=2
 		)
 		
 		utility.WidgetGrid(
