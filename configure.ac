@@ -1,4 +1,4 @@
-AC_INIT([pynorama], [0.2.3])
+AC_INIT([pynorama], [0.2.4])
 AM_INIT_AUTOMAKE([foreign])
 
 GLIB_GSETTINGS

@@ -43,8 +43,10 @@ class Dialog(Gtk.Dialog):
 		
 		# TODO: Check if do_destroy can be used instead
 		self.connect("destroy", self._do_destroy)
-					
-		# Setup view tad
+		
+			
+		#=== Setup view tab down this line ===#
+		
 		alignment_label = Gtk.Label(_("Image alignment"))
 		alignment_tooltip = _('''This alignment setting is \
 used for various alignment related things in the program''')
@@ -83,7 +85,9 @@ used for various alignment related things in the program''')
 		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
 		sync_flag = GObject.BindingFlags.SYNC_CREATE
 		
-		# Setup mouse tab
+		
+		#=== Setup mouse tab down this line ===#
+		
 		self._mouse_pseudo_notebook = very_mice_book = Gtk.Notebook()
 		very_mice_book.set_show_tabs(False)
 		very_mice_book.set_show_border(False)

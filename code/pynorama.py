@@ -131,6 +131,7 @@ class ImageViewer(Gtk.Application):
 			                          uris=choosen_uris, search=search_siblings,
 			                          replace=clear_album)
 	
+	
 	def show_preferences_dialog(self, target_window=None):
 		''' Show the preferences dialog '''
 		
@@ -144,6 +145,7 @@ class ImageViewer(Gtk.Application):
 			
 		self._preferences_dialog.target_window = target_window
 		self._preferences_dialog.present()
+	
 	
 	def _preferences_dialog_responded(self, *data):
 		self._preferences_dialog.destroy()
@@ -191,6 +193,7 @@ class ImageViewer(Gtk.Application):
 		dialog.run()
 		dialog.destroy()
 		
+		
 	def get_window(self):
 		windows = self.get_windows() # XP, Vista, 7, 8?
 		if windows:
@@ -225,10 +228,12 @@ class ImageViewer(Gtk.Application):
 			a_window.set_fullscreen(fillscreen)
 			return a_window
 			
+			
 	def queue_memory_check(self, *data):
 		if not self.memory_check_queued:
 			self.memory_check_queued = True
 			GObject.idle_add(self.memory_check)
+			
 			
 	def memory_check(self):
 		self.memory_check_queued = False
@@ -262,12 +267,14 @@ class ImageViewer(Gtk.Application):
 				
 		return False
 		
+		
 	def log_loading_finish(self, thing, error):
 		if error:
 			notification.log(notification.Lines.Error(error))
 			
 		elif thing.on_memory:
 			notification.log(notification.Lines.Loaded(thing))
+	
 	
 	def open_files_for_album(self, album, loader=None, files=None, uris=None,
 	                         replace=False, search=False, silent=False,
@@ -288,6 +295,7 @@ class ImageViewer(Gtk.Application):
 					self.memory.observe(image)
 					
 			album.extend(album_context.images)
+		
 		
 	def open_files(self, context, loader=None, search=False,
 	                     context_sorting=None, silent=False):
@@ -338,6 +346,7 @@ class ImageViewer(Gtk.Application):
 			columns = [_("File"), _("Error")]
 			
 			notification.alert_list(message, problem_list, columns)
+			
 			
 	def open_context_images(self, context, files, loader, sort_method=None):
 		''' Opens files in a loader, sort the result with sort_method and
