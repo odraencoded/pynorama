@@ -1497,7 +1497,7 @@ class GearHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 		self.show_all()
 		
 		# Bind properties
-		utility.bind(handler,
+		utility.Bind(handler,
 			("effect", effect_adjust, "value"),
 			("horizontal", horizontal_check, "active"),
 			bidirectional=True, synchronize=True
