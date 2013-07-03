@@ -98,13 +98,12 @@ used for various alignment related things in the program''')
 		mouse_label_notebook.set_show_border(False)				
 		
 		# Add handler list label and widget container
-		text = _('''Mouse based navigation programs currently used \
-in the image viewer''')
+		text = _('''Mouse mechanisms currently in use by the image viewer''')
 		view_handlers_description = utility.LoneLabel(text)
 		mouse_label_notebook.append_page(view_handlers_description, None)
 		
 		# Add handler factory list label and widget container
-		text = _('''Types of mouse based navigators currently avaiable \
+		text = _('''Types of mouse mechanisms currently avaiable \
 for the image viewer''')
 		brands_description = utility.LoneLabel(text)
 		mouse_label_notebook.append_page(brands_description, None)
@@ -500,7 +499,7 @@ for the image viewer''')
 
 class MouseHandlerSettingDialog(Gtk.Dialog):
 	def __init__(self, handler, handler_data):
-		Gtk.Dialog.__init__(self, _("Mouse Navigation Settings"), None,
+		Gtk.Dialog.__init__(self, _("Mouse Mechanism Settings"), None,
 			Gtk.DialogFlags.DESTROY_WITH_PARENT,
 			(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
 		
@@ -574,7 +573,7 @@ the chosen mouse button")
 			title = _("“{nickname}” Settings").format(nickname=nickname)
 			
 		else:
-			title = _("Mouse Navigation Settings")
+			title = _("Mouse Mechanism Settings")
 			
 		self.set_title(title)
 	

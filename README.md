@@ -9,26 +9,58 @@ Pynorama is an image viewer. It *views* images.
 Features
 --------
 
-* Supports zooming, spinning and flipping images
-* Supports panning, zooming and spinning images _with the mouse_
-* Opens directories, dropped files, pasted images, even from the internet
-* Navigates through multiple opened images, can display multiple images at once
-* Has _six_ automatic zoom options, including fit and fill
-* Can hide scrollbars, statusbar and toolbar
-* Comes with really, *really* many menu items
-* Hardware accelerated
+*   Supports zooming, spinning and flipping images
+*   Supports panning, zooming and spinning images _with the mouse_
+*   Opens directories, dropped files, pasted images, even from the internet
+*   Navigates through multiple opened images,
+    can display multiple images at once
+*   Has _six_ automatic zoom options, including fit and fill
+*   Can hide scrollbars, statusbar and toolbar
+*   Comes with really, *really* many menu items
+*   Hardware accelerated
 
 Things to Know
 --------------
 
-There is currently no way to customize hotkeys or mouse behavior.
-The default mouse behaviour is:
+### Hotkeys
 
-- Move the mouse to pan the image
-- Drag the left button to drag the image
-- Drag the right button to spin the image
-- Drag the middle button to stretch the image
-- Scroll the scroll wheel to scroll the image
+There is currently no way to customize hotkeys.
+
+
+### Mouse Mechanisms
+
+A mouse mechanism controls what mouse interaction does in pynorama. Currently,
+there are seven different mouse mechanisms avaiable
+
+*  Drag to Pan
+*  Move Mouse to Pan
+*  Drag to Spin
+*  Drag to Stretch
+*  Scroll to Pan
+*  Scroll to Zoom
+*  Scroll to Spin
+
+Each of these mechanisms have their own settings and can be added multiple
+times. For mechanisms that use a mouse button, the button can be choosen with
+a mouse click in the mechanism setting dialog.
+
+### Layouts
+
+A layout is a way to place images in pynorama. Currently, there are two
+different layouts avaiable
+
+*   The Single Image Layout
+
+    Places a single image in the image viewer.
+    Any image viewer can do this.
+  
+*   The Image Strip Layout
+  
+    This one places sequential images side by side in the image viewer.
+    A handful of comic viewers can do this.
+
+The layout used by pynorama can be changed at any time in
+the *Layout* submenu of the *View* menu.
 
 ### Installing
 
