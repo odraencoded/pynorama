@@ -1,0 +1,50 @@
+---
+layout: post
+author: Leonardo Augusto Pereira
+title: Pynorama Version 0.2.4
+---
+<p>A new version of Pynorama <small>technically</small> got released.
+In this new version there are Makefiles! That means you can now
+<strong>install</strong> this thing. That also means, intalling this thing
+may not work. Regardless, the new version is avaiable on GitHub under the
+<a href="http://github.com/odraencoded/pynorama/tree/v0.2.4">v0.2.4 tag</a>.
+
+<p>Besides makefiles a ton of preferences have been added. Let's be honest,
+this program has way too many settings for an image viewer. I've been thinking
+of changing the slogan to <q>an image viewer and control panel</q>.
+
+<section id="v0-2-4-changelog" class="change-log">
+	<h3 class="change-version">Version 0.2.4 Changelog</h3>
+	
+	<ul class="change-list">
+	<li><h6 class="summary">View alignment has replaced scrollbar position</h6>
+		<p>The <q>default scrollbar position</q> feature was intended to 
+		automatically move the scrollbars to a position after changing images.
+		<br>That didn't work well with the image strip layout because the way
+		scrollbar positions are calculated when images fit inside the view is
+		different of when they don't fit inside the view.
+		<p>This new settings does the aligning properly plus it can be used as
+		default alignment, pivot point or anchor point in a number of other
+		features that have access to the image view widget.
+		
+	<li><h6 class="summary">Mouse settings have been added</h6>
+		<p>A <q>Mouse</q> tab has been added to the preferences dialog. In that
+		tab you can add or remove mouse mechanisms which control what the mouse
+		does in relation to the view.
+		<br>There are currently seven mouse mechanisms to choose from,
+		they are:
+		<ul>
+			<li>Drag to Pan
+			<li>Move Mouse to Pan
+			<li>Drag to Spin
+			<li>Drag to Stretch
+			<li>Scroll to Pan
+			<li>Scroll to Zoom
+			<li>Scroll to Spin
+		</ul>
+		<p>Each mechanism can be added multiple times, each instance has it's
+		own settings and they can be given nicknames to help identify which
+		is which. If the mechanism needs a button, such as the ones for
+		dragging, the button can be choosen with a mouse click.
+	</ul>
+</section>

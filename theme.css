@@ -103,7 +103,7 @@ h1, h2 {
 }
 .change-list {
 	margin: 0;
-	list-style: none;
+	list-style: disc;
 	padding: 0px 20px;
 }
 
