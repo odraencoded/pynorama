@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # coding=utf-8
  
 ''' pynorama.py is the main module of an image viewer application. '''
