@@ -763,27 +763,32 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 			frame_distances = []
 			margin_before, margin_after = self.margin_before, self.margin_after
 			ax, ay = avl.view.alignment_point
-			for i in range(len(avl.shown_frames)):
-				a_frame = avl.shown_frames[i]
+			
+			for i, a_frame in enumerate(avl.shown_frames):
 				if a_frame:
 					a_rect = a_frame.rectangle.shift(a_frame.origin)
 					
 					if absolute_view_rect.overlaps_with(a_rect):
-						margin = 0 if i == current_index \
-						           else -margin_before if i > current_index \
-						           else margin_after
-						           
-						a_distance = self._get_rect_distance(margin,
-						                  ax, ay, absolute_view_rect, a_rect)
+						a_distance = self._get_rect_distance(
+							ax, ay, absolute_view_rect, a_rect
+						)
 						
 						if i == current_index:
 							current_distance = a_distance
 							
+						elif i > current_index:
+							a_distance += margin_after
+							
+						else:
+							a_distance += margin_before
+						
+						
 						frame_distances.append((i, a_distance))
 			
 			if frame_distances:
-				best_index, best_distance = min(frame_distances,
-				                                key=lambda v: v[1])
+				best_index, best_distance = min(
+					frame_distances, key=lambda v: v[1]
+				)
 				                            
 				if current_distance is None or best_distance < current_distance:
 					best_image = avl.shown_images[best_index]
@@ -795,6 +800,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 						avl.center_frame = best_frame
 						
 						avl.update_sides.queue()
+						self._reposition_frames(avl)
 						avl.emit("focus-changed", best_image, True)
 
 
@@ -1136,13 +1142,16 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	def _compute_lengths(self, avl):
 		''' Recalculate the space used by frames around the center frame '''
 		if avl.center_frame:
-			side_ranges = (range(avl.center_index),
-			               range(avl.center_index + 1, len(avl.shown_frames)))
-			margins = [self.margin_before, self.margin_after]
+			side_stuff = (
+				(self.margin_before, range(avl.center_index)),
+				(
+					self.margin_after,
+					range(avl.center_index + 1, len(avl.shown_frames))
+				)
+			)
 			side_lengths = []
 			
-			for i in range(2):
-				a_margin, a_side_range = margins[i], side_ranges[i]
+			for a_margin, a_side_range in side_stuff:
 				a_side_length = 0
 				for j in a_side_range:
 					a_frame = avl.shown_frames[j]
@@ -1207,9 +1216,9 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 	
 	# These calculate the distance of rectangles to figure out what
 	# is the current frame after the offset changes
-	# ax and ay are alignments, offset is based on margin
-	def _GetHorizontalRectDistance(offset, ax, ay, view_rect, rect):
-		center = view_rect.left + view_rect.width * ax + offset
+	# ax and ay are alignments
+	def _GetHorizontalRectDistance(ax, ay, view_rect, rect):
+		center = view_rect.left + view_rect.width * ax
 		dist_a = abs(rect.left - center)
 		dist_b = abs(rect.left + rect.width - center)
 		
@@ -1217,8 +1226,8 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 		# matches the alignment of frames with the view
 		return dist_a * (1 - ax) + dist_b * ax
 		
-	def _GetVerticalRectDistance(offset, ax, ay, view_rect, rect):
-		center = view_rect.top + view_rect.height * ay + offset
+	def _GetVerticalRectDistance(ax, ay, view_rect, rect):
+		center = view_rect.top + view_rect.height * ay
 		dist_a = abs(rect.top - center)
 		dist_b = abs(rect.top + rect.height - center)
 		return dist_a * (1 - ay) + dist_b * ay
