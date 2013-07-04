@@ -4,7 +4,6 @@ AM_INIT_AUTOMAKE([foreign])
 GLIB_GSETTINGS
 
 AM_PATH_PYTHON([3.3])
-PKG_CHECK_MODULES([PYGOBJECT], [pygobject-3.0])
 
 AC_CONFIG_FILES([\
 	pynorama.in \

@@ -15,12 +15,3 @@ EXTRA_DIST = $(icon_DATA) $(desktop_DATA) $(navigators_DATA)
 
 install-data-hook:
 	chmod +x $(desktopdir)/$(desktop_DATA)
-
-UPDATE_DESKTOP = update-desktop-database $(desktopdir)
-
-install-data-hook: 
-	$(UPDATE_DESKTOP)
-	
-uninstall-hook: 
-	$(UPDATE_DESKTOP)
-	
