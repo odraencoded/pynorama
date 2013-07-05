@@ -170,6 +170,7 @@ class ImageViewer(Gtk.Application):
 	def _mouse_handler_dialog_destroyed(self, dialog, *data):
 		self.mouse_handler_dialogs.pop(dialog.handler, None)
 		
+		
 	def _removed_mouse_handler(self, meta, handler):
 		dialog = self.mouse_handler_dialogs.pop(handler, None)
 		if dialog:
@@ -366,13 +367,19 @@ class ImageViewer(Gtk.Application):
 		pixelated_image = loading.PixbufDataImageNode(pixels, "Pixels")
 		return [pixelated_image]
 	
+	
 class ViewerWindow(Gtk.ApplicationWindow):
 	def __init__(self, app):
-		Gtk.ApplicationWindow.__init__(self,
-		                               title=_("Pynorama"),
-		                               application=app)
+		Gtk.ApplicationWindow.__init__(
+			self, title=_("Pynorama"), application=app
+		)
 		self.app = app
 		self.set_default_size(600, 600)
+		
+		# Idly refresh index
+		self._refresh_index = utility.IdlyMethod(self._refresh_index)
+		self._refresh_index.priority = GLib.PRIORITY_HIGH_IDLE
+		
 		# Auto zoom stuff
 		self.auto_zoom_magnify = False
 		self.auto_zoom_minify = True
@@ -383,7 +390,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# the imageview
 		self.auto_zoom_zoom_modified = False
 		# Album variables
-		self.__idly_refresh_index_id = None
+		
+		
 		self._focus_loaded_handler_id = None
 		self._old_focused_image = None
 		self.go_new = False
@@ -577,7 +585,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		# Refresh status widgets
 		self.refresh_transform()
-		self.refresh_index()
+		self._refresh_index()
 		
 	def setup_actions(self):
 		self.uimanager = Gtk.UIManager()
@@ -1071,7 +1079,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self.auto_zoom()
 
 		
-	def refresh_index(self):
+	def _refresh_index(self):
 		focused_image = self.avl.focus_image
 		can_remove = not focused_image is None
 		can_goto_first = False
@@ -1463,7 +1471,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 	
 	def _image_added(self, album, image, index):
 		image.lists += 1
-		self.__queue_refresh_index()
+		self._refresh_index.queue()
 		
 		if self.go_new:
 			self.go_new = False
@@ -1474,10 +1482,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 	def _image_removed(self, album, image, index):
 		image.lists -= 1
-		self.__queue_refresh_index()
+		self._refresh_index.queue()
 		
 	def _album_order_changed(self, album):
-		self.__queue_refresh_index()
+		self._refresh_index.queue()
 
 
 	def _focus_changed(self, avl, focused_image, hint):
@@ -1488,7 +1496,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self._old_focused_image = focused_image
 		self._focus_hint = hint
 		
-		self.__queue_refresh_index()
+		self._refresh_index.queue()
 		self.refresh_title(focused_image)
 		
 		loading_ctx = self.statusbar.get_context_id("loading")
@@ -1548,15 +1556,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 			self._focus_hint = True
 			
 		self.refresh_transform()
-			
-	def __queue_refresh_index(self):
-		if not self.__idly_refresh_index_id:
-			self.__idly_refresh_index_id = GLib.idle_add(
-			     self.__idly_refresh_index, priority=GLib.PRIORITY_HIGH_IDLE)
-	
-	def __idly_refresh_index(self):
-		self.__idly_refresh_index_id = None
-		self.refresh_index()
 	
 	#--- Properties down this line ---#
 	
