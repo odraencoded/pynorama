@@ -378,7 +378,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		
 		# Idly refresh index
 		self._refresh_index = utility.IdlyMethod(self._refresh_index)
-		self._refresh_index.priority = GLib.PRIORITY_HIGH_IDLE
+		self._refresh_transform = utility.IdlyMethod(self._refresh_transform)
 		
 		# Auto zoom stuff
 		self.auto_zoom_magnify = False
@@ -439,7 +439,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.view.connect("size-allocate", self.reapply_auto_zoom)
 		self.view.connect("notify::magnification", self.view_changed)
 		self.view.connect("notify::rotation", self.view_changed)
-		self.view.connect("notify::flip", self.view_changed)
+		self.view.connect("notify::horizontal-flip", self.view_changed)
+		self.view.connect("notify::vertical-flip", self.view_changed)
 		
 		self.view_scroller.add(self.view)
 		self.view_scroller.show_all()
@@ -453,7 +454,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.statusbarboxbox.pack_start(separator, False, False, 0)
 		
 		self.statusbarbox = Gtk.Box(Gtk.Orientation.HORIZONTAL)
-		self.statusbarbox.set_border_width(2)
 		self.statusbarbox.set_spacing(8)
 		
 		# With a label for image index
@@ -461,20 +461,36 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.index_label.set_alignment(1, 0.5)
 		self.index_label.set_tooltip_text(_("""The index of the current image \
 / the album image count"""))
-		self.statusbarbox.pack_start(self.index_label, False, True, 6)
+		self.statusbarbox.pack_start(self.index_label, False, True, 0)
 		
 		# And a spinner for loading hint
 		self.loading_spinner = Gtk.Spinner()
-		self.statusbarbox.pack_start(self.loading_spinner, False, False, 6)
+		self.statusbarbox.pack_start(self.loading_spinner, False, True, 0)
 		
 		self.statusbar = Gtk.Statusbar()
-		self.statusbarbox.pack_start(self.statusbar, True, True, 6)
+		self.statusbarbox.pack_start(self.statusbar, True, True, 0)
 		
 		# And a label for the image transformation
-		self.transform_label = Gtk.Label()
-		self.transform_label.set_alignment(0, 0.5)
-		self.statusbarbox.pack_end(self.transform_label, False, False, 6)
-		self.statusbarboxbox.pack_end(self.statusbarbox, False, False, 0)
+		transform_labels = (
+			Gtk.Label(),
+			Gtk.Label(), Gtk.Label(), Gtk.Label(), Gtk.Label()
+		)
+		for a_label in transform_labels:
+			self.statusbarbox.pack_end(a_label, False, True, 0)
+		
+		self.flip_label, self.angle_label, self.zoom_label, \
+			self.size_label, self.status_label = transform_labels
+		
+		self.size_label.set_tooltip_text(_("Image width×height"))
+		self.flip_label.set_tooltip_text(_("Direction the image is flipped"))
+		self.zoom_label.set_tooltip_text(_("Image magnification"))
+		self.angle_label.set_tooltip_text(_("Rotation in degrees"))
+		
+		statusbarboxpad = Gtk.Alignment()
+		statusbarboxpad.set_padding(3, 3, 12, 12)
+		statusbarboxpad.add(self.statusbarbox)
+		
+		self.statusbarboxbox.pack_end(statusbarboxpad, False, True, 0)
 		
 		# Show status
 		vlayout.pack_end(self.statusbarboxbox, False, True, 0)
@@ -578,7 +594,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		preferences.LoadForAlbum(self.album)
 		
 		# Refresh status widgets
-		self.refresh_transform()
+		self._refresh_transform()
 		self._refresh_index()
 		
 	def setup_actions(self):
@@ -1066,7 +1082,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.auto_zoom_zoom_modified = True
 		
 	def view_changed(self, widget, data):
-		self.refresh_transform()
+		self._refresh_transform.queue()
 	
 	def reapply_auto_zoom(self, *data):
 		if self.auto_zoom_enabled and not self.auto_zoom_zoom_modified:
@@ -1124,70 +1140,93 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		for action_name, sensitivity in sensible_list:
 			self.actions.get_action(action_name).set_sensitive(sensitivity)
 		
-	def refresh_transform(self):
+	def _refresh_transform(self):
 		focused_image = self.avl.focus_image
 		if focused_image:
 			if focused_image.is_bad:
 				# This just may happen
-				pic = _("Error")
+				status_text = _("Error")
+				status_tooltip_text = _("Something went wrong")
+				size_text = ""
 				
 			elif focused_image.on_memory:
 				metadata = focused_image.metadata
 				# The width and height are from the source
-				pic = "{width}x{height}".format(width=metadata.width,
-				                                height=metadata.height)
+				size_text = "{width}×{height}".format(
+					width=metadata.width, height=metadata.height
+				)
+				
+				status_text, status_tooltip_text = "", ""
 				                                
 			else:
-				pic = _("Loading")
+				# If it's not on memory and then it must be loading
+				status_text = _("Loading")
+				status_tooltip_text = _("Please wait...")
+				size_text = ""
 				
-			# Cache magnification because it is kind of a long variable
-			mag = self.view.magnification
-			if mag != 1:
-				if mag > 1 and mag == int(mag):
-					zoom_fmt = " " + _("x{zoom_in:d}")
-					zoom = zoom_fmt.format(zoom_in=int(mag))
-				elif mag < 1 and 1.0 / mag == int(1.0 / mag):
-					zoom_fmt = " " + _(":{zoom_out:d}")
-					zoom = zoom_fmt.format(zoom_out=int(1.0 / mag))
-				else:
-					zoom_fmt = " " +  _("{zoom:.0%}")
-					zoom = zoom_fmt.format(zoom=mag)
+			# Set zoom text for zoom label
+			mag = round(self.view.magnification, 3)
+			if mag:
+				zoom_text = _("{zoom:n}×").format(zoom=mag)
+				
 			else:
-				zoom = ""
-				
-			# Cachin' variables
+				zoom_text = ""
+			
+			# Set flip symbol for flip label and adjust rotation variable
 			rot = self.view.rotation
 			hflip, vflip = self.view.flipping
 			if hflip or vflip:
-				''' If the view is flipped in either direction apply this
-				    intricate looking math stuff to rotation. Normally, there
-				    would be another expression if both are true, but in that
-				    is handled beforehand by rotating the view by 180° '''
+				# If the view is flipped in either direction apply this
+				# intricate looking math stuff to rotation. Normally, there
+				# would be another expression if both are true, but in that
+				# is handled beforehand by rotating the view by 180°
 				    
-				rot = (rot + (45 - ((rot + 45) % 180)) * 2) % 360
+				#rot = (rot + (45 - ((rot + 45) % 180)) * 2) % 360
 				
 				if hflip:
-					mirror = " ↔"
+					flip_text = "↔"
+					
 				else:
-					mirror = " ↕"
+					flip_text = "↕"
+					
 			else:
-				mirror = ""
+				flip_text = ""
 				
-			# Create angle string for label
+			# Format angle text for label
 			if rot:
-				angle_fmt = " " + _("{angle}°")
-				angle = angle_fmt.format(angle=int(rot))
-			else:
-				angle = ""
+				angle_text = _("{degrees:d}°").format(degrees=int(rot))
 				
-			''' Sets the transform label to Width x Height or "Error",
-			    zoom, rotation and mirroring combined '''
-			transform = (pic, zoom, angle, mirror)
-			self.transform_label.set_text("%s%s%s%s" % transform)
+			else:
+				angle_text = ""
+				
+			
+			# Set label text, hide labels without text
+			self.status_label.set_text(status_text)
+			self.status_label.set_tooltip_text(status_tooltip_text)
+			
+			self.size_label.set_text(size_text)
+			self.zoom_label.set_text(zoom_text)
+			self.angle_label.set_text(angle_text)
+			self.flip_label.set_text(flip_text)
+			
+			self.status_label.set_visible(bool(status_text))			
+			self.size_label.set_visible(bool(size_text))
+			self.zoom_label.set_visible(bool(zoom_text))
+			self.angle_label.set_visible(bool(angle_text))
+			self.flip_label.set_visible(bool(flip_text))
+			
 		else:
-			''' Sets the transform label to nothing.
-			    Because there is nothing to transform. '''
-			self.transform_label.set_text(_("Nothing"))
+			# Set the status label to "Nothing" and hide all other labels
+			# since there is nothing to transform
+			
+			self.status_label.set_text(_("Nothing"))
+			self.status_label.set_tooltip_text(_("Nothing to see here"))
+			self.status_label.show()
+			
+			self.size_label.hide()
+			self.zoom_label.hide()
+			self.angle_label.hide()
+			self.flip_label.hide()
 			
 	def set_view_rotation(self, angle):
 		anchor = self.view.get_widget_point()
@@ -1516,8 +1555,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				self.loading_spinner.show()
 				self.loading_spinner.start() # ~like a record~
 				
+				self._refresh_transform.queue()
+				
 				self._focus_loaded_handler_id = focused_image.connect(
-				     "finished-loading", self._focus_loaded)
+					"finished-loading", self._focus_loaded
+				)
 		else:
 			self.loading_spinner.hide()
 			self.loading_spinner.stop()
@@ -1549,7 +1591,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 				
 			self._focus_hint = True
 			
-		self.refresh_transform()
+		self._refresh_transform.queue()
 	
 	#--- Properties down this line ---#
 	

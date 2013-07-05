@@ -58,7 +58,7 @@
 		<key name="zoom-effect" type="d">
 			<summary>Zoom in effect as a ratio</summary>
 			<range min="1.02" max="4" />
-			<default>2</default>
+			<default>1.25</default>
 		</key>
 		<key name="rotation-effect" type="i">
 			<summary>Rotation increment in degrees</summary>
