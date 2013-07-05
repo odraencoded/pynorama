@@ -82,8 +82,9 @@ def Bind(source, *properties, bidirectional=False, synchronize=False):
 	if synchronize:
 		flags |= GObject.BindingFlags.SYNC_CREATE
 	
+	bind_property = source.bind_property
 	for src_property, dest, dest_property in properties:
-		source.bind_property(src_property, dest, dest_property, flags)
+		bind_property(src_property, dest, dest_property, flags)
 
 
 def BindSame(source_property, dest_property,

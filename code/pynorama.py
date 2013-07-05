@@ -414,6 +414,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.uimanager.add_ui_from_string(ViewerWindow.ui_description)
 		self.menubar = self.uimanager.get_widget("/menubar")
 		self.toolbar = self.uimanager.get_widget("/toolbar")
+		
 		# Make the toolbar look primary
 		toolbar_style = self.toolbar.get_style_context()
 		toolbar_style.add_class(Gtk.STYLE_CLASS_PRIMARY_TOOLBAR)
@@ -458,8 +459,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# With a label for image index
 		self.index_label = Gtk.Label()
 		self.index_label.set_alignment(1, 0.5)
+		self.index_label.set_tooltip_text(_("""The index of the current image \
+/ the album image count"""))
 		self.statusbarbox.pack_start(self.index_label, False, True, 6)
 		
+		# And a spinner for loading hint
 		self.loading_spinner = Gtk.Spinner()
 		self.statusbarbox.pack_start(self.loading_spinner, False, False, 6)
 		
@@ -479,9 +483,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		self.loading_spinner.hide()
 		
 		# DnD setup	
-		self.view.drag_dest_set(Gtk.DestDefaults.ALL,
-		                             [], Gdk.DragAction.COPY)
-		
+		self.view.drag_dest_set(
+			Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY
+		)
 		target_list = Gtk.TargetList.new([])
 		target_list.add_image_targets(DND_IMAGE, False)
 		target_list.add_uri_targets(DND_URI_LIST)
@@ -535,47 +539,37 @@ class ViewerWindow(Gtk.ApplicationWindow):
 		# Bind properties
 		bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
 		sync_flag = GObject.BindingFlags.SYNC_CREATE
-		self.bind_property("sort-automatically", self.album,
-		                   "autosort", bidi_flag)
-		self.bind_property("reverse-ordering", self.album,
-		                   "reverse", bidi_flag)
-		self.bind_property("toolbar-visible", self.toolbar,
-		                   "visible", bidi_flag)
-		self.bind_property("statusbar-visible", self.statusbarboxbox,
-		                   "visible", bidi_flag)
-		self.bind_property(
-		     "reverse-ordering", self.actions.get_action("sort-reverse"),
-		     "active", bidi_flag)
-		self.bind_property(
-		     "sort-automatically", self.actions.get_action("sort-auto"),
-		     "active", bidi_flag)
-		self.bind_property(
-		     "ordering-mode", self.actions.get_action("sort-name"),
-		     "current-value", bidi_flag)
-		
-		self.bind_property(
-		     "toolbar-visible", self.actions.get_action("ui-toolbar"),
-		     "active", bidi_flag)
-		self.bind_property(
-		     "statusbar-visible", self.actions.get_action("ui-statusbar"),
-		     "active", bidi_flag)
+		get_action = self.actions.get_action
+		utility.Bind(self,
+			("sort-automatically", self.album, "autosort"),
+			("reverse-ordering", self.album, "reverse"),
+			("toolbar-visible", self.toolbar, "visible"),
+			("statusbar-visible", self.statusbarboxbox, "visible"),
+			("reverse-ordering", get_action("sort-reverse"), "active"),
+			("sort-automatically", get_action("sort-auto"), "active"),
+			("ordering-mode", get_action("sort-name"), "current-value"),
+			("toolbar-visible", get_action("ui-toolbar"), "active"),
+			("statusbar-visible", get_action("ui-statusbar"), "active"),
+			bidirectional=True
+		)
 		
 		self.view.bind_property(
-		     "current-interpolation-filter",
-		     self.actions.get_action("interp-nearest"),
-		     "current-value", bidi_flag)
-		
-		self.view.bind_property("zoomed",
-		     self.actions.get_action("interpolation"),
-		     "sensitive", bidi_flag | sync_flag)
+			"current-interpolation-filter",
+			get_action("interp-nearest"), "current-value",
+			bidi_flag
+		)
+		self.view.bind_property(
+			"zoomed",
+			get_action("interpolation"), "sensitive",
+			bidi_flag | sync_flag
+		)
 		
 		self.connect("notify::vscrollbar-placement", self._changed_scrollbars)
 		self.connect("notify::hscrollbar-placement", self._changed_scrollbars)
 		self.connect("notify::ordering-mode", self._changed_ordering_mode)
 		self.connect("notify::layout-option", self._changed_layout_option)
 		
-		self.album.connect("notify::comparer",
-		                        self._changed_album_comparer)
+		self.album.connect("notify::comparer", self._changed_album_comparer)
 		
 		# Load preferences
 		other_option.set_current_value(0)
