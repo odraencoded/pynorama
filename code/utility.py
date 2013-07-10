@@ -274,10 +274,10 @@ def ScaleAdjustment(value=0, lower=0, upper=0, step_incr=0, page_incr=0,
 		if absolute:
 			scale.connect("format-value", AbsolutePercentScaleFormat)
 		else:
-			scale.connect("format-value", AbsoluteScaleFormat)
+			scale.connect("format-value", PercentScaleFormat)
 			
 	elif absolute:
-		scale.connect("format-value", PercentScaleFormat)
+		scale.connect("format-value", AbsoluteScaleFormat)
 	
 	if got_adjustment:
 		return scale
