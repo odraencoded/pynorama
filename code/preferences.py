@@ -120,23 +120,30 @@ for the image viewer''')
 		for a_handler in self.mm_handler.get_handlers():
 			self._add_mouse_handler(a_handler)
 		
+		# Setup sorting
+		handlers_liststore.set_sort_func(0, self._handler_nick_compare_func)
+		handlers_liststore.set_sort_column_id(0, Gtk.SortType.ASCENDING)
+		
 		# Create mouse handler list view, set selection mode to multiple
-		self._handlers_listview = handler_listview = Gtk.TreeView()
-		handler_listview.set_model(handlers_liststore)
-		handler_listview_selection = handler_listview.get_selection()
-		handler_listview_selection.set_mode(Gtk.SelectionMode.MULTIPLE)
+		self._handlers_listview = handlers_listview = Gtk.TreeView()
+		handlers_listview.set_model(handlers_liststore)
+		handlers_listview_selection = handlers_listview.get_selection()
+		handlers_listview_selection.set_mode(Gtk.SelectionMode.MULTIPLE)
 		
 		# Create and setup "Nickname" column
 		name_renderer = Gtk.CellRendererText()
 		name_column = Gtk.TreeViewColumn("Nickname")
 		name_column.pack_start(name_renderer, True)
-		name_column.set_cell_data_func(name_renderer, 
-		                               self._handler_nick_data_func)
-		handler_listview.append_column(name_column)
+		name_column.set_cell_data_func(
+			name_renderer,  self._handler_nick_data_func
+		)
+		name_column.set_sort_indicator(True)
+		name_column.set_sort_column_id(0)
+		handlers_listview.append_column(name_column)
 		
 		# Make it scrollable
 		handler_listscroller = Gtk.ScrolledWindow()
-		handler_listscroller.add(handler_listview)
+		handler_listscroller.add(handlers_listview)
 		handler_listscroller.set_shadow_type(Gtk.ShadowType.IN)
 		
 		# Create the add/remove/configure button box
@@ -248,7 +255,7 @@ for the image viewer''')
 		configure_handler_button.connect(
 			"clicked", self._clicked_configure_handler
 		)
-		handler_listview_selection.connect(
+		handlers_listview_selection.connect(
 			"changed", self._changed_handler_list_selection,
 			remove_handler_button, configure_handler_button
 		)
@@ -298,15 +305,14 @@ for the image viewer''')
 	def _handler_nick_data_func(self, column, renderer, model, treeiter, *data):
 		''' Gets the nickname of a handler for the textrenderer '''
 		handler = model[treeiter][0]
-		text = handler.nickname
-		if not text:
-			if handler.factory:
-				text = handler.factory.label
-				
-			else:
-				text = _("???")
-				
-		renderer.props.text = text
+		renderer.props.text = GetMouseHandlerLabel(handler, default=_("???"))
+	
+	
+	def _handler_nick_compare_func(self, model, a_iter, b_iter, *data):
+		a = GetMouseHandlerLabel(model[a_iter][0], default=_("???"))
+		b = GetMouseHandlerLabel(model[b_iter][0], default=_("???"))
+		
+		return 0 if a == b else 1 if a > b else -1
 	
 	
 	def _clicked_new_handler(self, *data):
@@ -503,7 +509,7 @@ for the image viewer''')
 			for a_signal in some_signals:
 				a_handler.disconnect(a_signal)
 	
-
+	
 class MouseHandlerSettingDialog(Gtk.Dialog):
 	def __init__(self, handler, handler_data):
 		Gtk.Dialog.__init__(self, _("Mouse Mechanism Settings"), None,
@@ -586,17 +592,10 @@ the chosen mouse button")
 		self._refresh_title()
 	
 	def _refresh_title(self, *data):
-		nickname = self.handler.nickname
-		factory =self.handler.factory
-		if not nickname and factory:
-			try:
-				nickname = factory.label
-				
-			except Exception:
-				notification.log_exception("Couldn't get factory label")
-			
-		if nickname:
-			title = _("“{nickname}” Settings").format(nickname=nickname)
+		label = GetMouseHandlerLabel(self.handler, default=None)
+		
+		if label:
+			title = _("“{something}” Settings").format(something=label)
 			
 		else:
 			title = _("Mouse Mechanism Settings")
@@ -622,7 +621,19 @@ the chosen mouse button")
 			label = _("Mouse Button #{number}").format(number=button)
 		
 		self.mouse_button_button.set_label(label)
+
+
+def GetMouseHandlerLabel(handler, default=""):
+	''' Utility to return either nickname or factory label '''
+	if handler.nickname:
+		return handler.nickname
 		
+	elif handler.factory:
+		return handler.factory.label
+	
+	else:
+		return default
+
 
 import pynorama
 
