@@ -19,7 +19,7 @@
 from gi.repository import Gio, GLib, Gtk, Gdk, GObject
 from gettext import gettext as _
 import cairo, math, os
-import extending, organization, notification, utility
+import extending, organization, notification, mousing, utility
 
 Settings = Gio.Settings("com.example.pynorama")
 Directory = "preferences"
@@ -44,7 +44,7 @@ class Dialog(Gtk.Dialog):
 		# TODO: Check if do_destroy can be used instead
 		self.connect("destroy", self._do_destroy)
 		
-			
+		
 		#=== Setup view tab down this line ===#
 		
 		alignment_label = Gtk.Label(_("Image alignment"))
@@ -180,8 +180,9 @@ for the image viewer''')
 		type_column = Gtk.TreeViewColumn("Type")
 		label_renderer = Gtk.CellRendererText()
 		type_column.pack_start(label_renderer, True)
-		type_column.set_cell_data_func(label_renderer, 
-		                               self._brand_label_data_func)
+		type_column.set_cell_data_func(
+			label_renderer,  self._brand_label_data_func
+		)
 		
 		brand_listview.append_column(type_column)
 		
@@ -237,36 +238,42 @@ for the image viewer''')
 		)
 		
 		# This is a bind for syncing pages betwen the label and widget books
-		very_mice_book.bind_property("page", mouse_label_notebook,
-		                             "page", sync_flag)
+		very_mice_book.bind_property(
+			"page", mouse_label_notebook, "page", sync_flag
+		)
 		
 		
 		new_handler_button.connect("clicked", self._clicked_new_handler)
 		remove_handler_button.connect("clicked", self._clicked_remove_handler)
-		configure_handler_button.connect("clicked",
-		                                 self._clicked_configure_handler)
-		handler_listview_selection.connect("changed",
-		                                   self._changed_handler_list_selection,
-		                                   remove_handler_button,
-		                                   configure_handler_button)
+		configure_handler_button.connect(
+			"clicked", self._clicked_configure_handler
+		)
+		handler_listview_selection.connect(
+			"changed", self._changed_handler_list_selection,
+			remove_handler_button, configure_handler_button
+		)
 		
 		cancel_add_button.connect("clicked", self._clicked_cancel_add_handler)
 		add_button.connect("clicked", self._clicked_add_handler)
 		very_mice_book.connect("key-press-event", self._key_pressed_mice_book)
-		self._handlers_listview.connect("button-press-event",
-		                               self._button_pressed_handlers)
-		self._brand_listview.connect("button-press-event",
-		                              self._button_pressed_brands)
+		self._handlers_listview.connect(
+			"button-press-event", self._button_pressed_handlers
+		)
+		self._brand_listview.connect(
+			"button-press-event", self._button_pressed_brands
+		)
 		
 		tabs.connect("notify::page", self._refresh_default)
 		very_mice_book.connect("notify::page", self._refresh_default)
 		self._refresh_default()
 		
 		self._mm_handler_signals = [
-			self.mm_handler.connect("handler-added",
-				                    self._added_mouse_handler),
-			self.mm_handler.connect("handler-removed",
-		                            self._removed_mouse_handler)
+			self.mm_handler.connect(
+				"handler-added", self._added_mouse_handler
+			),
+			self.mm_handler.connect(
+				"handler-removed", self._removed_mouse_handler
+			)
 		]
 
 	
@@ -527,12 +534,23 @@ the chosen mouse button")
 			
 			mouse_button = self.mouse_button_button = Gtk.Button()
 			mouse_button.set_tooltip_text(tooltip)
-			mouse_button.connect("button-press-event",
-			                     self._mouse_button_presssed)
+			mouse_button.connect(
+				"button-press-event", self._mouse_button_presssed
+			)
 			handler_data.connect("notify::button", self._refresh_mouse_button)
 			
 			vbox.pack_start(mouse_button, False, True, 0)
 			self._refresh_mouse_button()
+		
+		# Ctrl/Shift/Alt modifiers checkbuttons
+		ctrl_check = Gtk.CheckButton(_("Ctrl"))
+		shift_check = Gtk.CheckButton(_("Shift"))
+		alt_check = Gtk.CheckButton(_("Alt"))
+		
+		modifier_line = utility.WidgetLine(
+			ctrl_check, shift_check, alt_check
+		)
+		vbox.pack_start(modifier_line, False, True, 0)
 		
 		vbox.pack_start(Gtk.Separator(), False, True, 0)
 		vbox.set_vexpand(True)
@@ -552,8 +570,16 @@ the chosen mouse button")
 				
 		# Binding entry
 		flags = GObject.BindingFlags
-		handler.bind_property("nickname", nickname_entry, "text", 
-		                      flags.BIDIRECTIONAL | flags.SYNC_CREATE)
+		handler.bind_property(
+			"nickname", nickname_entry, "text",
+			flags.BIDIRECTIONAL | flags.SYNC_CREATE
+		)
+		utility.Bind(handler_data,
+			("control-key", ctrl_check, "active"),
+			("shift-key", shift_check, "active"),
+			("alt-key", alt_check, "active"),
+			bidirectional=True, synchronize=True
+		)
 		nickname_entry.connect("notify::text", self._refresh_title)
 		handler_data.connect("removed", lambda hd: self.destroy())
 		
@@ -579,6 +605,7 @@ the chosen mouse button")
 	
 	def _mouse_button_presssed(self, widget, data):
 		self.handler_data.button = data.button
+		self.handler_data.keys = data.state & mousing.MouseAdapter.ModifierKeys
 	
 	def _refresh_mouse_button(self, *data):
 		button = self.handler_data.button
@@ -762,8 +789,9 @@ def LoadForMouseHandler(meta_mouse_handler, path):
 				button = int(a_handler_el.get("button", "0"))
 			else:
 				button = None
-				
-			meta_mouse_handler.add(a_handler, button=button)
+			
+			some_keys = int(a_handler_el.get("keys", 0))
+			meta_mouse_handler.add(a_handler, button=button, keys=some_keys)
 			
 
 def SaveFromMouseHandler(meta_mouse_handler, path):
@@ -783,6 +811,7 @@ def SaveFromMouseHandler(meta_mouse_handler, path):
 			if a_handler.needs_button:
 				a_handler_el.set("button", str(a_handler_data.button))
 			
+			a_handler_el.set("keys", str(a_handler_data.keys))
 			# Fill element with abstract data
 			a_factory.fill_xml(a_handler, a_handler_el)
 			
