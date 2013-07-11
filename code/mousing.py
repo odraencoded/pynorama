@@ -1051,17 +1051,18 @@ class ScrollHandler(MouseHandler):
 class ZoomHandler(MouseHandler):
 	''' Zooms a view '''
 	
-	def __init__(self, effect=2, minify_anchor=None, magnify_anchor=None,
-	                   horizontal=False, inverse=False):
-	             
+	def __init__(
+		self, effect=2, minify_anchor=None, magnify_anchor=None,
+		horizontal=False, inverse=False
+	):
 		MouseHandler.__init__(self)
 		self.events = MouseEvents.Scrolling
 		
 		if not minify_anchor:
-			minify_anchor = MouseHandlerPivot(mode=PivotMode.Fixed)
+			minify_anchor = MouseHandlerPivot(mode=PivotMode.Mouse)
 			
 		if not magnify_anchor:
-			magnify_anchor = MouseHandlerPivot(mode=PivotMode.Fixed)
+			magnify_anchor = MouseHandlerPivot(mode=PivotMode.Mouse)
 			
 		self.minify_anchor = minify_anchor
 		self.magnify_anchor = magnify_anchor
