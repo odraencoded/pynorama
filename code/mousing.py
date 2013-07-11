@@ -1429,7 +1429,7 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
 		
 		utility.InitWidgetStack(self,
 			pixel_line, relative_radio, relative_scale,
-			inverseh, inversev, rotate, doswap, noswap, vgreater, hgreater
+			inverseh, inversev, rotate, noswap, doswap, vgreater, hgreater
 		)
 		self.show_all()
 		
