@@ -276,7 +276,7 @@ class MetaMouseHandler(GObject.Object):
 	def add(self, handler, button=0, keys=0):
 		''' Adds a handler to be handled '''
 		if not handler in self._handlers_data:
-			handler_data = MouseHandlerData()
+			handler_data = MouseHandlerBinding()
 			handler_data.connect(
 				"notify::button",
 				self._changed_handler_data_button, handler
@@ -568,8 +568,8 @@ class MouseAdapterData:
 		self.drag_keys_changed = False
 
 
-class MouseHandlerData(GObject.Object):
-	''' MetaMouseHandler data associated to a MouseHandler  '''
+class MouseHandlerBinding(GObject.Object):
+	''' Represents a condition required in order to activate a MouseHandler '''
 	__gsignals__ = {
 		"removed" : (GObject.SIGNAL_ACTION, None, []),
 	}
