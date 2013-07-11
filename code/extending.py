@@ -44,20 +44,21 @@ class MouseHandlerFactory:
 		self.codename = "" # A string identifier
 		
 	
-	def produce(self, element=None):
-		if element:
-			product = self.load_xml(element)
+	def produce(self, settings=None):
+		if settings:
+			product = self.load_settings(settings)
 		else:
 			product = self.create_default()
 			
 		product.factory = self
 		return product
-		
+	
 	
 	@property
 	def label(self):
 		''' A label for the UI '''
 		return ""
+	
 	
 	def create_default(self):
 		''' This should create a mouse handler with default attributes '''
@@ -69,14 +70,26 @@ class MouseHandlerFactory:
 		''' Creates a widget for configuring a mouse handler '''
 		
 		raise NotImplementedError
+	
+	
+	def get_settings(handler):
+		''' Returns an object representing a handler configuration '''
 		
-	def fill_xml(self, handler, element):
-		''' This should fill element with data so that handler
-		    can be recreated from it in the load_xml method '''
-		raise NotImplementedError
+		return None
+	
+	
+	def load_settings(settings):
+		''' Creates a mouse handler with the settings input '''
 		
-	def load_xml(self, element):
-		''' This should create a mouse handler from an etree element '''
 		raise NotImplementedError
 
+
 MouseHandlerBrands = list()
+def GetMouseMechanismFactory(codename):
+	''' Returns a mouse mechanism factory by the codename '''
+	for a_brand in MouseHandlerBrands:
+		if a_brand.codename == codename:
+			return a_brand
+		
+	else:
+		return None

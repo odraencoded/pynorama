@@ -30,17 +30,25 @@ DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
 	Version = "v0.2.3"
-		
+	
+	DataDirectory = "resources"
+	PreferencesDirectory = "preferences"
+	
 	def __init__(self):
 		Gtk.Application.__init__(self)
 		self.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
+		
+		# Directories
+		self.data_directory = ImageViewer.DataDirectory
+		self.preferences_directory = ImageViewer.PreferencesDirectory
 		
 		# Default prefs stuff
 		self._preferences_dialog = None
 		self.memory_check_queued = False
 		self.meta_mouse_handler = mousing.MetaMouseHandler()
-		self.meta_mouse_handler.connect("handler-removed",
-		                                self._removed_mouse_handler)
+		self.meta_mouse_handler.connect(
+			"handler-removed", self._removed_mouse_handler)
+		
 		self.mouse_handler_dialogs = dict()
 		
 		

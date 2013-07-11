@@ -1,0 +1,77 @@
+{
+	"mouse": {
+		"mechanisms": {
+			"drag": [
+				{
+					"binding": {
+						"button": 1,
+						"keys": 0
+					},
+					"settings": {
+						"relative_speed": true,
+						"speed": -1.0
+					}
+				}
+			],
+			"hover": [
+				{
+					"binding": {
+						"button": 0,
+						"keys": 0
+					},
+					"settings": {
+						"relative_speed": true,
+						"speed": 0.2
+					}
+				}
+			],
+			"scroll": [
+				{
+					"binding": {
+						"button": 0,
+						"keys": 0
+					},
+					"settings": {
+						"inverse": [
+							false,
+							false
+						],
+						"relative_scrolling": true,
+						"relative_speed": 0.3,
+						"rotate": false,
+						"swap_mode": 0
+					}
+				}
+			],
+			"spin": [
+				{
+					"binding": {
+						"button": 3,
+						"keys": 0
+					},
+					"settings": {
+						"frequency": 1.0,
+						"pivot": {
+							"mode": 0
+						}
+					}
+				}
+			],
+			"stretch": [
+				{
+					"binding": {
+						"button": 2,
+						"keys": 0
+					},
+					"settings": {
+						"fixed_point": [
+							0.5,
+							0.5
+						],
+						"mode": 2
+					}
+				}
+			]
+		}
+	}
+}

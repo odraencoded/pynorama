@@ -22,7 +22,6 @@ import cairo, math, os
 import extending, organization, notification, mousing, utility
 
 Settings = Gio.Settings("com.example.pynorama")
-Directory = "preferences"
 
 class Dialog(Gtk.Dialog):
 	def __init__(self, app):
@@ -635,20 +634,32 @@ def GetMouseHandlerLabel(handler, default=""):
 		return default
 
 
-import pynorama
+import json
+from os.path import join as join_path
 
 def LoadForApp(app):
 	app.zoom_effect = Settings.get_double("zoom-effect")
 	app.spin_effect = Settings.get_int("rotation-effect")
 	
 	try:
-		navigators_path = os.path.join(Directory, "navigators.xml")
-		if not os.path.exists(navigators_path):
-			data_dir = pynorama.ImageViewer.DataDirectory
-			navigators_path = os.path.join(data_dir, "navigators.xml")
+		# Directory is preferences.Directory
+		json_path = join_path(app.preferences_directory, "preferences.json")
+		if not os.path.exists(json_path):
+			json_path = join_path(app.data_directory, "preferences.json")
+			notification.log("Preferences file doesn't exist. Using defaults")
 		
-		LoadForMouseHandler(app.meta_mouse_handler, navigators_path)
+		try:
+			with open(json_path) as prefs_file:
+				root_obj = json.load(prefs_file)
+			
+		except Exception:
+			notification.log_exception("Failed to load preferences file")
 		
+		else:
+			mouse_obj = root_obj.get("mouse", None)
+			if mouse_obj:
+				LoadMouseSettings(app, mouse_obj)
+			
 	except Exception:
 		notification.log_exception("Couldn't load mouse handler preferences")
 		
@@ -658,17 +669,25 @@ def SaveFromApp(app):
 	Settings.set_int("rotation-effect", app.spin_effect)
 	
 	try:
-		os.makedirs(Directory, exist_ok=True)
+		os.makedirs(app.preferences_directory, exist_ok=True)
 		
 	except FileExistsError:
 		pass
 	
+	json_path = join_path(app.preferences_directory, "preferences.json")
 	try:
-		navigators_path = os.path.join(Directory, "navigators.xml")
-		SaveFromMouseHandler(app.meta_mouse_handler, navigators_path)
+		root_obj = {}
+		root_obj["mouse"] = GetMouseSettings(app)
 		
+		with open(json_path, "w") as prefs_file:
+			json.dump(
+				root_obj, prefs_file,
+				sort_keys=True, indent="\t", separators=(",", ": ")
+			)
+			
 	except Exception:
 		notification.log_exception("Couldn't save mouse handler preferences")
+
 
 def LoadForWindow(window):	
 	window.toolbar_visible = Settings.get_boolean("interface-toolbar")
@@ -778,57 +797,80 @@ def SaveFromView(view):
 	Settings.set_enum("interpolation-magnify", interp_mag_value)
 
 
-import xml.etree.ElementTree as ET
-import collections
+def LoadMouseSettings(app, mouse_obj):
+	''' Loads mouse settings from a dictionary '''
+	mechanisms_obj = mouse_obj["mechanisms"]
+	
+	add_mouse_mechanism = app.meta_mouse_handler.add
+	for a_brand, some_mechanisms in mechanisms_obj.items():
+		# Try to get the factory with a "a_brand" codename
+		a_factory = extending.GetMouseMechanismFactory(a_brand)
+		if not a_factory:
+			notification.log(
+				"Couldn't find \"%s\" mouse mechanism brand" % a_brand
+			)
+			continue
+		
+		# Loop through brand instances,
+		# creating and adding each of them
+		for a_mechanism_obj in some_mechanisms:
+			try:
+				factory_data = a_mechanism_obj.get("settings", None)
+				a_mechanism = a_factory.produce(settings=factory_data)
+				
+				# Set mechanism instance nickname
+				a_nickname = a_mechanism_obj.get("nickname", "")
+				if a_nickname:
+					a_mechanism.nickname = a_nickname
+				
+				a_binding = a_mechanism_obj["binding"]
+				add_mouse_mechanism(a_mechanism, **a_binding)
+				
+			except Exception:
+				notification.log_exception(
+					"Failed to load a mouse mechanism"
+				)
 
-def LoadForMouseHandler(meta_mouse_handler, path):
-	tree = ET.parse(path)
-	mouse_el = tree.getroot()
+def GetMouseSettings(app):
+	''' Returns a dictionary with all mouse settings to be stored as JSON '''
+	result = {}
+	result["mechanisms"] = mechanism_objs = {}
 	
-	navigator_brands = dict()	
-	for a_brand in extending.MouseHandlerBrands:
-		navigator_brands[a_brand.codename] = a_brand
+	get_mechanisms = app.meta_mouse_handler.get_handlers
+	brand_mechanisms = (m for m in get_mechanisms() if m.factory)
 	
-	# Create data structure for saving
-	for a_handler_el in mouse_el:
-		a_factory_codename = a_handler_el.get("brand", None)
-		a_factory = navigator_brands.get(a_factory_codename, None)
-		if a_factory:
-			a_handler = a_factory.produce(element=a_handler_el)
-			a_handler.nickname = a_handler_el.get("nickname", "")
-			if a_handler.needs_button:
-				button = int(a_handler_el.get("button", "0"))
-			else:
-				button = None
+	for a_handler in brand_mechanisms:
+		try:
+			a_brand = a_handler.factory.codename
+			a_binding = app.meta_mouse_handler[a_handler]
 			
-			some_keys = int(a_handler_el.get("keys", 0))
-			meta_mouse_handler.add(a_handler, button=button, keys=some_keys)
+			a_mechanism_obj = {
+				"binding": { 
+					"keys": a_binding.keys, "button": a_binding.button
+				}
+			}
+			# Store a nickname, if any is set
+			a_nickname = a_handler.nickname
+			if a_nickname:
+				a_mechanism_obj["nickname"] = a_nickname
 			
-
-def SaveFromMouseHandler(meta_mouse_handler, path):
-	mouse_el = ET.Element("mouse")
-	
-	# Create data structure for saving
-	for a_handler in meta_mouse_handler.get_handlers():
-		a_factory = a_handler.factory
-		if a_factory:
-			a_handler_el = ET.SubElement(mouse_el, "navigator")
-			# Set standard settings
-			a_handler_data = meta_mouse_handler[a_handler]
-			a_handler_el.set("brand", a_factory.codename)
-			if a_handler.nickname:
-				a_handler_el.set("nickname", a_handler.nickname)
-	
-			if a_handler.needs_button:
-				a_handler_el.set("button", str(a_handler_data.button))
+			# Get some settings from the factory
+			some_settings = a_handler.factory.get_settings(a_handler)
+			if some_settings:
+				a_mechanism_obj["settings"] = some_settings
 			
-			a_handler_el.set("keys", str(a_handler_data.keys))
-			# Fill element with abstract data
-			a_factory.fill_xml(a_handler, a_handler_el)
-			
-	tree = ET.ElementTree(element=mouse_el)
-	tree.write(path)
-
+		except Exception:
+			notification.log_exception("Couldn't save mouse mechanism")
+		
+		else:
+			try:
+				a_brand_mechanisms = mechanism_objs[a_brand]
+				
+			except KeyError:
+				mechanism_objs[a_brand] = a_brand_mechanisms = []
+				
+			a_brand_mechanisms.append(a_mechanism_obj)
+	return result
 
 class PointScale(Gtk.DrawingArea):
 	''' A widget like a Gtk.HScale and Gtk.VScale together. '''
@@ -851,10 +893,12 @@ class PointScale(Gtk.DrawingArea):
 		self.hrange_signal = self.vrange_signal = None
 		self.set_hrange(hrange)
 		self.set_vrange(vrange)
-		self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
+		self.add_events(
+			Gdk.EventMask.BUTTON_PRESS_MASK |
 			Gdk.EventMask.BUTTON_RELEASE_MASK |
 			Gdk.EventMask.POINTER_MOTION_MASK |
-			Gdk.EventMask.POINTER_MOTION_HINT_MASK)
+			Gdk.EventMask.POINTER_MOTION_HINT_MASK
+		)
 			
 	def adjust_from_point(self, x, y):
 		w, h = self.get_allocated_width(), self.get_allocated_height()
@@ -1040,8 +1084,9 @@ class PointScale(Gtk.DrawingArea):
 			
 		self.__hrange = adjustment
 		if adjustment:
-			self.hrange_signal = adjustment.connect("value-changed",
-			                                         self.adjustment_changed)
+			self.hrange_signal = adjustment.connect(
+				"value-changed", self.adjustment_changed
+			)
 		self.queue_draw()
 		
 	def get_vrange(self):
@@ -1053,8 +1098,9 @@ class PointScale(Gtk.DrawingArea):
 			
 		self.__vrange = adjustment
 		if adjustment:
-			self.vrange_signal = adjustment.connect("value-changed",
-			                                         self.adjustment_changed)
+			self.vrange_signal = adjustment.connect(
+				"value-changed", self.adjustment_changed
+			)
 		self.queue_draw()
 			                                         
 	hrange = GObject.property(get_hrange, set_hrange, type=Gtk.Adjustment)
