@@ -726,19 +726,25 @@ class MouseHandlerPivot(GObject.Object):
 		return result
 		
 		
-class HoverHandler(MouseHandler):
-	''' Pans a view on mouse hovering '''
-	def __init__(self, speed=1.0, relative_speed=True):
+class HoverAndDragHandler(MouseHandler):
+	''' Pans a view on mouse dragging, or on mouse hovering '''
+	
+	def __init__(
+		self, drag=False, speed=-1.0, relative_speed=True
+	):
 		MouseHandler.__init__(self)
-		self.events = MouseEvents.Hovering
 		
+		if drag:
+			self.events = MouseEvents.Dragging
+		
+		else:
+			self.events = MouseEvents.Hovering
+			
 		self.speed = speed
 		self.relative_speed = relative_speed
 	
-	
 	speed = GObject.Property(type=float, default=1)
 	relative_speed = GObject.Property(type=bool, default=True)
-	
 	
 	def hover(self, view, to_point, from_point, data):
 		shift = point.subtract(to_point, from_point)
@@ -751,26 +757,12 @@ class HoverHandler(MouseHandler):
 		view.pan(scaled_shift)
 	
 	
-class DragHandler(MouseHandler):
-	''' Pans a view on mouse dragging '''
-	
-	def __init__(self, speed=-1.0, relative_speed=True):
-		HoverHandler.__init__(self, speed, relative_speed)
-		self.events = MouseEvents.Dragging
-		
-		self.speed = speed
-		self.relative_speed = relative_speed
-	
-	speed = GObject.Property(type=float, default=1)
-	relative_speed = GObject.Property(type=bool, default=True)
-	
-	
 	def start_dragging(self, view, *etc):
 		fleur_cursor = Gdk.Cursor(Gdk.CursorType.FLEUR)
 		view.get_window().set_cursor(fleur_cursor)
 	
 	
-	drag = HoverHandler.hover # lol.
+	drag = hover # lol.
 	
 	
 	def stop_dragging(self, view, *etc):
@@ -1175,20 +1167,33 @@ class HoverAndDragHandlerSettingsWidget(Gtk.Box):
 		self.show_all()
 
 
-class HoverHandlerFactory(extending.MouseHandlerFactory):
-	def __init__(self):
+class HoverAndDragHandlerFactory(extending.MouseHandlerFactory):
+	def __init__(self, drag):
 		extending.MouseHandlerFactory.__init__(self)
 		
-		self.codename = "hover"
-		self.create_default = HoverHandler
+		self.drag = drag
+		
+		if drag:
+			self.codename = "drag"
+			
+		else:
+			self.codename = "hover"
+		
 		self.create_settings_widget = HoverAndDragHandlerSettingsWidget
-		
-		
+	
+	
 	@property
 	def label(self):
-		return _("Move Mouse to Pan")
+		return _("Drag to Pan" if self.drag else "Move Mouse to Pan")
 	
 	
+	def create_default(self):
+		return HoverAndDragHandler(
+			drag = self.drag,
+			speed = -1 if self.drag else 0.2
+		)
+		
+		
 	@staticmethod
 	def get_settings(handler):
 		return {
@@ -1197,34 +1202,12 @@ class HoverHandlerFactory(extending.MouseHandlerFactory):
 		}
 	
 	
-	@staticmethod
-	def load_settings(settings):
-		return HoverHandler(**settings)
+	def load_settings(self, settings):
+		return HoverAndDragHandler(drag=self.drag, **settings)
 
 
-class DragHandlerFactory(extending.MouseHandlerFactory):
-	def __init__(self):
-		extending.MouseHandlerFactory.__init__(self)
-		
-		self.codename = "drag"
-		self.create_default = DragHandler
-		self.create_settings_widget = HoverAndDragHandlerSettingsWidget
-		
-		
-	@property
-	def label(self):
-		return _("Drag to Pan")
-	
-	get_settings = staticmethod(HoverHandlerFactory.get_settings)
-	
-	
-	@staticmethod
-	def load_settings(settings):
-		return DragHandler(**settings)
-
-
-DragHandlerFactory = DragHandlerFactory()
-HoverHandlerFactory = HoverHandlerFactory()	
+DragHandlerFactory = HoverAndDragHandlerFactory(drag=True)
+HoverHandlerFactory = HoverAndDragHandlerFactory(drag=False)
 
 # TODO: Fix MapHandler for multi-image layouts and create its factory
 
