@@ -925,9 +925,14 @@ class AnimatedPixbufSourceFrame(ImageFrame):
 
 
 def SurfaceFromPixbuf(pixbuf):
-    ''' Creates a cairo surface from a Gdk pixbuf'''
+    """Returns a cairo surface from a Gdk.Pixbuf"""
+    if pixbuf.get_has_alpha():
+        surface_format = cairo.FORMAT_ARGB32
+    else:
+        surface_format = cairo.FORMAT_RGB24
+        
     surface = cairo.ImageSurface(
-        cairo.FORMAT_ARGB32, pixbuf.get_width(), pixbuf.get_height()
+        surface_format, pixbuf.get_width(), pixbuf.get_height()
     )
     cr = cairo.Context(surface)
     Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
