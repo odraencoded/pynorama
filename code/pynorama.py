@@ -617,146 +617,144 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         action_params = [
         # File Menu
-        ("file", _("_File"), None, None),
-            ("open", _("_Open..."), _("Opens an image in the viewer"),
-             Gtk.STOCK_OPEN),
-            ("paste", _("_Paste"), _("Shows an image from the clipboard"),
-             Gtk.STOCK_PASTE),
+        ("file", _("_File"), None),
+            ("open", _("_Open..."),
+                _("Opens an image in the viewer"), Gtk.STOCK_OPEN),
+            ("paste", _("_Paste"),
+                _("Shows an image from the clipboard"), Gtk.STOCK_PASTE),
             # Ordering submenu
-            ("ordering", _("Or_dering"),
-             _("Image ordering settings"), None),
+            ("ordering", _("Or_dering"), _("Image ordering settings")),
                 ("sort", _("_Sort Images"),
-                 _("Sorts the images currently loaded"), None),
+                    _("Sorts the images currently loaded")),
                 ("sort-auto", _("Sort _Automatically"),
-                 _("Sorts images as they are added"), None),
+                 _("Sorts images as they are added")),
                  ("sort-reverse", _("_Reverse Order"),
-                  _("Reverts the image order"), None),
+                    _("Reverts the image order")),
                 ("sort-name", _("By _Name"),
-                 _("Compares filenames and number sequences but not dots"),
-                 None),
+                    _("Compares filenames and number sequences but not dots")),
                 ("sort-char", _("By _Characters"),
-                 _("Only compares characters in filenames"),
-                 None),
+                    _("Only compares characters in filenames")),
                 ("sort-file-date", _("By _Modification Date"),
-                 _("Compares dates when images were last modified"), None),
+                    _("Compares dates when images were last modified")),
                 ("sort-file-size", _("By _File Size"),
-                 _("Compares files byte size"), None),
+                    _("Compares files byte size")),
                 ("sort-img-size", _("By Image Si_ze"),
-                 _("Compares images pixel count, or width times height"), None),
+                    _("Compares images pixel count, or width times height")),
                 ("sort-img-width", _("By Image _Width"),
-                 _("Compares images width"), None),
+                    _("Compares images width"), None),
                 ("sort-img-height", _("By Image _Height"),
-                 _("Compares images height"), None),
-            ("remove", _("_Remove"), _("Removes the image from the viewer"),
-             Gtk.STOCK_CLOSE),
-            ("clear", _("R_emove All"), _("Removes all images from the viewer"),
-             Gtk.STOCK_CLEAR),
+                    _("Compares images height")),
+            ("copy", _("_Copy"),
+                _("Copies an image into the clipboard"), Gtk.STOCK_COPY),
+            ("remove", _("_Remove"),
+                _("Removes the image from the viewer"), Gtk.STOCK_CLOSE),
+            ("clear", _("R_emove All"),
+                _("Removes all images from the viewer"), Gtk.STOCK_CLEAR),
             ("quit", _("_Quit"), _("Exits the program"), Gtk.STOCK_QUIT),
         # Go menu
-        ("go", _("_Go"), None, None),
-            ("go-previous", _("P_revious Image"), _("Loads the previous image"),
-             Gtk.STOCK_GO_BACK),
-            ("go-next", _("Nex_t Image"), _("Loads the next image"),
-             Gtk.STOCK_GO_FORWARD),
-            ("go-first", _("Fir_st Image"), _("Loads the first image"),
-             Gtk.STOCK_GOTO_FIRST),
-            ("go-last", _("L_ast Image"), _("Loads the last image"),
-             Gtk.STOCK_GOTO_LAST),
-             ("go-random", _("A_ny Image"), _("Loads some random image"),
-             Gtk.STOCK_GOTO_LAST),
+        ("go", _("_Go"), None),
+            ("go-previous", _("P_revious Image"),
+                _("Loads the previous image"), Gtk.STOCK_GO_BACK),
+            ("go-next", _("Nex_t Image"),
+                _("Loads the next image"), Gtk.STOCK_GO_FORWARD),
+            ("go-first", _("Fir_st Image"),
+                _("Loads the first image"), Gtk.STOCK_GOTO_FIRST),
+            ("go-last", _("L_ast Image"),
+                _("Loads the last image"), Gtk.STOCK_GOTO_LAST),
+            ("go-random", _("A_ny Image"),
+                _("Loads some random image"), Gtk.STOCK_GOTO_LAST),
         # View menu
-        ("view", _("_View"), None, None),
-            ("zoom-in", _("Zoom _In"), _("Makes the image look larger"),
-             Gtk.STOCK_ZOOM_IN),
-            ("zoom-out", _("Zoom _Out"), _("Makes the image look smaller"),
-             Gtk.STOCK_ZOOM_OUT),
+        ("view", _("_View"), None),
+            ("zoom-in", _("Zoom _In"),
+                _("Makes the image look larger"), Gtk.STOCK_ZOOM_IN),
+            ("zoom-out", _("Zoom _Out"),
+                _("Makes the image look smaller"), Gtk.STOCK_ZOOM_OUT),
             ("zoom-none", _("No _Zoom"),
-             _("Shows the image at it's normal size"), Gtk.STOCK_ZOOM_100),
+                _("Shows the image at it's normal size"), Gtk.STOCK_ZOOM_100),
             # Auto-zoom submenu
             ("auto-zoom", _("_Automatic Zoom"), 
-             _("Automatic zooming features"), None),
+                    _("Automatic zooming features")),
                 ("auto-zoom-enable", _("Enable _Automatic Zoom"),
-                 _("Enables the automatic zoom features"), None),
+                    _("Enables the automatic zoom features")),
                 ("auto-zoom-fit", _("Fi_t Image"),
-                 _("Fits the image completely inside the window"), None),
+                    _("Fits the image completely inside the window")),
                 ("auto-zoom-fill", _("Fi_ll Window"),
-                 _("Fills the window completely with the image"), None),
+                    _("Fills the window completely with the image")),
                 ("auto-zoom-match-width", _("Match _Width"),
-                 _("Gives the image the same width as the window"), None),
+                    _("Gives the image the same width as the window")),
                 ("auto-zoom-match-height", _("Match _Height"),
-                 _("Gives the image the same height as the window"), None),
+                    _("Gives the image the same height as the window")),
                 ("auto-zoom-minify", _("Mi_nify Large Images"),
-                 _("Let the automatic zoom minify images"), None),
+                    _("Let the automatic zoom minify images")),
                 ("auto-zoom-magnify", _("Ma_gnify Small Images"),
-                 _("Let the automatic zoom magnify images"), None),
+                    _("Let the automatic zoom magnify images")),
             # Transform submenu
-            ("transform", _("_Transform"),
-             _("Viewport transformation"), None),
+            ("transform", _("_Transform"), _("Viewport transformation")),
                 ("rotate-cw", _("_Rotate Clockwise"),
-                 _("Turns the top side to the right side"), None),
+                    _("Turns the top side to the right side")),
                 ("rotate-ccw", _("Rotat_e Counter Clockwise"),
-                 _("Turns the top side to the left side"), None),
+                    _("Turns the top side to the left side")),
                 ("flip-h", _("Flip _Horizontally"), 
-                 _("Inverts the left and right sides"), None),
+                    _("Inverts the left and right sides")),
                 ("flip-v", _("Flip _Vertically"),
-                 _("Inverts the top and bottom sides"), None),
+                    _("Inverts the top and bottom sides")),
                 ("transform-reset", _("Re_set"),
-                 _("Resets the view transform"), None),
+                    _("Resets the view transform")),
             # Interpolation submenu
             ("interpolation", _("Inter_polation"),
-             _("Pixel interpolation settings"), None),
+                    _("Pixel interpolation settings")),
                 ("interp-nearest", _("_Nearest Neighbour Filter"),
-                 _("Interpolation filter that does not blend pixels"), None),
+                    _("A filter that does not blend pixels")),
                 ("interp-bilinear", _("_Bilinear Filter"),
-                 _("Interpolation filter that blends pixels in a linear way"),
-                 None),
+                    _("A filter that blends pixels in a linear way")),
                 ("interp-fast", _("Fa_ster Fil_ter"),
-                 _("A fast interpolation filter"), None),
+                    _("A fast interpolation filter")),
                 ("interp-good", _("B_etter Filt_er"),
-                 _("A good interpolation filter"), None),
+                    _("A good interpolation filter")),
                 ("interp-best", _("St_ronger Filte_r"),
-                 _("The best interpolation filter avaiable"), None),
+                    _("The best interpolation filter avaiable")),
              # Layout submenu
-            ("layout", _("_Layout"), _("Album layout settings"), None),
+            ("layout", _("_Layout"), _("Album layout settings")),
                 ("layout-other-option","", "", None),
                 ("layout-configure", _("_Configure..."),
-                 _("Shows a dialog to configure the current album layout"),
-                 None),
+                    _("Shows a dialog to configure the current album layout"),
+                    None),
             # Interface submenu
             ("interface", _("_Interface"),
-             _("This window settings"), None),
+                    _("This window settings")),
                 ("ui-toolbar", _("T_oolbar"),
-                 _("Displays a toolbar with tools"), None),
+                    _("Displays a toolbar with tools")),
                 ("ui-statusbar", _("Stat_usbar"),
-                 _("Displays a statusbar with status"), None),
+                    _("Displays a statusbar with status")),
                 ("ui-scrollbar-top", _("_Top Scroll Bar"),
-                 _("Displays the horizontal scrollbar at the top side"), None),
+                    _("Displays the horizontal scrollbar at the top side")),
                 ("ui-scrollbar-bottom", _("_Bottom Scroll Bar"),
-                 _("Displays the horizontal scrollbar at the bottom side"), None),
+                    _("Displays the horizontal scrollbar at the bottom side")),
                 ("ui-scrollbar-left", _("Le_ft Scroll Bar"),
-                 _("Displays the vertical scrollbar at the left side"), None),
+                    _("Displays the vertical scrollbar at the left side")),
                 ("ui-scrollbar-right", _("Rig_ht Scroll Bar"),
-                 _("Displays the vertical scrollbar at the right side"), None),
+                    _("Displays the vertical scrollbar at the right side")),
                 ("ui-keep-above", _("Keep Ab_ove"),
-                 _("Keeps this window above other windows"), None),
+                    _("Keeps this window above other windows")),
                 ("ui-keep-below", _("Keep Be_low"),
-                 _("Keeps this window below other windows"), None),
+                    _("Keeps this window below other windows")),
             ("preferences", _("_Preferences..."),
-             _("Shows Pynorama preferences dialog"),
-             Gtk.STOCK_PREFERENCES),
+                _("Shows Pynorama preferences dialog"),
+                Gtk.STOCK_PREFERENCES),
             ("fullscreen", _("_Fullscreen"),
-             _("Fills the entire screen with this window"),
-             Gtk.STOCK_FULLSCREEN),
+               _("Fills the entire screen with this window"),
+               Gtk.STOCK_FULLSCREEN),
         ("help", _("_Help"),
-         _("Help! I'm locked inside an image viewer!" + 
-           "I have wife and children! Please, save me!!!"), None),
-            ("about", _("_About"), _("Shows the about dialog"),
-             Gtk.STOCK_ABOUT),
+                _("Help! I'm locked inside an image viewer!" + 
+                "I have wife and children! Please, save me!!!")),
+            ("about", _("_About"),
+                _("Shows the about dialog"), Gtk.STOCK_ABOUT),
         ]
         
         signaling_params = {
             "open" : (self.file_open,),
             "paste" : (self.pasted_data,),
+            "copy": (self.copy_image,),
             "sort" : (lambda data: self.album.sort(),),
             "sort-reverse" : (self._toggled_reverse_sort,),
             "remove" : (self.handle_remove,),
@@ -832,6 +830,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         accel_actions = {
             "open" : None,
             "paste" : None,
+            "copy" : None,
             "remove" : "Delete",
             "clear" : "<ctrl>Delete",
             "quit" : None,
@@ -850,7 +849,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
             "fullscreen" : "F4",
         }
         
-        for name, label, tip, stock in action_params:
+        for an_action_params in action_params:
+            if len(an_action_params) == 3:
+                name, label, tip = an_action_params
+                stock = None
+            else:
+                name, label, tip, stock = an_action_params
+                
             some_signal_params = signaling_params.get(name, None)
             if name in toggleable_actions:
                 # Toggleable actions :D
@@ -863,8 +868,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
                     # Group data = RadioAction
                     signal_name = "changed"
                     radio_value, group_list = group_data
-                    an_action = Gtk.RadioAction(name, label, tip, stock,
-                                                radio_value)
+                    an_action = Gtk.RadioAction(
+                        name, label, tip, stock, radio_value
+                    )
                     # Join the group of last radioaction in the list
                     if group_list:
                         an_action.join_group(group_list[-1])
@@ -882,9 +888,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
             try:
                 an_accel = accel_actions[name]
             except KeyError:
-                self.actions.add_action(an_action)
-            else:
-                self.actions.add_action_with_accel(an_action, an_accel)
+                an_accel = ""
+                
+            self.actions.add_action_with_accel(an_action, an_accel)
 
         
     # --- event handling down this line --- #
@@ -1099,7 +1105,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
     def _refresh_index(self):
         focused_image = self.avl.focus_image
-        can_remove = not focused_image is None
+        can_copy = can_remove = focused_image is not None
         can_goto_first = False
         can_goto_last = False
         can_previous = False
@@ -1136,6 +1142,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             self.index_label.set_text("∅")
             
         sensible_list = [
+            ("copy", can_copy),
             ("remove", can_remove),
             ("clear", len(self.album) > 0),
             ("go-next", can_next),
@@ -1391,6 +1398,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
         if focus:
             self.album.remove(focus)
     
+    def copy_image(self, *stuff):
+        focus = self.avl.focus_image
+        if focus:
+            focus.copy_to_clipboard(self.clipboard)
+    
     def pasted_data(self, data=None):
         self.go_new = True
         some_uris = self.clipboard.wait_for_uris()
@@ -1405,7 +1417,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 self.album.extend(new_images)
                 
         self.go_new = False
-            
+        
     def dragged_data(self, widget, context, x, y, selection, info, timestamp):
         self.go_new = True
         if info == DND_URI_LIST:
@@ -1558,7 +1570,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 # Refresh frame #
                 self._refresh_focus_frame()
             
-            else:                
+            else:
                 # Show loading hints #
                 message = notification.Lines.Loading(focused_image)
                 self.statusbar.push(loading_ctx, message)
@@ -1648,6 +1660,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             <menuitem action="open" />
             <menuitem action="paste" />
             <separator />
+            <menuitem action="copy" />
             <menu action="ordering">
                 <menuitem action="sort" />
                 <separator />

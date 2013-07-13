@@ -469,6 +469,10 @@ class PixbufDataImageSource(ImageSource):
         
     def create_frame(self):
         return viewing.SurfaceSourceImageFrame(self)
+    
+    def copy_to_clipboard(self, clipboard):
+        pixbuf = viewing.PixbufFromSurface(self.surface)
+        clipboard.set_image(pixbuf)
 
 
 class PixbufFileImageSource(GFileImageSource):
@@ -569,8 +573,12 @@ class PixbufFileImageSource(GFileImageSource):
         
     def create_frame(self):
         return viewing.SurfaceSourceImageFrame(self)
-
-
+    
+    def copy_to_clipboard(self, clipboard):
+        pixbuf = viewing.PixbufFromSurface(self.surface)
+        clipboard.set_image(pixbuf)
+    
+    
 class PixbufAnimationFileImageSource(GFileImageSource):
     def __init__(self, gfile):
         GFileImageSource.__init__(self, gfile)
@@ -667,3 +675,7 @@ class PixbufAnimationFileImageSource(GFileImageSource):
         
     def create_frame(self):
         return viewing.AnimatedPixbufSourceFrame(self)
+        
+    def copy_to_clipboard(self, clipboard):
+        pixbuf = self.pixbuf_animation.get_iter(None).get_pixbuf()
+        clipboard.set_image(pixbuf)

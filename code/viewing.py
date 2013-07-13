@@ -939,3 +939,10 @@ def SurfaceFromPixbuf(pixbuf):
     cr.paint()
     
     return surface
+    
+def PixbufFromSurface(surface):
+    """Returns a Gdk.Pixbuf from a cairo surface"""
+    return Gdk.pixbuf_get_from_surface(
+        surface, 0, 0, surface.get_width(), surface.get_height()
+    )
+
