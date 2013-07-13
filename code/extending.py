@@ -18,78 +18,78 @@
 import utility
 
 class LayoutOption:
-	''' Represents a layout choice. '''
-	
-	# A list of layouts avaiable for the program
-	List = []
-	
-	def __init__(self, codename="", name="", description=""):
-		''' codename must be a string identifier for this option
-		    name is a localized label for the layout
-		    description is a description, duh '''
-		self.codename = codename
-		self.name = name
-		self.description = description
-	
-	
-	def create_layout(self):
-		''' Replaces this with something that creates a layout '''
-		raise NotImplementedError
-		
+    ''' Represents a layout choice. '''
+    
+    # A list of layouts avaiable for the program
+    List = []
+    
+    def __init__(self, codename="", name="", description=""):
+        ''' codename must be a string identifier for this option
+            name is a localized label for the layout
+            description is a description, duh '''
+        self.codename = codename
+        self.name = name
+        self.description = description
+    
+    
+    def create_layout(self):
+        ''' Replaces this with something that creates a layout '''
+        raise NotImplementedError
+        
 
 class MouseHandlerFactory:
-	''' Manufacturates mouse handlers & accessories '''
-	
-	def __init__(self):
-		self.codename = "" # A string identifier
-		
-	
-	def produce(self, settings=None):
-		if settings:
-			product = self.load_settings(settings)
-		else:
-			product = self.create_default()
-			
-		product.factory = self
-		return product
-	
-	
-	@property
-	def label(self):
-		''' A label for the UI '''
-		return ""
-	
-	
-	def create_default(self):
-		''' This should create a mouse handler with default attributes '''
-		
-		raise NotImplementedError
-		
-		
-	def create_settings_widget(self, handler):
-		''' Creates a widget for configuring a mouse handler '''
-		
-		raise NotImplementedError
-	
-	
-	def get_settings(handler):
-		''' Returns an object representing a handler configuration '''
-		
-		return None
-	
-	
-	def load_settings(settings):
-		''' Creates a mouse handler with the settings input '''
-		
-		raise NotImplementedError
+    ''' Manufacturates mouse handlers & accessories '''
+    
+    def __init__(self):
+        self.codename = "" # A string identifier
+        
+    
+    def produce(self, settings=None):
+        if settings:
+            product = self.load_settings(settings)
+        else:
+            product = self.create_default()
+            
+        product.factory = self
+        return product
+    
+    
+    @property
+    def label(self):
+        ''' A label for the UI '''
+        return ""
+    
+    
+    def create_default(self):
+        ''' This should create a mouse handler with default attributes '''
+        
+        raise NotImplementedError
+        
+        
+    def create_settings_widget(self, handler):
+        ''' Creates a widget for configuring a mouse handler '''
+        
+        raise NotImplementedError
+    
+    
+    def get_settings(handler):
+        ''' Returns an object representing a handler configuration '''
+        
+        return None
+    
+    
+    def load_settings(settings):
+        ''' Creates a mouse handler with the settings input '''
+        
+        raise NotImplementedError
 
 
 MouseHandlerBrands = list()
 def GetMouseMechanismFactory(codename):
-	''' Returns a mouse mechanism factory by the codename '''
-	for a_brand in MouseHandlerBrands:
-		if a_brand.codename == codename:
-			return a_brand
-		
-	else:
-		return None
+    ''' Returns a mouse mechanism factory by the codename '''
+    for a_brand in MouseHandlerBrands:
+        if a_brand.codename == codename:
+            return a_brand
+        
+    else:
+        return None

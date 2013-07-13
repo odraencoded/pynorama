@@ -21,152 +21,152 @@ center = .5, .5
 one = 1, 1
 
 def add(a, b):
-	return a[0] + b[0], a[1] + b[1]
-	
+    return a[0] + b[0], a[1] + b[1]
+    
 def subtract(a, b):
-	return a[0] - b[0], a[1] - b[1]
-	
+    return a[0] - b[0], a[1] - b[1]
+    
 def multiply(a, b):
-	return a[0] * b[0], a[1] * b[1]
-		
+    return a[0] * b[0], a[1] * b[1]
+        
 def divide(a, b):
-	return a[0] / b[0], a[1] / b[1]
+    return a[0] / b[0], a[1] / b[1]
 
 def flip(point, h, v):
-	return point[0] * (-1 if h else 1), point[1] * (-1 if v else 1)
+    return point[0] * (-1 if h else 1), point[1] * (-1 if v else 1)
 
 def scale(point, scalar):
-	return point[0] * scalar, point[1] * scalar
+    return point[0] * scalar, point[1] * scalar
 
 def spin(point, r):
-	x, y = point
-	rx = x * math.cos(r) - y * math.sin(r)
-	ry = x * math.sin(r) + y * math.cos(r)
-	return rx, ry
+    x, y = point
+    rx = x * math.cos(r) - y * math.sin(r)
+    ry = x * math.sin(r) + y * math.cos(r)
+    return rx, ry
 
 def is_tall(point):
-	return point[0] < point[1]
-	
+    return point[0] < point[1]
+    
 def is_wide(point):
-	return point[0] > point[1]
+    return point[0] > point[1]
 
 def length(point):
-	return (point[0] ** 2 + point[1] ** 2) ** .5
+    return (point[0] ** 2 + point[1] ** 2) ** .5
 
 class Rectangle:
-	def __init__(self, left=0, top=0, width=0, height=0):
-		self.left = left
-		self.top = top
-		self.width = width
-		self.height = height
-		
-	@property
-	def right(self):
-		return self.left + self.width
-		
-	@property
-	def bottom(self):
-		return self.top + self.height
-	
-	@property
-	def area(self):
-		return self.width * self.height
-	
-	def overlaps_with(self, other):
-		''' Returns true if rectangle overlaps with other rectangle '''
-		return not (self.left >= other.left + other.width or
-		            self.top >= other.top + other.height or
-		            self.left + self.width < other.left or
-		            self.top + self.height < other.top)
-	
-	def __and__(self, other):
-		left = max(self.left, other.left)
-		top = max(self.top, other.top)
-		right = min(self.left + self.width, other.left + other.width)
-		bottom = min(self.top + self.height, other.top + other.height)
-		
-		width = max(right - left, 0)
-		height = max(bottom - top, 0)
-		
-		return Rectangle(left, top, width, height)
-	
-	def unbox_point(self, relative_point):
-		return add((self.left, self.top),
-		            multiply((self.width, self.height), relative_point))
-	
-	def to_tuple(self):
-		return self.left, self.top, self.width, self.height
-	
-	def copy(self):
-		return Rectangle(self.left, self.top, self.width, self.height)
-	
-	def shift(self, displacement):
-		l, t = add((self.left, self.top), displacement)
-		return Rectangle(l, t, self.width, self.height)
-	
-	def spin(self, angle):
-		''' Basic trigonometrics '''
-		result = self.copy()
-		if angle:
-			a = spin((self.left, self.top), angle)
-			b = spin((self.right, self.top), angle)
-			c = spin((self.right, self.bottom), angle)
-			d = spin((self.left, self.bottom), angle)
-		
-			(left, top), (right, bottom) = a, a
-			for (x, y) in [b, c, d]:
-				left = min(left, x)
-				top = min(top, y)
-				right = max(right, x)
-				bottom = max(bottom, y)
-			
-			result.top, result.left = top, left
-			result.width = right - left
-			result.height = bottom - top
-		
-		return result
-	
-	def flip(self, horizontal, vertical):
-		''' Basic conditions '''
-		result = self.copy()
-		if horizontal:
-			result.left = -self.right
-	
-		if vertical:
-			result.top = -self.bottom
-				
-		return result
-		
-	def scale(self, scale):
-		''' Basic mathematics '''
-		result = self.copy()
-		result.left *= scale
-		result.top *= scale
-		result.width *= scale
-		result.height *= scale
-		return result
-	
-	@staticmethod
-	def Union(rectangles):
-		''' Rectangles! UNITE!!! '''
-		if rectangles:
-			top = min((r.top for r in rectangles))
-			left = min((r.left for r in rectangles))
-			bottom = max((r.top + r.height for r in rectangles))
-			right = max((r.left + r.width for r in rectangles))
-		else:
-			top = left = bottom = right = 0
-			
-		return Rectangle(left, top, right - left, bottom - top)
-	
-	@staticmethod
-	def FromPoints(*points):
-		xs = [p[0] for p in points]
-		ys = [p[1] for p in points]
-		
-		left = min(xs)
-		right = max(xs)
-		top = min(ys)
-		bottom = max(ys)
-		
-		return Rectangle(left, top, right - left, bottom - top)
+    def __init__(self, left=0, top=0, width=0, height=0):
+        self.left = left
+        self.top = top
+        self.width = width
+        self.height = height
+        
+    @property
+    def right(self):
+        return self.left + self.width
+        
+    @property
+    def bottom(self):
+        return self.top + self.height
+    
+    @property
+    def area(self):
+        return self.width * self.height
+    
+    def overlaps_with(self, other):
+        ''' Returns true if rectangle overlaps with other rectangle '''
+        return not (self.left >= other.left + other.width or
+                    self.top >= other.top + other.height or
+                    self.left + self.width < other.left or
+                    self.top + self.height < other.top)
+    
+    def __and__(self, other):
+        left = max(self.left, other.left)
+        top = max(self.top, other.top)
+        right = min(self.left + self.width, other.left + other.width)
+        bottom = min(self.top + self.height, other.top + other.height)
+        
+        width = max(right - left, 0)
+        height = max(bottom - top, 0)
+        
+        return Rectangle(left, top, width, height)
+    
+    def unbox_point(self, relative_point):
+        return add((self.left, self.top),
+                    multiply((self.width, self.height), relative_point))
+    
+    def to_tuple(self):
+        return self.left, self.top, self.width, self.height
+    
+    def copy(self):
+        return Rectangle(self.left, self.top, self.width, self.height)
+    
+    def shift(self, displacement):
+        l, t = add((self.left, self.top), displacement)
+        return Rectangle(l, t, self.width, self.height)
+    
+    def spin(self, angle):
+        ''' Basic trigonometrics '''
+        result = self.copy()
+        if angle:
+            a = spin((self.left, self.top), angle)
+            b = spin((self.right, self.top), angle)
+            c = spin((self.right, self.bottom), angle)
+            d = spin((self.left, self.bottom), angle)
+        
+            (left, top), (right, bottom) = a, a
+            for (x, y) in [b, c, d]:
+                left = min(left, x)
+                top = min(top, y)
+                right = max(right, x)
+                bottom = max(bottom, y)
+            
+            result.top, result.left = top, left
+            result.width = right - left
+            result.height = bottom - top
+        
+        return result
+    
+    def flip(self, horizontal, vertical):
+        ''' Basic conditions '''
+        result = self.copy()
+        if horizontal:
+            result.left = -self.right
+    
+        if vertical:
+            result.top = -self.bottom
+                
+        return result
+        
+    def scale(self, scale):
+        ''' Basic mathematics '''
+        result = self.copy()
+        result.left *= scale
+        result.top *= scale
+        result.width *= scale
+        result.height *= scale
+        return result
+    
+    @staticmethod
+    def Union(rectangles):
+        ''' Rectangles! UNITE!!! '''
+        if rectangles:
+            top = min((r.top for r in rectangles))
+            left = min((r.left for r in rectangles))
+            bottom = max((r.top + r.height for r in rectangles))
+            right = max((r.left + r.width for r in rectangles))
+        else:
+            top = left = bottom = right = 0
+            
+        return Rectangle(left, top, right - left, bottom - top)
+    
+    @staticmethod
+    def FromPoints(*points):
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        
+        left = min(xs)
+        right = max(xs)
+        top = min(ys)
+        bottom = max(ys)
+        
+        return Rectangle(left, top, right - left, bottom - top)
