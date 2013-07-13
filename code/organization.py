@@ -425,21 +425,7 @@ class SingleImageLayout(AlbumLayout):
             avl.view.remove_frame(avl.current_frame)
             
         if avl.current_image:
-            try:
-                new_frame = avl.current_image.create_frame(avl.view)
-                
-            except Exception:
-                new_frame = None
-                
-            finally:                
-                if new_frame is None:
-                    # Create a missing icon frame #
-                    error_icon = avl.view.render_icon(Gtk.STOCK_MISSING_IMAGE,
-                                                      Gtk.IconSize.DIALOG)
-                                                    
-                    error_surface = viewing.SurfaceFromPixbuf(error_icon)
-                    new_frame = viewing.ImageSurfaceFrame(error_surface)
-                    
+            new_frame = avl.current_image.create_frame()
             avl.current_frame = new_frame
             avl.view.add_frame(new_frame)
             avl.view.align_to_frame(new_frame)
@@ -1087,19 +1073,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
             if image is shown_image:
                 shown_frame = avl.shown_frames[i]
                 if not shown_frame or overwrite:
-                    try:
-                        shown_frame = image.create_frame(avl.view)
-                        
-                    except Exception:
-                        if not error_surface:
-                            pixbuf = avl.view.render_icon(
-                                             Gtk.STOCK_MISSING_IMAGE,
-                                             Gtk.IconSize.DIALOG)
-                                             
-                            error_surface = viewing.SurfaceFromPixbuf(pixbuf)
-                            
-                        shown_frame = viewing.ImageSurfaceFrame(error_surface)
-                    
+                    shown_frame = image.create_frame()
                     self._set_frame(avl, i, shown_frame)
                     new_frames.append(shown_frame)
                     

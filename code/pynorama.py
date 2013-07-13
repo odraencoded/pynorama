@@ -372,7 +372,7 @@ class ImageViewer(Gtk.Application):
         context.uris.extend(loader_context.uris)
         
     def load_pixels(self, pixels):
-        pixelated_image = loading.PixbufDataImageNode(pixels, "Pixels")
+        pixelated_image = loading.PixbufDataImageSource(pixels, "Pixels")
         return [pixelated_image]
     
     
@@ -1307,9 +1307,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         frame = self.avl.focus_frame
         if frame and (self.auto_zoom_magnify or self.auto_zoom_minify):
+            rectangle = frame.rectangle
             new_zoom = self.view.zoom_for_size(
-                                  frame.size, self.auto_zoom_mode)
-                                  
+                (rectangle.width, rectangle.height), self.auto_zoom_mode
+            )
+            
             if (new_zoom > 1 and self.auto_zoom_magnify) or \
                (new_zoom < 1 and self.auto_zoom_minify):
                 self.view.magnification = new_zoom

@@ -249,15 +249,15 @@ class PixbufAnimationFileLoader:
         else:
             context.images.append(new_image)
 
-PixbufAnimationFileLoader.DialogOption = DialogOption(PixbufAnimationFileLoader,
-                                                      _("Pixbuf Animations"),
-                                                      ["*.gif"], ["image/gif"])
-                                                      
+PixbufAnimationFileLoader.DialogOption = DialogOption(
+    PixbufAnimationFileLoader, _("Pixbuf Animations"),
+    ["*.gif"], ["image/gif"]
+)
 LoadersLoader.LoaderListLoader = LoadersLoader(LoaderList, reversed_open=True)
-SupportedFilesOption = CombinedDialogOption(LoadersLoader.LoaderListLoader,
-                                            _("Supported Files"),
-                                            DialogOption.List)
-                                            
+SupportedFilesOption = CombinedDialogOption(
+    LoadersLoader.LoaderListLoader, _("Supported Files"),
+    DialogOption.List
+)
 CombinedDialogOption.List.append(SupportedFilesOption)
 
 PixbufFileLoader._setup()
@@ -389,6 +389,14 @@ class ImageMeta():
     
 class ImageSource(Loadable):
     ''' Represents an image  '''
+    
+    __gsignals__ = {
+        # "new-frame" and "lost-frame" are emitted when an ImageFrame
+        # starts using and then stops using a source.
+        "new-frame": (GObject.SIGNAL_RUN_FIRST, None, [object]),
+        "lost-frame": (GObject.SIGNAL_RUN_LAST, None, [object]),
+    }
+    
     def __init__(self):
         Loadable.__init__(self)
         
@@ -408,7 +416,8 @@ class ImageSource(Loadable):
             
         return self.metadata
     
-    def create_frame(self, view):
+    def create_frame(self):
+        """Returns a new ImageFrame for rendering this ImageSource"""
         raise NotImplementedError
 
 import viewing
@@ -423,37 +432,16 @@ class GFileImageSource(ImageSource):
         self.fullname = self.gfile.get_parse_name()
         
         self.location = Location.Disk if gfile.is_native() else Location.Distant
-        
-class PixbufImageSource(ImageSource):
-    def __init__(self, pixbuf=None):
-        super().__init__()
-        self.pixbuf = pixbuf
-        self._surface = None
-    
-    @property
-    def surface(self):
-        if self._surface is None and self.pixbuf:
-            self._surface = viewing.SurfaceFromPixbuf(self.pixbuf)
-            
-        return self._surface
-        
-    def unload(self):
-        self._surface = None
 
-    def create_frame(self, view):
-        if self.surface is None:
-            raise DataError
-            
-        return viewing.ImageSurfaceFrame(self.surface)
 
-class PixbufDataImageSource(PixbufImageSource, ImageSource):
+class PixbufDataImageSource(ImageSource):
     ''' An ImageSource created from a pixbuf
         This ImageSource can not be loaded or unloaded
         Because it can not find the data source by itself '''
         
     def __init__(self, pixbuf, name="Image Data"):
         ImageSource.__init__(self)
-        PixbufImageSource.__init__(self, pixbuf)
+        self.surface = viewing.SurfaceFromPixbuf(pixbuf)
         
         self.fullname = self.name = name
         
@@ -462,24 +450,30 @@ class PixbufDataImageSource(PixbufImageSource, ImageSource):
         self.location = Location.Memory
         self.status = Status.Good
         
+        
     def load_metadata(self):
         if self.metadata is None:
             self.metadata = ImageMeta()
             
-        self.metadata.width = self.pixbuf.get_width()
-        self.metadata.height = self.pixbuf.get_height()
+        self.metadata.width = self.surface.get_width()
+        self.metadata.height = self.surface.get_height()
         self.metadata.modification_date = time.time()
         self.metadata.data_size = 0
         
     def unload(self):
         PixbufImageSource.unload(self)
-        self.pixbuf = None
+        self.surface = None
         self.location &= ~Location.Memory
         self.status = Status.Bad
+        
+        
+    def create_frame(self):
+        return viewing.SurfaceSourceImageFrame(self)
 
-class PixbufFileImageSource(GFileImageSource, PixbufImageSource):
+
+class PixbufFileImageSource(GFileImageSource):
     def __init__(self, gfile):
-        super().__init__(gfile=gfile)
+        GFileImageSource.__init__(self, gfile)
         
         self.status = Status.Good
         self.cancellable = None
@@ -500,7 +494,8 @@ class PixbufFileImageSource(GFileImageSource, PixbufImageSource):
         self.error = None
         try:
             async_finish = GdkPixbuf.Pixbuf.new_from_stream_finish
-            self.pixbuf = async_finish(result)
+            pixbuf = async_finish(result)
+            self.surface = viewing.SurfaceFromPixbuf(pixbuf)
 
         except GLib.GError as gerror:
             # If cancellable is None, that means loading was cancelled
@@ -523,8 +518,7 @@ class PixbufFileImageSource(GFileImageSource, PixbufImageSource):
             self.cancellable.cancel()
             self.cancellable = None
         
-        PixbufImageSource.unload(self)
-        self.pixbuf = None
+        self.surface = None
         self.location &= ~Location.Memory
         self.status = Status.Good
         
@@ -535,12 +529,11 @@ class PixbufFileImageSource(GFileImageSource, PixbufImageSource):
         # These file properties are queried from the file info
         try:
             file_info = self.gfile.query_info(
-                                   "standard::size,time::modified", 0, None)
-
+                "standard::size,time::modified", 0, None
+            )
         except Exception:
             self.metadata.modification_date = float(time.time())
             self.metadata.data_size = 0
-            
         else:
             try:
                 size_str = file_info.get_attribute_as_string("standard::size")
@@ -557,9 +550,9 @@ class PixbufFileImageSource(GFileImageSource, PixbufImageSource):
                 self.metadata.modification_date = float(time.time())
         
         # The width and height of the image are loaded from guess where
-        if self.pixbuf:
-            self.metadata.width = self.pixbuf.get_width()
-            self.metadata.height = self.pixbuf.get_height()
+        if self.surface:
+            self.metadata.width = self.surface.get_width()
+            self.metadata.height = self.surface.get_height()
             
         elif self.gfile.is_native():
             try:
@@ -573,13 +566,16 @@ class PixbufFileImageSource(GFileImageSource, PixbufImageSource):
                 self.metadata.height = 0
             
         # TODO: Add support for non-native files
+        
+    def create_frame(self):
+        return viewing.SurfaceSourceImageFrame(self)
 
-class PixbufAnimationFileImageSource(GFileImageSource, PixbufImageSource):
+
+class PixbufAnimationFileImageSource(GFileImageSource):
     def __init__(self, gfile):
-        super().__init__(gfile=gfile)
+        GFileImageSource.__init__(self, gfile)
         
-        self.animation = None
-        
+        self.pixbuf_animation = None
         self.status = Status.Good
         self.cancellable = None
         
@@ -590,30 +586,24 @@ class PixbufAnimationFileImageSource(GFileImageSource, PixbufImageSource):
         self.cancellable = Gio.Cancellable()
         
         stream = self.gfile.read(None)
-        parsename = self.gfile.get_parse_name()
         
         self.status = Status.Loading
         load_async = GdkPixbuf.PixbufAnimation.new_from_stream_async
-        self.animation = load_async(stream, self.cancellable,
-                                    self._loaded, None)
+        self.animation = load_async(
+            stream, self.cancellable, self._loaded, None
+        )
         
     def _loaded(self, me, result, *data):
         self.error = None
         try:
             async_finish = GdkPixbuf.PixbufAnimation.new_from_stream_finish
-            self.animation = async_finish(result)
-            
-            if self.animation.is_static_image():
-                self.pixbuf = self.animation.get_static_image()
-                self.animation = None
-
+            self.pixbuf_animation = async_finish(result)
         except GLib.GError as gerror:
             # If cancellable is None, that means loading was cancelled
             if self.cancellable:
                 self.location &= ~Location.Memory
                 self.status = Status.Bad
                 self.error = gerror
-            
         else:
             self.location |= Location.Memory
             self.status = Status.Good
@@ -623,24 +613,12 @@ class PixbufAnimationFileImageSource(GFileImageSource, PixbufImageSource):
             self.cancellable = None
             self.emit("finished-loading", self.error)
     
-    def create_frame(self, view):
-        if self.pixbuf:
-            return PixbufImageSource.create_frame(self, view)
-            
-        elif self.animation:
-            return viewing.AnimatedPixbufFrame(self.animation)
-            
-        else:
-            raise DataError
-    
     def unload(self):
         if self.cancellable:
             self.cancellable.cancel()
             self.cancellable = None
         
-        PixbufImageSource.unload(self)
-        self.pixbuf = None
-        self.animation = None
+        self.pixbuf_animation = None
         self.location &= ~Location.Memory
         self.status = Status.Good
         
@@ -651,12 +629,11 @@ class PixbufAnimationFileImageSource(GFileImageSource, PixbufImageSource):
         # These file properties are queried from the file info
         try:
             file_info = self.gfile.query_info(
-                                   "standard::size,time::modified", 0, None)
-
+                "standard::size,time::modified", 0, None
+            )
         except Exception:
             self.metadata.modification_date = float(time.time())
             self.metadata.data_size = 0
-            
         else:
             try:
                 size_str = file_info.get_attribute_as_string("standard::size")
@@ -672,8 +649,8 @@ class PixbufAnimationFileImageSource(GFileImageSource, PixbufImageSource):
         
         # The width and height of the image are loaded from guess where
         if self.animation:
-            self.metadata.width = self.animation.get_width()
-            self.metadata.height = self.animation.get_height()
+            self.metadata.width = self.pixbuf_animation.get_width()
+            self.metadata.height = self.pixbuf_animation.get_height()
             
         elif self.gfile.is_native():
             try:
@@ -687,3 +664,6 @@ class PixbufAnimationFileImageSource(GFileImageSource, PixbufImageSource):
                 self.metadata.height = 0
             
         # TODO: Add support for non-native files
+        
+    def create_frame(self):
+        return viewing.AnimatedPixbufSourceFrame(self)
