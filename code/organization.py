@@ -17,7 +17,6 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
     
-import os
 from gi.repository import GLib, GObject
 from collections import MutableSequence
 import utility
@@ -183,7 +182,7 @@ class SortingKeys:
 
 from gi.repository import Gtk, Gio
 from gettext import gettext as _
-import point, viewing
+import point
 
 class AlbumViewLayout(GObject.Object):
     ''' Used to tell layouts the album used for a view
@@ -639,37 +638,37 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
     
     #-- Properties down this line --#
     
-    ''' What direction a fore image should be in relation to a hind image...
-        or something like that '''
+    # What direction a fore image should be in relation to a hind image...
+    # or something like that
     direction = GObject.property(type=str, default="down")
     
-    ''' Whether to continue laying images to a side after finding
-        the center image on that side '''
+    # Whether to continue laying images to a side after finding
+    # the center image on that side
     repeat = GObject.property(type=bool, default=False)
     
-    ''' Whether to add the last image of an album before the first image and
-        vice versa '''
+    # Whether to add the last image of an album before the first image and
+    # vice versa
     loop = GObject.property(type=bool, default=False)
     
-    ''' Set to true to use the alignment property instead 
-        of the view alignment'''
+    # Set to true to use the alignment property instead 
+    # of the view alignment
     own_alignment = GObject.property(type=bool, default=False)
     
-    ''' Alignment for the perpendicular axis, 
-        0..1 = left/right or top/bottom '''
+    # Alignment for the perpendicular axis, 
+    # 0..1 = left/right or top/bottom
     alignment = GObject.property(type=float, default=.5)
     
-    ''' Distance between two adjacent images '''
+    # Distance between two adjacent images
     margin_after = GObject.property(type=int, default=0)
     margin_before = GObject.property(type=int, default=0)
     
-    ''' Target for the number of pixels before or after the center image.
-        The space will be at least these values except when a limit is hit '''    
+    # Target for the number of pixels before or after the center image.
+    # The space will be at least these values except when a limit is hit
     space_before = GObject.property(type=int, default=2560)
     space_after = GObject.property(type=int, default=3840)
     
-    ''' Limit for the number of images placed after
-        and before the center image '''
+    # Limit for the number of images placed after
+    # and before the center image
     limit_before = GObject.property(type=int, default=40)
     limit_after = GObject.property(type=int, default=60)
     
@@ -706,12 +705,13 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
         view = avl.old_view = avl.view
         if view is not None:
             avl.view_signals = [
-                view.connect("offset-change",
-                             self._offset_changed, avl),
-                view.connect("notify::alignment-x",
-                             self._alignment_changed, avl),
-                view.connect("notify::alignment-y",
-                             self._alignment_changed, avl)
+                view.connect("offset-change", self._offset_changed, avl),
+                view.connect(
+                    "notify::alignment-x",self._alignment_changed, avl
+                ),
+                view.connect(
+                    "notify::alignment-y", self._alignment_changed, avl
+                )
             ]
                 
     
@@ -1031,10 +1031,10 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
                     
                 before_count = self.limit_before
                 
-            if    before_count < limit_before:
+            if before_count < limit_before:
                 backmost_frame = shown_frames[0]
                 # Add an image if there is extra space
-                if avl.space_before < space_before:    
+                if avl.space_before < space_before:
                     if backmost_frame:
                         backmost_image = shown_images[0]
                         new_image = album.previous(backmost_image)
@@ -1093,7 +1093,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
                 avl.view.add_frame(new_frame)
     
     def _reposition_frames(self, avl):
-        ''' Place the frames of images around the center image 
+        ''' Place the frames of images around the center image
             around the center frame '''
             
         if avl.center_frame:
@@ -1167,22 +1167,22 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
                 
     # lambda args are
     # alignment, margin, previous translated rectangle, current rectangle
-    _CoordinateToRight = \
-    lambda a, m, p, r: (p.right - r.left + m,
-                        p.top - r.top + (p.height - r.height) * a)
-    
-    _CoordinateToLeft = \
-    lambda a, m, p, r: (p.left - r.right - m,
-                        p.top - r.top + (p.height - r.height) * a)
-    
-    _CoordinateToTop = \
-    lambda a, m, p, r: (p.left - r.left + (p.width - r.width) * a,
-                        p.top - r.bottom - m)
-    
-    _CoordinateToBottom = \
-    lambda a, m, p, r: (p.left - r.left + (p.width - r.width) * a,
-                        p.bottom - r.top + m)
-                        
+    _CoordinateToRight = lambda a, m, p, r: (
+        p.right - r.left + m,
+        p.top - r.top + (p.height - r.height) * a
+    )
+    _CoordinateToLeft = lambda a, m, p, r: (
+        p.left - r.right - m,
+        p.top - r.top + (p.height - r.height) * a
+    )
+    _CoordinateToTop = lambda a, m, p, r: (
+        p.left - r.left + (p.width - r.width) * a,
+        p.top - r.bottom - m
+    )
+    _CoordinateToBottom = lambda a, m, p, r: (
+        p.left - r.left + (p.width - r.width) * a,
+        p.bottom - r.top + m
+    )
     _GetFrameWidth = lambda f: f.rectangle.width if f else 0
     _GetFrameHeight = lambda f: f.rectangle.height if f else 0
     
@@ -1205,14 +1205,22 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
         return dist_a * (1 - ay) + dist_b * ay
             
     DirectionMethods = {
-        LayoutDirection.Right : (_GetFrameWidth, _GetHorizontalRectDistance,
-                                 _CoordinateToLeft, _CoordinateToRight),
-        LayoutDirection.Left : (_GetFrameWidth, _GetHorizontalRectDistance,
-                                _CoordinateToRight, _CoordinateToLeft),
-        LayoutDirection.Up : (_GetFrameHeight, _GetVerticalRectDistance,
-                              _CoordinateToBottom, _CoordinateToTop),
-        LayoutDirection.Down : (_GetFrameHeight, _GetVerticalRectDistance,
-                                _CoordinateToTop, _CoordinateToBottom)
+        LayoutDirection.Right : (
+            _GetFrameWidth, _GetHorizontalRectDistance,
+            _CoordinateToLeft, _CoordinateToRight
+        ),
+        LayoutDirection.Left : (
+            _GetFrameWidth, _GetHorizontalRectDistance,
+            _CoordinateToRight, _CoordinateToLeft
+        ),
+        LayoutDirection.Up : (
+            _GetFrameHeight, _GetVerticalRectDistance,
+            _CoordinateToBottom, _CoordinateToTop
+        ),
+        LayoutDirection.Down : (
+            _GetFrameHeight, _GetVerticalRectDistance,
+            _CoordinateToTop, _CoordinateToBottom
+        )
     }
     
     # TODO: Get another ID for this
