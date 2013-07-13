@@ -753,23 +753,21 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
             for i, a_frame in enumerate(avl.shown_frames):
                 if a_frame:
                     a_rect = a_frame.rectangle.shift(a_frame.origin)
+                    a_distance = self._get_rect_distance(
+                        ax, ay, absolute_view_rect, a_rect
+                    )
                     
-                    if absolute_view_rect.overlaps_with(a_rect):
-                        a_distance = self._get_rect_distance(
-                            ax, ay, absolute_view_rect, a_rect
-                        )
+                    if i == current_index:
+                        current_distance = a_distance
                         
-                        if i == current_index:
-                            current_distance = a_distance
-                            
-                        elif i > current_index:
-                            a_distance += margin_after
-                            
-                        else:
-                            a_distance += margin_before
+                    elif i > current_index:
+                        a_distance += margin_after
                         
-                        
-                        frame_distances.append((i, a_distance))
+                    else:
+                        a_distance += margin_before
+                    
+                    
+                    frame_distances.append((i, a_distance))
             
             if frame_distances:
                 best_index, best_distance = min(
