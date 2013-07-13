@@ -200,7 +200,7 @@ class PixbufFileLoader:
 	@classmethod
 	def open_file(cls, context, gfile):
 		try:
-			new_image = PixbufFileImageNode(gfile)
+			new_image = PixbufFileImageSource(gfile)
 			
 		except Exception:
 			pass
@@ -241,7 +241,7 @@ class PixbufAnimationFileLoader:
 	@classmethod
 	def open_file(cls, context, gfile):
 		try:
-			new_image = PixbufAnimationFileImageNode(gfile)
+			new_image = PixbufAnimationFileImageSource(gfile)
 			
 		except Exception:
 			pass
@@ -387,7 +387,8 @@ class ImageMeta():
 	def get_area(self):
 		return self.width * self.height
 	
-class ImageNode(Loadable):
+class ImageSource(Loadable):
+	''' Represents an image  '''
 	def __init__(self):
 		Loadable.__init__(self)
 		
@@ -412,7 +413,7 @@ class ImageNode(Loadable):
 
 import viewing
 
-class GFileImageNode(ImageNode):
+class GFileImageSource(ImageSource):
 	def __init__(self, gfile):
 		super().__init__()
 		self.gfile = gfile
@@ -423,7 +424,7 @@ class GFileImageNode(ImageNode):
 		
 		self.location = Location.Disk if gfile.is_native() else Location.Distant
 		
-class PixbufImageNode(ImageNode):
+class PixbufImageSource(ImageSource):
 	def __init__(self, pixbuf=None):
 		super().__init__()
 		self.pixbuf = pixbuf
@@ -445,14 +446,14 @@ class PixbufImageNode(ImageNode):
 			
 		return viewing.ImageSurfaceFrame(self.surface)
 
-class PixbufDataImageNode(PixbufImageNode, ImageNode):
-	''' An ImageNode created from a pixbuf
-	    This ImageNode can not be loaded or unloaded
+class PixbufDataImageSource(PixbufImageSource, ImageSource):
+	''' An ImageSource created from a pixbuf
+	    This ImageSource can not be loaded or unloaded
 	    Because it can not find the data source by itself '''
 	    
 	def __init__(self, pixbuf, name="Image Data"):
-		ImageNode.__init__(self)
-		PixbufImageNode.__init__(self, pixbuf)
+		ImageSource.__init__(self)
+		PixbufImageSource.__init__(self, pixbuf)
 		
 		self.fullname = self.name = name
 		
@@ -471,12 +472,12 @@ class PixbufDataImageNode(PixbufImageNode, ImageNode):
 		self.metadata.data_size = 0
 		
 	def unload(self):
-		PixbufImageNode.unload(self)
+		PixbufImageSource.unload(self)
 		self.pixbuf = None
 		self.location &= ~Location.Memory
 		self.status = Status.Bad
 
-class PixbufFileImageNode(GFileImageNode, PixbufImageNode):
+class PixbufFileImageSource(GFileImageSource, PixbufImageSource):
 	def __init__(self, gfile):
 		super().__init__(gfile=gfile)
 		
@@ -522,7 +523,7 @@ class PixbufFileImageNode(GFileImageNode, PixbufImageNode):
 			self.cancellable.cancel()
 			self.cancellable = None
 		
-		PixbufImageNode.unload(self)
+		PixbufImageSource.unload(self)
 		self.pixbuf = None
 		self.location &= ~Location.Memory
 		self.status = Status.Good
@@ -573,7 +574,7 @@ class PixbufFileImageNode(GFileImageNode, PixbufImageNode):
 			
 		# TODO: Add support for non-native files
 
-class PixbufAnimationFileImageNode(GFileImageNode, PixbufImageNode):
+class PixbufAnimationFileImageSource(GFileImageSource, PixbufImageSource):
 	def __init__(self, gfile):
 		super().__init__(gfile=gfile)
 		
@@ -624,7 +625,7 @@ class PixbufAnimationFileImageNode(GFileImageNode, PixbufImageNode):
 	
 	def create_frame(self, view):
 		if self.pixbuf:
-			return PixbufImageNode.create_frame(self, view)
+			return PixbufImageSource.create_frame(self, view)
 			
 		elif self.animation:
 			return viewing.AnimatedPixbufFrame(self.animation)
@@ -637,7 +638,7 @@ class PixbufAnimationFileImageNode(GFileImageNode, PixbufImageNode):
 			self.cancellable.cancel()
 			self.cancellable = None
 		
-		PixbufImageNode.unload(self)
+		PixbufImageSource.unload(self)
 		self.pixbuf = None
 		self.animation = None
 		self.location &= ~Location.Memory
