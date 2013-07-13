@@ -285,30 +285,35 @@ class ImageViewer(Gtk.Application):
             notification.log(notification.Lines.Loaded(thing))
     
     
-    def open_files_for_album(self, album, loader=None, files=None, uris=None,
-                             replace=False, search=False, silent=False,
-                             manage=True):
+    def open_files_for_album(
+        self, album, loader=None, files=None, uris=None,
+        replace=False, search=False, silent=False,
+        manage=True
+    ):
         ''' Open files or uris for an album '''
         album_context = loading.Context(files=files, uris=uris)
         context_sorting = lambda ctx: album.sort_list(ctx.images)
         
-        self.open_files(album_context, context_sorting=context_sorting,
-                        loader=loader, search=search, silent=silent)
+        self.open_files(
+            album_context, context_sorting=context_sorting,
+            loader=loader, search=search, silent=silent
+        )
         
         if album_context.images:
             if replace:
                 del album[:]
             
-            if manage:            
+            if manage:
                 for image in album_context.images:
                     self.memory.observe(image)
                     
             album.extend(album_context.images)
         
         
-    def open_files(self, context, loader=None, search=False,
-                         context_sorting=None, silent=False):
-                         
+    def open_files(
+        self, context, loader=None, search=False,
+        context_sorting=None, silent=False
+    ):
         ''' Open files using loading.LoadersLoader '''
         if loader is None:
             loader = loading.LoadersLoader.LoaderListLoader
@@ -337,19 +342,23 @@ class ImageViewer(Gtk.Application):
             files = list(context.files)
             del context.files[:]
             self.open_context_images(context, files, loader)
-                                     
+            
         if directories:
-            self.open_context_images(context, directories, DirectoryLoader,
-                                     sort_method=context_sorting)
-                                     
+            self.open_context_images(
+                context, directories, DirectoryLoader,
+                sort_method=context_sorting
+            )
+            
         if context.files:
-            self.open_context_images(context, context.files, loader,
-                                     sort_method=context_sorting)
+            self.open_context_images(
+                context, context.files, loader,
+                sort_method=context_sorting
+            )
         
         if context.problems and not silent:
             problem_list = []
             for a_file, a_problem in context.problems.items():
-                problem_list.append((a_file.get_parse_name(), str(a_problem))) 
+                problem_list.append((a_file.get_parse_name(), str(a_problem)))
             
             message = _("There were problems opening the following files:")
             columns = [_("File"), _("Error")]
@@ -1409,7 +1418,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         if some_uris:
             self.app.open_files_for_album(self.album, uris=some_uris)
-            
+        
+        some_text = self.clipboard.wait_for_text()
+        if some_text:
+            self.app.open_files_for_album(
+                self.album, uris=[some_text], silent=True
+            )
+        
         some_pixels = self.clipboard.wait_for_image()
         if some_pixels:
             new_images = self.app.load_pixels(some_pixels)
