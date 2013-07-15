@@ -2,7 +2,7 @@
 <html lang="en">
 <title>{% if page.title %}{{ page.title }} - {% endif %}pynorama</title>
 
-<meta name="description" content="An image viewer">
+{% if page.description %}<meta name="description" content="{{ page.description }}">{% endif %}
 {% if page.author %}<meta name="author" content="{{ page.author}}">{% endif %}
 <meta name="generator" content="Jekyll">
 <meta name="rating" content="general">
