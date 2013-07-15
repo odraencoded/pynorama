@@ -108,8 +108,8 @@ h1, h2 {
 }
 
 .change-list > li {
-	padding: 0 0 0 20px;
-	margin: 25px 0;
+	padding: 5px 0 5px 20px;
+	margin: 0;
 }
 
 .change-list > li > .summary {

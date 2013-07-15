@@ -1,0 +1,52 @@
+---
+layout: post
+author: Leonardo Augusto Pereira
+title: Pynorama Version 0.2.5
+---
+<p>A <a href="https://github.com/odraencoded/pynorama/releases/tag/v0.2.5">new version of Pynorama</a>
+<small>apparently</small> got released.
+
+<p>This new version has mostly internal changes.
+Nothing of exceptional was added.
+<section id="v0-2-5-changelog" class="change-log">
+	<h3 class="change-version">Version 0.2.5 Changelog</h3>
+	
+	<ul class="change-list">
+	<li><h6 class="summary">Mouse functions can be bound to <kbd><kbd>Ctrl</kbd>, <kbd>Alt</kbd> and <kbd>Shift</kbd> keys</kbd></h6>
+		<div class="details">
+			<p>With this, different things can be achievement with the same mouse
+			button or wheel. For example, pynorama can be configured so that
+			the scroll wheel can be used for scrolling the contents of an image,
+			but when the <kbd><kbd>Ctrl</kbd> key</kbd> is pressed it will zoom
+			to the mouse pointer instead.
+		</div>
+	<li><h6 class="summary">Images can now be copied</h6>
+	<li><h6 class="summary">Text can be pasted into the image viewer</h6>
+		<div class="details">
+			<p>Raw text, copied from text boxes and other applications,
+			can now be pasted into the image viewer.
+			The text will be interpreted as if it was a valid URI. If it's not a
+			valid URI, nothing will happen.
+		</div>
+	<li><h6 class="summary">Improved memory performance for opaque images</h6>
+		<div class="details">
+			<p>Opaque images were wrongly stored with an <a href="http://en.wikipedia.org/wiki/Alpha_compositing">alpha channel</a>
+			which they didn't need. That has been fixed so, if my math is right,
+			opaque images now use 1/4 less memory.
+		</div>
+	<li><h6 class="summary">Tooltips have been added to the statusbar</h6>
+	<li><h6 class="summary">Minor bugs have been fixed</h6>
+		<div class="details">
+			<ul>
+				<li><p>The <q>Loading</q> text that was supposed to replace the
+				image dimensions in the statusbar when an image is loading now
+				actually replaces the image dimensions in the statusbar
+				when an image is loading.
+				<li><p>A few focus detection and image positioning bugs have
+				been fixed on the image strip layout. And it still doesn't work.
+				But at least it no longer locks panning images if an huge image
+				is beside to a very small one.
+			</ul>
+		</div>
+	</ul>
+</section>
