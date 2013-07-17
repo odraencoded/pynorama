@@ -687,6 +687,7 @@ class SettingsGroup(GObject.Object):
         return new_group
         
     
+    #~ A bunch of recursive methods down this line ~#
     def set_all_data(self, data):
         """Sets its .data and its subgroups .data from a dictionary
         
@@ -702,7 +703,21 @@ class SettingsGroup(GObject.Object):
             a_subgroup.set_all_data(a_subdata)
             
         self.data = data
+    
+    def get_all_data(self):
+        """Returns a dict combining its .data with all its subgroups .data
         
+        If a key in .data is also a subgroup codename, the subgroup.data
+        will replace that key value.
+        
+        """
+        all_dat_data = dict(self.data)
+        
+        for a_codename, a_subgroup in self._subgroups.items():
+            all_dat_data[a_codename] = a_subgroup.get_all_data()
+        
+        return all_dat_data
+    
     
     def save_everything(self):
         """Emits a "save" signal to it self and its subgroups"""
@@ -755,13 +770,11 @@ def SaveFromApp(app):
     json_path = join_path(app.preferences_directory, "preferences.json")
     try:
         app.settings.save_everything()
-        
-        root_obj = {}
-        root_obj["mouse"] = app.settings["mouse"].data
+        settings_data = app.settings.get_all_data()
         
         with open(json_path, "w") as prefs_file:
             json.dump(
-                root_obj, prefs_file,
+                settings_data, prefs_file,
                 sort_keys=True, indent="\t", separators=(",", ": ")
             )
             
