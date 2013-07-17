@@ -59,6 +59,7 @@ class ImageViewer(Gtk.Application):
         self.settings = preferences.SettingsGroup()
         mouse_settings = self.settings.create_settings_group("mouse")
         mouse_settings.connect("save", self._save_mouse_settings)
+        mouse_settings.connect("load", self._load_mouse_settings)
         
         preferences.LoadForApp(self)
         
@@ -395,7 +396,11 @@ class ImageViewer(Gtk.Application):
             self.meta_mouse_handler
         )
         mouse_settings.data["mechanisms"] = mechanisms_data
-
+    
+    def _load_mouse_settings(self, mouse_settings):
+        preferences.LoadMouseMechanismsSettings(
+            self.meta_mouse_handler, mouse_settings.data["mechanisms"]
+        )
 
 class ViewerWindow(Gtk.ApplicationWindow):
     def __init__(self, app):

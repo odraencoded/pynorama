@@ -687,12 +687,35 @@ class SettingsGroup(GObject.Object):
         return new_group
         
     
+    def set_all_data(self, data):
+        """Sets its .data and its subgroups .data from a dictionary
+        
+        If a key in the dictionary is a subgroup codename, then the key will
+        be removed from the dictionary and the value of that key is used to
+        set the subgroup .data
+        
+        """
+        some_codename_keys = self._subgroups.keys() & data.keys()
+        for a_codename_key in some_codename_keys:
+            a_subdata = data.pop(a_codename_key)
+            a_subgroup = self._subgroups[a_codename_key]
+            a_subgroup.set_all_data(a_subdata)
+            
+        self.data = data
+        
+    
     def save_everything(self):
         """Emits a "save" signal to it self and its subgroups"""
         self.emit("save")
         for a_subgroup in self._subgroups.values():
             a_subgroup.save_everything()
-        
+    
+    def load_everything(self):
+        """Emits a "load" signal to it self and its subgroups"""
+        self.emit("load")
+        for a_subgroup in self._subgroups.values():
+            a_subgroup.load_everything()
+
 
 def LoadForApp(app):
     app.zoom_effect = Settings.get_double("zoom-effect")
@@ -708,14 +731,11 @@ def LoadForApp(app):
         try:
             with open(json_path) as prefs_file:
                 root_obj = json.load(prefs_file)
-            
         except Exception:
             notification.log_exception("Failed to load preferences file")
-        
         else:
-            mouse_obj = root_obj.get("mouse", None)
-            if mouse_obj:
-                LoadMouseSettings(app, mouse_obj)
+            app.settings.set_all_data(root_obj)
+            app.settings.load_everything()
             
     except Exception:
         notification.log_exception("Couldn't load mouse handler preferences")
@@ -729,6 +749,7 @@ def SaveFromApp(app):
         os.makedirs(app.preferences_directory, exist_ok=True)
         
     except FileExistsError:
+        # For whatever reason, this still can happen
         pass
     
     json_path = join_path(app.preferences_directory, "preferences.json")
@@ -856,12 +877,11 @@ def SaveFromView(view):
     Settings.set_enum("interpolation-magnify", interp_mag_value)
 
 
-def LoadMouseSettings(app, mouse_obj):
+def LoadMouseMechanismsSettings(meta_mouse_handler, mechanisms_settings):
     ''' Loads mouse settings from a dictionary '''
-    mechanisms_obj = mouse_obj["mechanisms"]
     
-    add_mouse_mechanism = app.meta_mouse_handler.add
-    for a_brand, some_mechanisms in mechanisms_obj.items():
+    add_mouse_mechanism = meta_mouse_handler.add
+    for a_brand, some_mechanisms in mechanisms_settings.items():
         # Try to get the factory with a "a_brand" codename
         a_factory = extending.GetMouseMechanismFactory(a_brand)
         if not a_factory:
