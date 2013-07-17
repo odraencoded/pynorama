@@ -637,6 +637,63 @@ def GetMouseHandlerLabel(handler, default=""):
 import json
 from os.path import join as join_path
 
+
+class SettingsGroup(GObject.Object):
+    """An object for storing application settings in.
+    
+    This object is serialized into JSON as one single object using
+    key/values from .data and then codename/settings from its subgroups.
+    
+    On application start up, any and all extensions that use the preferences
+    module should create a settings group using create_settings_group
+    and connect the "load" signal.
+    
+    The "save" signal is called before saving. It's a good idea to populate
+    .data with data that can't be mapped to a dictionary using that signal.
+    
+    For most cases, the settings data should be stored in the .data.
+    A subgroup should only be created for supporting extensions in that
+    settings namespace.
+    
+    """
+    
+    __gsignals__ = {
+        "save": (GObject.SIGNAL_NO_HOOKS, None, []),
+        "load": (GObject.SIGNAL_NO_HOOKS, None, [])
+    }
+    
+    
+    def __init__(self):
+        GObject.Object.__init__(self)
+        self._subgroups = {}
+        self.data = {}
+    
+    
+    def __getitem__(self, codename):
+        """Returns a subgroup under codename"""
+        return self._subgroups[codename]
+    
+    def create_settings_group(self, codename):
+        """Creates and returns a subgroup using codename as key.
+        
+        KeyError is raised if a subgroup already exists under the same codename
+        
+        """
+        if codename in self._subgroups:
+            raise KeyError
+        
+        new_group = SettingsGroup()
+        self._subgroups[codename] = new_group
+        return new_group
+        
+    
+    def save_everything(self):
+        """Emits a "save" signal to it self and its subgroups"""
+        self.emit("save")
+        for a_subgroup in self._subgroups.values():
+            a_subgroup.save_everything()
+        
+
 def LoadForApp(app):
     app.zoom_effect = Settings.get_double("zoom-effect")
     app.spin_effect = Settings.get_int("rotation-effect")
@@ -676,8 +733,10 @@ def SaveFromApp(app):
     
     json_path = join_path(app.preferences_directory, "preferences.json")
     try:
+        app.settings.save_everything()
+        
         root_obj = {}
-        root_obj["mouse"] = GetMouseSettings(app)
+        root_obj["mouse"] = app.settings["mouse"].data
         
         with open(json_path, "w") as prefs_file:
             json.dump(
@@ -689,7 +748,7 @@ def SaveFromApp(app):
         notification.log_exception("Couldn't save mouse handler preferences")
 
 
-def LoadForWindow(window):    
+def LoadForWindow(window):
     window.toolbar_visible = Settings.get_boolean("interface-toolbar")
     window.statusbar_visible = Settings.get_boolean("interface-statusbar")
     
@@ -831,18 +890,18 @@ def LoadMouseSettings(app, mouse_obj):
                     "Failed to load a mouse mechanism"
                 )
 
-def GetMouseSettings(app):
+
+def GetMouseMechanismsSettings(meta_mouse_handler):
     ''' Returns a dictionary with all mouse settings to be stored as JSON '''
-    result = {}
-    result["mechanisms"] = mechanism_objs = {}
+    mechanism_objs = {}
     
-    get_mechanisms = app.meta_mouse_handler.get_handlers
+    get_mechanisms = meta_mouse_handler.get_handlers
     brand_mechanisms = (m for m in get_mechanisms() if m.factory)
     
     for a_handler in brand_mechanisms:
         try:
             a_brand = a_handler.factory.codename
-            a_binding = app.meta_mouse_handler[a_handler]
+            a_binding = meta_mouse_handler[a_handler]
             
             a_mechanism_obj = {
                 "binding": { 
@@ -870,7 +929,7 @@ def GetMouseSettings(app):
                 mechanism_objs[a_brand] = a_brand_mechanisms = []
                 
             a_brand_mechanisms.append(a_mechanism_obj)
-    return result
+    return mechanism_objs
 
 class PointScale(Gtk.DrawingArea):
     ''' A widget like a Gtk.HScale and Gtk.VScale together. '''
