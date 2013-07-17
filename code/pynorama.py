@@ -414,17 +414,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self._refresh_index = utility.IdlyMethod(self._refresh_index)
         self._refresh_transform = utility.IdlyMethod(self._refresh_transform)
         
-        # Auto zoom stuff
-        self.auto_zoom_magnify = False
-        self.auto_zoom_minify = True
-        self.auto_zoom_mode = 0
-        self.auto_zoom_enabled = False
-        # If the user changes the zoom set by auto_zoom, 
-        # then auto_zoom isn't called after rotating or resizing
-        # the imageview
-        self.auto_zoom_zoom_modified = False
-        # Album variables
-        
+        # If the user changes the zoom set by .autozoom, 
+        # then .autozoom isn't called after rotating or resizing the imageview
+        self._autozoom_zoom_modified = False
         
         self._focus_loaded_handler_id = None
         self._old_focused_image = None
@@ -467,14 +459,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         self.view = viewing.ImageView()
         # Setup a bunch of reactions to all sorts of things
-        self.view.connect("notify::magnification",
-                               self.magnification_changed)
-        self.view.connect("notify::rotation", self.reapply_auto_zoom)
-        self.view.connect("size-allocate", self.reapply_auto_zoom)
-        self.view.connect("notify::magnification", self.view_changed)
-        self.view.connect("notify::rotation", self.view_changed)
-        self.view.connect("notify::horizontal-flip", self.view_changed)
-        self.view.connect("notify::vertical-flip", self.view_changed)
+        self.view.connect("notify::magnification", self._changed_magnification)
+        self.view.connect("notify::rotation", self._reapply_autozoom)
+        self.view.connect("size-allocate", self._reapply_autozoom)
+        self.view.connect("notify::magnification", self._changed_view)
+        self.view.connect("notify::rotation", self._changed_view)
+        self.view.connect("notify::horizontal-flip", self._changed_view)
+        self.view.connect("notify::vertical-flip", self._changed_view)
         
         self.view_scroller.add(self.view)
         self.view_scroller.show_all()
@@ -600,6 +591,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
             ("ordering-mode", get_action("sort-name"), "current-value"),
             ("toolbar-visible", get_action("ui-toolbar"), "active"),
             ("statusbar-visible", get_action("ui-statusbar"), "active"),
+            ("autozoom-enabled", get_action("autozoom-enable"), "active"),
+            ("autozoom-mode", get_action("autozoom-fit"), "current-value"),
+            ("autozoom-can-minify", get_action("autozoom-magnify"), "active"),
+            ("autozoom-can-magnify", get_action("autozoom-minify"), "active"),
             bidirectional=True
         )
         
@@ -614,6 +609,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
             bidi_flag | sync_flag
         )
         
+        
+        self.connect("notify::autozoom-enabled", self._changed_autozoom)
+        self.connect("notify::autozoom-mode", self._changed_autozoom)
+        self.connect("notify::autozoom-can-magnify", self._changed_autozoom)
+        self.connect("notify::autozoom-can-minify", self._changed_autozoom)
         self.connect("notify::vscrollbar-placement", self._changed_scrollbars)
         self.connect("notify::hscrollbar-placement", self._changed_scrollbars)
         self.connect("notify::ordering-mode", self._changed_ordering_mode)
@@ -697,22 +697,22 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 _("Makes the image look smaller"), Gtk.STOCK_ZOOM_OUT),
             ("zoom-none", _("No _Zoom"),
                 _("Shows the image at it's normal size"), Gtk.STOCK_ZOOM_100),
-            # Auto-zoom submenu
-            ("auto-zoom", _("_Automatic Zoom"), 
+            # autozoom submenu
+            ("autozoom", _("_Automatic Zoom"), 
                     _("Automatic zooming features")),
-                ("auto-zoom-enable", _("Enable _Automatic Zoom"),
+                ("autozoom-enable", _("Enable _Automatic Zoom"),
                     _("Enables the automatic zoom features")),
-                ("auto-zoom-fit", _("Fi_t Image"),
+                ("autozoom-fit", _("Fi_t Image"),
                     _("Fits the image completely inside the window")),
-                ("auto-zoom-fill", _("Fi_ll Window"),
+                ("autozoom-fill", _("Fi_ll Window"),
                     _("Fills the window completely with the image")),
-                ("auto-zoom-match-width", _("Match _Width"),
+                ("autozoom-match-width", _("Match _Width"),
                     _("Gives the image the same width as the window")),
-                ("auto-zoom-match-height", _("Match _Height"),
+                ("autozoom-match-height", _("Match _Height"),
                     _("Gives the image the same height as the window")),
-                ("auto-zoom-minify", _("Mi_nify Large Images"),
+                ("autozoom-minify", _("Mi_nify Large Images"),
                     _("Let the automatic zoom minify images")),
-                ("auto-zoom-magnify", _("Ma_gnify Small Images"),
+                ("autozoom-magnify", _("Ma_gnify Small Images"),
                     _("Let the automatic zoom magnify images")),
             # Transform submenu
             ("transform", _("_Transform"), _("Viewport transformation")),
@@ -794,10 +794,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
             "zoom-in" : (lambda data: self.zoom_view(1),),
             "zoom-out" : (lambda data: self.zoom_view(-1),),
             "zoom-none" : (lambda data: self.set_view_zoom(1),),
-            "auto-zoom-enable" : (self.change_auto_zoom,),
-            "auto-zoom-fit" : (self.change_auto_zoom,),
-            "auto-zoom-magnify" : (self.change_auto_zoom,),
-            "auto-zoom-minify" : (self.change_auto_zoom,),
             "rotate-cw" : (lambda data: self.rotate_view(1),),
             "rotate-ccw" : (lambda data: self.rotate_view(-1),),
             "flip-h" : (lambda data: self.flip_view(False),),
@@ -822,13 +818,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
         toggleable_actions = {
             "sort-auto" : None,
             "sort-reverse" : None,
-            "auto-zoom-enable" : None,
-            "auto-zoom-fit" : (ZoomMode.FitContent, zoom_mode_group),
-            "auto-zoom-fill" : (ZoomMode.FillView, zoom_mode_group),
-            "auto-zoom-match-width" : (ZoomMode.MatchWidth, zoom_mode_group),
-            "auto-zoom-match-height" : (ZoomMode.MatchHeight, zoom_mode_group),
-            "auto-zoom-minify" : None,
-            "auto-zoom-magnify" : None,
+            "autozoom-enable" : None,
+            "autozoom-fit" : (ZoomMode.FitContent, zoom_mode_group),
+            "autozoom-fill" : (ZoomMode.FillView, zoom_mode_group),
+            "autozoom-match-width" : (ZoomMode.MatchWidth, zoom_mode_group),
+            "autozoom-match-height" : (ZoomMode.MatchHeight, zoom_mode_group),
+            "autozoom-minify" : None,
+            "autozoom-magnify" : None,
             "fullscreen" : None,
             "sort-name" : (0, sort_group),
             "sort-char" : (1, sort_group),
@@ -867,7 +863,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             "zoom-none" : "KP_0",
             "zoom-in" : "KP_Add",
             "zoom-out" : "KP_Subtract",
-            "auto-zoom-enable" : "KP_Multiply",
+            "autozoom-enable" : "KP_Multiply",
             "rotate-cw" : "R",
             "rotate-ccw" : "<ctrl>R",
             "flip-h" : "F",
@@ -1116,18 +1112,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         self.view_scroller.set_policy(hpolicy, vpolicy)
         self.view_scroller.set_placement(placement)
-
-    
-    def magnification_changed(self, widget, data=None):
-        self.auto_zoom_zoom_modified = True
         
-    def view_changed(self, widget, data):
-        self._refresh_transform.queue()
-    
-    def reapply_auto_zoom(self, *data):
-        if self.auto_zoom_enabled and not self.auto_zoom_zoom_modified:
-            self.auto_zoom()
-
         
     def _refresh_index(self):
         focused_image = self.avl.focus_image
@@ -1335,35 +1320,25 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.set_view_flip(False, False)
         self.set_view_rotation(0)
     
-    def auto_zoom(self):
+    def autozoom(self):
         ''' Zooms automatically! '''
         
         frame = self.avl.focus_frame
-        if frame and (self.auto_zoom_magnify or self.auto_zoom_minify):
+        can_minify = self.autozoom_can_minify
+        can_magnify = self.autozoom_can_magnify
+        if frame and (can_minify or can_magnify):
             rectangle = frame.rectangle
             new_zoom = self.view.zoom_for_size(
-                (rectangle.width, rectangle.height), self.auto_zoom_mode
+                (rectangle.width, rectangle.height), self.autozoom_mode
             )
             
-            if (new_zoom > 1 and self.auto_zoom_magnify) or \
-               (new_zoom < 1 and self.auto_zoom_minify):
+            will_minify_zoom = can_minify and new_zoom > 1
+            will_magnify_zoom = can_magnify and new_zoom < 1
+            if will_minify_zoom or will_magnify_zoom:
                 self.view.magnification = new_zoom
-                self.auto_zoom_zoom_modified = False
+                self._autozoom_zoom_modified = False
             else:
                 self.view.magnification = 1
-                    
-    def change_auto_zoom(self, *data):
-        mode = self.actions.get_action("auto-zoom-fit").get_current_value()
-        magnify = self.actions.get_action("auto-zoom-magnify").get_active()
-        minify = self.actions.get_action("auto-zoom-minify").get_active()
-        enabled = self.actions.get_action("auto-zoom-enable").get_active()
-        
-        self.auto_zoom_magnify = magnify
-        self.auto_zoom_minify = minify
-        self.auto_zoom_mode = mode
-        self.auto_zoom_enabled = enabled
-        if self.auto_zoom_enabled:
-            self.auto_zoom()
     
     
     def toggle_keep_above(self, *data):
@@ -1640,8 +1615,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
     def _refresh_focus_frame(self):
         if not self._focus_hint:
-            if self.auto_zoom_enabled:
-                self.auto_zoom()
+            if self.autozoom_enabled:
+                self.autozoom()
                 
             self._focus_hint = True
             
@@ -1661,29 +1636,34 @@ class ViewerWindow(Gtk.ApplicationWindow):
     hscrollbar_placement = GObject.Property(type=int, default=1) 
     vscrollbar_placement = GObject.Property(type=int, default=1)
     
+    autozoom_enabled = GObject.Property(type=bool, default=True)
+    autozoom_can_minify = GObject.Property(type=bool, default=True)
+    autozoom_can_magnify = GObject.Property(type=bool, default=False)
+    autozoom_mode = GObject.Property(type=int, default=0)
+    
     layout_option = GObject.Property(type=object)
     
-    def get_auto_zoom(self):
-        enabled = self.actions.get_action("auto-zoom-enable").get_active()
-        minify = self.actions.get_action("auto-zoom-minify").get_active()
-        magnify = self.actions.get_action("auto-zoom-magnify").get_active()
-        return enabled, minify, magnify
-        
-    def set_auto_zoom(self, enabled, minify, magnify):
-        self.actions.get_action("auto-zoom-minify").set_active(minify)
-        self.actions.get_action("auto-zoom-magnify").set_active(magnify)
-        self.actions.get_action("auto-zoom-enable").set_active(enabled)
-        
-    def get_auto_zoom_mode(self):
-        return self.actions.get_action("auto-zoom-fit").get_current_value()
-    def set_auto_zoom_mode(self, mode):
-        self.actions.get_action("auto-zoom-fit").set_current_value(mode)
-        
     def get_fullscreen(self):
         return self.actions.get_action("fullscreen").get_active()
         
     def set_fullscreen(self, value):
         self.actions.get_action("fullscreen").set_active(value)
+    
+    
+    def _reapply_autozoom(self, *data):
+        if self.autozoom_enabled and not self._autozoom_zoom_modified:
+            self.autozoom()
+    
+    def _changed_autozoom(self, *data):
+        if self.autozoom_enabled:
+            self.autozoom()
+    
+    def _changed_view(self, widget, data):
+        self._refresh_transform.queue()
+    
+    def _changed_magnification(self, widget, data=None):
+        self._autozoom_zoom_modified = True
+    
     
     ui_description = '''\
 <ui>
@@ -1728,16 +1708,16 @@ class ViewerWindow(Gtk.ApplicationWindow):
             <menuitem action="zoom-in" />
             <menuitem action="zoom-out" />
             <menuitem action="zoom-none" />
-            <menu action="auto-zoom" >
-                <menuitem action="auto-zoom-enable" />
+            <menu action="autozoom" >
+                <menuitem action="autozoom-enable" />
                 <separator />
-                <menuitem action="auto-zoom-fit" />
-                <menuitem action="auto-zoom-fill" />
-                <menuitem action="auto-zoom-match-width" />
-                <menuitem action="auto-zoom-match-height" />
+                <menuitem action="autozoom-fit" />
+                <menuitem action="autozoom-fill" />
+                <menuitem action="autozoom-match-width" />
+                <menuitem action="autozoom-match-height" />
                 <separator />
-                <menuitem action="auto-zoom-magnify" />
-                <menuitem action="auto-zoom-minify" />
+                <menuitem action="autozoom-magnify" />
+                <menuitem action="autozoom-minify" />
             </menu>
             <separator />
             <menu action="transform">

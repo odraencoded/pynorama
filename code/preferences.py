@@ -791,13 +791,10 @@ def LoadForWindow(window):
     window.hscrollbar_placement = hscrollbar
     window.vscrollbar_placement = vscrollbar
     
-    auto_zoom = Settings.get_boolean("auto-zoom")
-    auto_zoom_minify = Settings.get_boolean("auto-zoom-minify")
-    auto_zoom_magnify = Settings.get_boolean("auto-zoom-magnify")
-    auto_zoom_mode = Settings.get_enum("auto-zoom-mode")
-    
-    window.set_auto_zoom_mode(auto_zoom_mode)
-    window.set_auto_zoom(auto_zoom, auto_zoom_minify, auto_zoom_magnify)
+    window.autozoom_enabled = Settings.get_boolean("auto-zoom")
+    window.autozoom_mode = Settings.get_enum("auto-zoom-mode")
+    window.autozoom_can_minify = Settings.get_boolean("auto-zoom-minify")
+    window.autozoom_can_magnify = Settings.get_boolean("auto-zoom-magnify")
     
     layout_codename = Settings.get_string("layout-codename")
     
@@ -816,13 +813,10 @@ def SaveFromWindow(window):
     Settings.set_enum("interface-horizontal-scrollbar", hscrollbar)
     Settings.set_enum("interface-vertical-scrollbar", vscrollbar)
     
-    auto_zoom, auto_zoom_minify, auto_zoom_magnify = window.get_auto_zoom()
-    auto_zoom_mode = window.get_auto_zoom_mode()
-    
-    Settings.set_boolean("auto-zoom", auto_zoom)
-    Settings.set_boolean("auto-zoom-minify", auto_zoom_minify)
-    Settings.set_boolean("auto-zoom-magnify", auto_zoom_magnify)
-    Settings.set_enum("auto-zoom-mode", auto_zoom_mode)
+    Settings.set_boolean("auto-zoom", window.autozoom_enabled)
+    Settings.set_enum("auto-zoom-mode", window.autozoom_mode)
+    Settings.set_boolean("auto-zoom-minify", window.autozoom_can_minify)
+    Settings.set_boolean("auto-zoom-magnify", window.autozoom_can_magnify)
     
     fullscreen = window.get_fullscreen()
     Settings.set_boolean("start-fullscreen", fullscreen)
