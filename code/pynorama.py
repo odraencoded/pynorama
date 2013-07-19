@@ -57,6 +57,9 @@ class ImageViewer(Gtk.Application):
         Gtk.Application.do_startup(self)
         
         self.settings = preferences.SettingsGroup()
+        self.settings.create_settings_group("window")
+        self.settings.create_settings_group("album")
+        self.settings.create_settings_group("view")
         mouse_settings = self.settings.create_settings_group("mouse")
         mouse_settings.connect("save", self._save_mouse_settings)
         mouse_settings.connect("load", self._load_mouse_settings)
@@ -238,8 +241,12 @@ class ImageViewer(Gtk.Application):
             image_view.mouse_adapter = mousing.MouseAdapter(image_view)
             self.meta_mouse_handler.attach(image_view.mouse_adapter)
             
-            fillscreen = preferences.Settings.get_boolean("start-fullscreen")
-            a_window.set_fullscreen(fillscreen)
+            try:
+                fillscreen = self.settings["window"].data["start-fullscreen"]
+                a_window.set_fullscreen(fillscreen)
+            except KeyError:
+                pass
+                
             return a_window
             
             
@@ -595,7 +602,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             ("autozoom-mode", get_action("autozoom-fit"), "current-value"),
             ("autozoom-can-minify", get_action("autozoom-magnify"), "active"),
             ("autozoom-can-magnify", get_action("autozoom-minify"), "active"),
-            bidirectional=True
+            bidirectional=True, synchronize=True
         )
         
         self.view.bind_property(
@@ -624,12 +631,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
         # Load preferences
         other_option.set_current_value(0)
         preferences.LoadForWindow(self)
-        preferences.LoadForView(self.view)
-        preferences.LoadForAlbum(self.album)
+        preferences.LoadForView(self.view, self.app.settings)
+        preferences.LoadForAlbum(self.album, self.app.settings)
         
         # Refresh status widgets
         self._refresh_transform()
         self._refresh_index()
+        
         
     def setup_actions(self):
         self.uimanager = Gtk.UIManager()
@@ -1517,8 +1525,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
     def do_destroy(self, *data):
         # Saves this window preferences
         preferences.SaveFromWindow(self)
-        preferences.SaveFromAlbum(self.album)
-        preferences.SaveFromView(self.view)
+        preferences.SaveFromAlbum(self.album, self.app.settings)
+        preferences.SaveFromView(self.view, self.app.settings)
         try:
             # Tries to save the layout preferences
             self.avl.layout.save_preferences()

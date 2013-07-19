@@ -781,107 +781,99 @@ def SaveFromApp(app):
     except Exception:
         notification.log_exception("Couldn't save mouse handler preferences")
 
-
 def LoadForWindow(window):
-    window.toolbar_visible = Settings.get_boolean("interface-toolbar")
-    window.statusbar_visible = Settings.get_boolean("interface-statusbar")
-    
-    hscrollbar = Settings.get_enum("interface-horizontal-scrollbar")
-    vscrollbar = Settings.get_enum("interface-vertical-scrollbar")
-    window.hscrollbar_placement = hscrollbar
-    window.vscrollbar_placement = vscrollbar
-    
-    window.autozoom_enabled = Settings.get_boolean("auto-zoom")
-    window.autozoom_mode = Settings.get_enum("auto-zoom-mode")
-    window.autozoom_can_minify = Settings.get_boolean("auto-zoom-minify")
-    window.autozoom_can_magnify = Settings.get_boolean("auto-zoom-magnify")
-    
-    layout_codename = Settings.get_string("layout-codename")
-    
-    option_list = extending.LayoutOption.List
-    for an_option in option_list:
-        if an_option.codename == layout_codename:
-            window.layout_option = an_option
-            break
-
-def SaveFromWindow(window):    
-    Settings.set_boolean("interface-toolbar", window.toolbar_visible)
-    Settings.set_boolean("interface-statusbar", window.statusbar_visible)
-    
-    hscrollbar = window.hscrollbar_placement
-    vscrollbar = window.vscrollbar_placement
-    Settings.set_enum("interface-horizontal-scrollbar", hscrollbar)
-    Settings.set_enum("interface-vertical-scrollbar", vscrollbar)
-    
-    Settings.set_boolean("auto-zoom", window.autozoom_enabled)
-    Settings.set_enum("auto-zoom-mode", window.autozoom_mode)
-    Settings.set_boolean("auto-zoom-minify", window.autozoom_can_minify)
-    Settings.set_boolean("auto-zoom-magnify", window.autozoom_can_magnify)
-    
-    fullscreen = window.get_fullscreen()
-    Settings.set_boolean("start-fullscreen", fullscreen)
+    settings_data = window.app.settings["window"].data
+    utility.SetPropertiesFromDict(
+        window, settings_data,
+        "autozoom-enabled", "autozoom-can-minify", "autozoom-can-magnify",
+        statusbar_visible="interface-statusbar",
+        toolbar_visible= "interface-toolbar",
+        hscrollbar_placement= "scrollbar-horizontal-placement",
+        vscrollbar_placement= "scrollbar-vertical-placement"
+    )
     
     try:
-        layout_codename = window.layout_option.codename
+        layout_codename = settings_data["layout-codename"]
+    except KeyError:
+        pass
+    else:
+        option_list = extending.LayoutOption.List
+        for an_option in option_list:
+            if an_option.codename == layout_codename:
+                window.layout_option = an_option
+                break
+
+def SaveFromWindow(window):
+    settings_data = window.app.settings["window"].data
+    utility.SetDictFromProperties(window, settings_data,
+        "autozoom-enabled", "autozoom-can-minify", "autozoom-can-magnify",
+        statusbar_visible="interface-statusbar",
+        toolbar_visible="interface-toolbar",
+        hscrollbar_placement="scrollbar-horizontal-placement",
+        vscrollbar_placement="scrollbar-vertical-placement"
+    )
+    
+    settings_data["start-fullscreen"] = window.get_fullscreen()
+    
+    try:
+        settings_data["layout-codename"] = window.layout_option.codename
     except Exception:
         pass
-        
-    else:
-        Settings.set_string("layout-codename", window.layout_option.codename)
+    
 
-
-def LoadForAlbum(album):
+def LoadForAlbum(album, app_settings=None, album_settings=None):
+    if not album_settings:
+        album_settings = album_settings or app_settings["album"]
+    
+    settings_data = album_settings.data
     album.freeze_notify()
+    utility.SetPropertiesFromDict(
+        album, settings_data, autosort="sort-auto", reverse="sort-reverse"
+    )
     try:
-        album.autosort = Settings.get_boolean("sort-auto")
-        album.reverse = Settings.get_boolean("sort-reverse")
-        
-        comparer_value = Settings.get_enum("sort-mode")
-        album.comparer = organization.SortingKeys.Enum[comparer_value]
-        
+        sort_mode = settings_data.get("sort-mode", 0)
+        album.comparer = organization.SortingKeys.Enum[sort_mode]
+    except KeyError:
+        pass
     finally:
         album.thaw_notify()
 
     
-def SaveFromAlbum(album):
-    Settings.set_boolean("sort-auto", album.autosort)
-    Settings.set_boolean("sort-reverse", album.reverse)
+def SaveFromAlbum(album, app_settings=None, album_settings=None):
+    if not album_settings:
+        album_settings = app_settings["album"]
     
-    comparer_value = organization.SortingKeys.Enum.index(album.comparer)
-    Settings.set_enum("sort-mode", comparer_value)    
+    settings_data = album_settings.data
+    settings_data["sort-auto"] = album.autosort
+    settings_data["sort-reverse"] = album.reverse
+    
+    sort_mode = organization.SortingKeys.Enum.index(album.comparer)
+    settings_data["sort-mode"] = sort_mode
 
 
-def LoadForView(view):
-    view.freeze_notify()
-    try:
-        # Load alignment
-        view.alignment_x = Settings.get_double("view-horizontal-alignment")
-        view.alignment_y = Settings.get_double("view-vertical-alignment")
-        
-        # Load interpolation filter settings
-        interp_min_value = Settings.get_enum("interpolation-minify")
-        interp_mag_value = Settings.get_enum("interpolation-magnify")
-        interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
-                      cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
-        view.minify_filter = interp_map[interp_min_value]
-        view.magnify_filter = interp_map[interp_mag_value]
+def LoadForView(view, app_settings=None, view_settings=None):
+    if not view_settings:
+        view_settings = app_settings["view"]
     
-    finally:
-        view.thaw_notify()
+    settings_data = view_settings.data
+    utility.SetPropertiesFromDict(
+        view, settings_data, "alignment-x", "alignment-y",
+        minify_filter="interpolation-minify",
+        magnify_filter="interpolation-magnify"
+    )
     
     
-def SaveFromView(view):
+def SaveFromView(view, app_settings=None, view_settings=None):
+    if not view_settings:
+        view_settings = app_settings["view"]
+    
+    settings_data = view_settings.data
     # Save alignment
-    Settings.set_double("view-horizontal-alignment", view.alignment_x)
-    Settings.set_double("view-vertical-alignment", view.alignment_y)
-    
-    # Save interpolation filter settings
-    interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
-                  cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
-    interp_min_value = interp_map.index(view.minify_filter)
-    interp_mag_value = interp_map.index(view.magnify_filter)
-    Settings.set_enum("interpolation-minify", interp_min_value)
-    Settings.set_enum("interpolation-magnify", interp_mag_value)
+    utility.SetDictFromProperties(
+        view, settings_data, "alignment-x", "alignment-y",
+        minify_filter="interpolation-minify",
+        magnify_filter="interpolation-magnify"
+    )
 
 
 def LoadMouseMechanismsSettings(meta_mouse_handler, mechanisms_settings):
