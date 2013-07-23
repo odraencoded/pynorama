@@ -57,7 +57,12 @@ class ImageViewer(Gtk.Application):
         self.settings.create_group("album")
         self.settings.create_group("view")
         self.settings.create_group("layout")
+        mouse_settings = self.settings.create_group("mouse")
         
+        self.settings.connect("save", self._save_settings)
+        self.settings.connect("load", self._load_settings)
+        mouse_settings.connect("save", self._save_mouse_settings)
+        mouse_settings.connect("load", self._load_mouse_settings)
         
     # --- Gtk.Application interface down this line --- #
     def do_startup(self):
@@ -67,10 +72,6 @@ class ImageViewer(Gtk.Application):
         self.components = extending.ComponentMap()
         for an_app_component in extending.LoadedComponentPackages:
             an_app_component.add_on(self)
-        
-        mouse_settings = self.settings.create_group("mouse")
-        mouse_settings.connect("save", self._save_mouse_settings)
-        mouse_settings.connect("load", self._load_mouse_settings)
         
         preferences.LoadForApp(self)
         
@@ -104,7 +105,7 @@ class ImageViewer(Gtk.Application):
     
     
     #-- Some properties down this line --#
-    zoom_effect = GObject.Property(type=float, default=2)
+    zoom_effect = GObject.Property(type=float, default=1.25)
     spin_effect = GObject.Property(type=float, default=90)
     
     def open_image_dialog(self, album, window=None):
@@ -404,6 +405,17 @@ class ImageViewer(Gtk.Application):
         pixelated_image = loading.PixbufDataImageSource(pixels, "Pixels")
         return [pixelated_image]
     
+    def _save_settings(self, app_settings):
+        utility.SetDictFromProperties(
+            self, self.settings.data,
+            "zoom-effect", "spin-effect"
+        )
+    
+    def _load_settings(self, app_settings):
+        utility.SetPropertiesFromDict(
+            self, self.settings.data,
+            "zoom-effect", "spin-effect"
+        )
     
     def _save_mouse_settings(self, mouse_settings):
         """Populates the .settings["mouse"] .data"""

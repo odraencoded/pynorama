@@ -16,18 +16,18 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
-from gi.repository import Gio, GLib, Gtk, Gdk, GObject
+from gi.repository import Gtk, GObject
 from gettext import gettext as _
-import cairo, math, os
+import os
 import extending, organization, notification, mousing, utility
-
-Settings = Gio.Settings("com.example.pynorama")
 
 class Dialog(Gtk.Dialog):
     def __init__(self, app):
-        Gtk.Dialog.__init__(self, _("Pynorama Preferences"), None,
+        Gtk.Dialog.__init__(
+            self, _("Pynorama Preferences"), None,
             Gtk.DialogFlags.DESTROY_WITH_PARENT,
-            (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
+            (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
+        )
         
         self.set_default_size(400, 400)
         self.app = app
@@ -756,9 +756,6 @@ class SettingsGroup(GObject.Object):
 
 
 def LoadForApp(app):
-    app.zoom_effect = Settings.get_double("zoom-effect")
-    app.spin_effect = Settings.get_int("rotation-effect")
-    
     try:
         # Directory is preferences.Directory
         json_path = join_path(app.preferences_directory, "preferences.json")
@@ -780,9 +777,6 @@ def LoadForApp(app):
         
         
 def SaveFromApp(app):
-    Settings.set_double("zoom-effect", app.zoom_effect)
-    Settings.set_int("rotation-effect", app.spin_effect)
-    
     try:
         os.makedirs(app.preferences_directory, exist_ok=True)
         
@@ -969,6 +963,9 @@ def GetMouseMechanismsSettings(meta_mouse_handler):
                 
             a_brand_mechanisms.append(a_mechanism_obj)
     return mechanism_objs
+
+from gi.repository import Gdk
+import math
 
 class PointScale(Gtk.DrawingArea):
     ''' A widget like a Gtk.HScale and Gtk.VScale together. '''
