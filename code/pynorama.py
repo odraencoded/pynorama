@@ -47,20 +47,28 @@ class ImageViewer(Gtk.Application):
         self.memory_check_queued = False
         self.meta_mouse_handler = mousing.MetaMouseHandler()
         self.meta_mouse_handler.connect(
-            "handler-removed", self._removed_mouse_handler)
+            "handler-removed", self._removed_mouse_handler
+        )
         
         self.mouse_handler_dialogs = dict()
+        
+        self.settings = preferences.SettingsGroup()
+        self.settings.create_group("window")
+        self.settings.create_group("album")
+        self.settings.create_group("view")
+        self.settings.create_group("layout")
         
         
     # --- Gtk.Application interface down this line --- #
     def do_startup(self):
         Gtk.Application.do_startup(self)
         
-        self.settings = preferences.SettingsGroup()
-        self.settings.create_settings_group("window")
-        self.settings.create_settings_group("album")
-        self.settings.create_settings_group("view")
-        mouse_settings = self.settings.create_settings_group("mouse")
+        # Setup components
+        self.components = extending.ComponentMap()
+        for an_app_component in extending.LoadedComponentPackages:
+            an_app_component.add_on(self)
+        
+        mouse_settings = self.settings.create_group("mouse")
         mouse_settings.connect("save", self._save_mouse_settings)
         mouse_settings.connect("load", self._load_mouse_settings)
         
@@ -541,34 +549,36 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.view.drag_dest_set_target_list(target_list)
         self.view.connect("drag-data-received", self.dragged_data)
         
+        
         # Setup layout stuff
         self.layout_dialog = None
-        self.avl = organization.AlbumViewLayout(album=self.album,
-                                                view=self.view)
+        self.avl = organization.AlbumViewLayout(
+            album=self.album, view=self.view
+        )
         
         self.avl.connect("notify::layout", self._layout_changed)
         self.avl.connect("focus-changed", self._focus_changed)
         
-        
         # Build layout menu
         self._layout_action_group = None
         self._layout_ui_merge_id = None
-        
         self._layout_options_merge_ids = dict()
-        optionList = extending.LayoutOption.List
+        self._layout_options_codenames = []
         
         other_option = self.actions.get_action("layout-other-option")
         other_option.connect("changed", self._layout_option_chosen)
         
-        for an_index, an_option in enumerate(optionList):
+        option_list = self.app.components["layout-option"]
+        for an_index, an_option in enumerate(option_list):
             a_merge_id = self.uimanager.new_merge_id()
             
             # create action
             an_action_name = "layout-option-" + an_option.codename
-            an_action = Gtk.RadioAction(an_action_name, an_option.name,
-                                        an_option.description,
-                                        None, an_index)
-                                        
+            an_action = Gtk.RadioAction(
+                an_action_name, an_option.label, an_option.description,
+                None, an_index
+            )
+            
             an_action.join_group(other_option)
             self.actions.add_action(an_action)
             
@@ -583,6 +593,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             )
             
             self._layout_options_merge_ids[an_option] = a_merge_id
+            self._layout_options_codenames.append(an_option.codename)
             
         # Bind properties
         bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
@@ -973,77 +984,75 @@ class ViewerWindow(Gtk.ApplicationWindow):
 
     
     def _layout_option_chosen(self, radio_action, current_action):
-        ''' Sets the layout-option property from the menu choices '''
+        """Handler for clicking on one of the layout option menu items"""
         current_value = current_action.get_current_value()
         
         if current_value >= 0:
-            self.layout_option = extending.LayoutOption.List[current_value]
-
+            option_codename = self._layout_options_codenames[current_value]
+            self.layout_option = self.app.components[
+                "layout-option", option_codename
+            ]
     
     def _changed_layout_option(self, *data):
-        ''' layout-option handler '''
+        """notify::layout-option signal handler"""
         current_layout = self.avl.layout
-        if not current_layout \
-           or current_layout.source_option != self.layout_option:
-            self.avl.layout = self.layout_option.create_layout()
+        if not current_layout or \
+               current_layout.source_option != self.layout_option:
+            current_layout = self.layout_option.create_layout(self.app)
+            current_layout.source_option = self.layout_option
+            self.avl.layout = current_layout
 
 
     def _layout_changed(self, *args):
-        ''' Handles a layout change in the avl  '''
-        layout = self.avl.layout
+        """notify::layout signal handler for .avl"""
         
-        try:
-            if self.layout_option != layout.source_option:
-                self.layout_option = layout.source_option
-                
-        except Exception:
-            pass
+        layout = self.avl.layout
+        source_option = layout.source_option
+        
+        # Synchronizing self.layout_option and layout.source_option
+        if self.layout_option != source_option:
+            self.layout_option = source_option
             
-        # Refresh the layout options
-        option_list = extending.LayoutOption.List
+        # Update the layout options menu with the current layout option index
+        codename_to_index = self._layout_options_codenames.index
+        try:
+            layout_option_index = codename_to_index(source_option.codename)
+        except Exception:
+            layout_option_index = -1
         other_option = self.actions.get_action("layout-other-option")
-        try:
-            option_index = option_list.index(layout.source_option)
-            
-        except Exception:
-            # The layout is not on the index, so we do something with the menu
-            other_option.set_current_value(-1)
-            
-        else:
-            # The layout is on the index, so we update the menu
-            other_option.set_current_value(option_index)
-            
+        other_option.set_current_value(layout_option_index)
+        
         # Destroy a possibly open layout settings dialog
         if self.layout_dialog:
             self.layout_dialog.destroy()
             self.layout_dialog = None
-            
-        # Turn "configure" menu item insensitive if the layout
-        # doesn't have a settings widget
-        configure = self.actions.get_action("layout-configure")
-        configure.set_sensitive(layout.has_settings_widget)
         
-        # Remove previosly merged ui from the menu
+        # Remove previosly merged ui/menu items from the menu
         if self._layout_action_group:
             self.uimanager.remove_action_group(self._layout_action_group)
             self.uimanager.remove_ui(self._layout_ui_merge_id)
+            self._layout_action_group = None
             self._layout_ui_merge_id = None
         
-        # Merge ui from layout
-        self._layout_action_group = layout.ui_action_group
-        if self._layout_action_group:
+        if source_option.has_menu_items:
+            # Adding action group
+            self._layout_action_group = source_option.get_action_group(layout)
             self.uimanager.insert_action_group(self._layout_action_group, -1)
+            
+            # Merging menu items
             merge_id = self.uimanager.new_merge_id()
             try:
-                layout.add_ui(self.uimanager, merge_id)
-                
+                source_option.add_ui(layout, self.uimanager, merge_id)
             except Exception:
                 notification.log_exception("Error adding layout UI")
                 self._layout_action_group = None
                 self.uimanager.remove_ui(merge_id)
-                
             else:
                 self._layout_ui_merge_id = merge_id
+        
+        # Set whether the "configure" menu item is sensitive
+        configure_action = self.actions.get_action("layout-configure")
+        configure_action.set_sensitive(source_option.has_settings_widget)
         
         
     def _toggled_vscroll(self, action, *data):
@@ -1462,30 +1471,34 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
         else:
             layout = self.avl.layout
+            source_option = layout.source_option
             flags = Gtk.DialogFlags
             try:
-                widget = layout.create_settings_widget()
-                widget.connect("destroy", self._layout_widget_destroyed, layout)
+                widget = source_option.create_settings_widget(layout)
+                widget.connect(
+                    "destroy", self._layout_widget_destroyed, layout
+                )
                 
             except Exception:
                 message = _("Could not create layout settings dialog!")
-                dialog = Gtk.MessageDialog(self,
-                             flags.MODAL | flags.DESTROY_WITH_PARENT,
-                             Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
-                             message)
-                             
+                dialog = Gtk.MessageDialog(
+                    self, flags.MODAL | flags.DESTROY_WITH_PARENT,
+                    Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
+                    message
+                )
+                
                 notification.log_exception(message)
                 dialog.run()
                 dialog.destroy()
             
             else:
-                dialog = Gtk.Dialog(_("Layout Settings"), self,
-                         flags.DESTROY_WITH_PARENT,
-                         (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
+                dialog = Gtk.Dialog(
+                    _("Layout Settings"), self, flags.DESTROY_WITH_PARENT,
+                    (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
+                )
                 
                 widget_pad = utility.PadDialogContent(widget)
                 widget_pad.show()
-                
                 content_area = dialog.get_content_area()
                 content_area.pack_start(widget_pad, True, True, 0)
                 
@@ -1493,19 +1506,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 dialog.present()
                 
                 self.layout_dialog = dialog
-
-
-    def _layout_widget_destroyed(self, widget, layout):
-        layout.save_preferences()
-
-
-    def _layout_dialog_response(self, *data):
-        self.layout_dialog.destroy()
-        self.layout_dialog = None
-
     
-    ''' Methods after this comment are actually kind of a big deal.
-        Do not rename them. '''
     
     def refresh_title(self, image=None):
         if image:
@@ -1520,7 +1521,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
         else:
             self.set_title(_("Pynorama"))
-            
+        
     
     def do_destroy(self, *data):
         # Saves this window preferences
@@ -1537,7 +1538,15 @@ class ViewerWindow(Gtk.ApplicationWindow):
         # Clean up the avl
         self.avl.clean()
         return Gtk.Window.do_destroy(self)
-        
+    
+    
+    def _layout_widget_destroyed(self, widget, layout):
+        layout.source_option.save_preferences(layout)
+    
+    def _layout_dialog_response(self, *data):
+        self.layout_dialog.destroy()
+        self.layout_dialog = None
+    
     
     def _image_added(self, album, image, index):
         image.lists += 1

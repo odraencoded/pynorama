@@ -180,8 +180,6 @@ class SortingKeys:
         ByImageSize, ByImageWidth, ByImageHeight
     ]
 
-from gi.repository import Gtk, Gio
-from gettext import gettext as _
 import point
 
 class AlbumViewLayout(GObject.Object):
@@ -255,11 +253,8 @@ class AlbumLayout:
         self.refresh_subscribers = utility.IdlyMethod(self.refresh_subscribers)
         self.refresh_subscribers.priority = GLib.PRIORITY_HIGH + 20
         
-        # This value should be the extending.LayoutOption the layout came from
+        # This value is set by the app when the layout is created
         self.source_option = None
-        
-        # Set this value to true if the layout has a settings dialog
-        self.has_settings_widget = False
         
         # Set this to a Gtk.ActionGroup to include custom menu items
         # into the ViewerWindow uimanager. You also have to implement
@@ -297,14 +292,12 @@ class AlbumLayout:
     def go_image(self, avl, image):
         ''' Lays out an image '''
         raise NotImplementedError
-    
-
+        
     def go_next(self, avl):
         focus = avl.focus_image
         next_image = avl.album.next(focus)
         avl.go_image(next_image)
-    
-
+        
     def go_previous(self, avl):
         focus = avl.focus_image
         previous_image = avl.album.previous(focus)
@@ -315,44 +308,22 @@ class AlbumLayout:
         ''' Set any initial variables in an AlbumViewLayout '''
         pass
         
-
     def clean(self, avl):
         ''' Reverse whatever was done at start '''
-        pass
-    
+        pass    
 
     def update(self, avl):
         ''' Propagate changes in a layout property to an avl '''
         pass
-        
-
-    def create_settings_widget(self):
-        ''' Creates a widget for configuring the layout '''
-        raise TypeError
 
 
-    def save_preferences(self):
-        ''' Saves the layout settings as the layout preferred values for
-            new layouts of this type.
-            Layout implementations without settings may ignore this. '''
-        pass
-    
-    
-    def add_ui(self, uimanager, merge_id):
-        ''' Adds ui into the uimanager using the specified merge_id.
-            This is only called if the ui_action_group is not None, in which
-            case ui_action_group is added automatically by the ViewerWindow. '''
-        
-        raise NotImplementedError
-        
+
 class SingleImageLayout(AlbumLayout):
     ''' Places a single album image in a view '''
     
     def __init__(self):
         AlbumLayout.__init__(self)
-        self.source_option = SingleImageLayout.Option
-
-
+        
     def start(self, avl):
         avl.current_image = None
         avl.current_frame = None
@@ -467,13 +438,16 @@ class LayoutDirection:
 class ImageStripLayout(GObject.Object, AlbumLayout):
     ''' Places a strip of album images, laid side by side, in a view '''
     
-    def __init__(self, direction=LayoutDirection.Down,
-                       loop=False, repeat=False, alignment=None,
-                       margin=(0, 0), space=(2560, 3840), limit=(40, 60)):
-        GObject.Object.__init__(self)
+    def __init__(self, margin=None, space=None, limit=None, **kwargs):
+        GObject.Object.__init__(self, **kwargs)
         AlbumLayout.__init__(self)
-        self.has_settings_widget = True
-        self.source_option = ImageStripLayout.Option
+        
+        if margin:
+            self.margin_before, self.margin_after = margin
+        if space:
+            self.space_before, self.space_after = space
+        if limit:
+            self.limit_before, self.limit_after = limit
         
         self.connect("notify::direction", self._direction_changed)
         self.connect("notify::repeat", self._placement_args_changed)
@@ -489,29 +463,15 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
         self.connect("notify::loop", self._loop_changed)
         self.connect("notify::repeat", self._repeat_changed)
         
-        self.freeze_notify()
+        # set internal methods
+        (
+            self._get_length, self._get_rect_distance,
+            self._place_before, self._place_after
+        ) = ImageStripLayout.DirectionMethods[self.direction]
         
-        self.direction = direction
-        
-        self.loop = loop
-        self.repeat = repeat
-        if alignment is not None:
-            self.alignment = alignment
-            self.own_alignment = True
-        
-        self.margin_before, self.margin_after = margin
-        self.space_before, self.space_after = space
-        self.limit_before, self.limit_after = limit
-        
-        self.thaw_notify()
-        self.setup_actions()
-        
-        
-    def create_settings_widget(self):
-        return ImageStripLayout.SettingsWidget(self)
         
     def update(self, avl):
-        self._update_sides(avl)        
+        self._update_sides(avl)
         self._reposition_frames(avl)
         
     def start(self, avl):
@@ -674,9 +634,10 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
     
     #-- Implementation detail down this line --#
     def _direction_changed(self, *data):
-        self._get_length, self._get_rect_distance, \
-             self._place_before, self._place_after = \
-                  ImageStripLayout.DirectionMethods[self.direction]
+        (
+            self._get_length, self._get_rect_distance,
+            self._place_before, self._place_after
+        ) = ImageStripLayout.DirectionMethods[self.direction]
         
         self.refresh_subscribers.queue()
     
@@ -1222,279 +1183,73 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
             _CoordinateToTop, _CoordinateToBottom
         )
     }
-    
-    # TODO: Get another ID for this
-    Preferences = Gio.Settings("com.example.pynorama.layouts.image-strip")
 
-    @staticmethod
-    def FromPreferences():
-        ''' Creates a ImageStripLayout with the preferred values '''
-        preferences = ImageStripLayout.Preferences
-        loop_mode = preferences.get_enum("appearance-loop-mode")
-        direction_value = preferences.get_enum("appearance-direction")
-        kwargs = {
-            "alignment" : preferences.get_double("appearance-alignment"),
-            "direction" : LayoutDirection.Enum[direction_value],
-            "loop" : loop_mode >= 1,
-            "repeat" : loop_mode == 2,
-            "margin" : (preferences.get_double("margin-before-center"),
-                        preferences.get_double("margin-after-center")),
-            "space" : (preferences.get_double("space-before-center"),
-                       preferences.get_double("space-after-center")),
-            "limit" : (preferences.get_int("limit-before-center"),
-                       preferences.get_int("limit-after-center"))
-        }
-        result = ImageStripLayout(**kwargs)
-        own_alignment = preferences.get_boolean("appearance-own-alignment")
-        result.own_alignment = own_alignment
+
+#~~~ Making the built-in layouts avaiable ~~~#
+import extending
+from gi.repository import Gtk
+from gettext import gettext as _
+
+class SingleImageLayoutOption(extending.LayoutOption):
+    def __init__(self):
+        extending.LayoutOption.__init__(self, "single-image")
+        self.label = _("Single Image")
+        self.description = _("Shows a single image")
+    
+    def create_layout(self, app):
+        return SingleImageLayout()
+    
+    
+
+class ImageStripLayoutOption(extending.LayoutOption):
+    def __init__(self):
+        extending.LayoutOption.__init__(self, "image-strip")
+        self.label = _("Image Strip")
+        self.description = _("Shows multiple images side by side")
+        self.has_settings_widget = True
+        self.has_menu_items = True
+        
+    def create_layout(self, app):
+        result = ImageStripLayout()
+        result.app = app
+        result._action_group = None
+        
+        # load preferences
+        preferences = app.settings["layout", "image-strip"].data
+        utility.SetPropertiesFromDict(
+            result, preferences,
+            "alignment", "direction", "loop", "repeat",
+            "margin-before", "margin-after",
+            "space-before", "space-after",
+            "limit-before", "limit-after",
+            "own-alignment"
+        )
         return result
-
-
-    def save_preferences(self):
-        preferences = ImageStripLayout.Preferences
-        preferences.set_boolean("appearance-own-alignment", self.own_alignment)
-        preferences.set_double("appearance-alignment", self.alignment)
-        
-        direction_enum = LayoutDirection.Enum.index(self.direction)
-        preferences.set_enum("appearance-direction", direction_enum)
-        
-        loop_mode = (2 if self.repeat else 1) if self.loop else 0
-        preferences.set_enum("appearance-loop-mode", loop_mode)
-        
-        preferences.set_double("margin-before-center", self.margin_before)
-        preferences.set_double("margin-after-center", self.margin_after)
-        preferences.set_double("space-before-center", self.space_before)
-        preferences.set_double("space-after-center", self.space_after)
-        preferences.set_int("limit-before-center", self.limit_before)
-        preferences.set_int("limit-after-center", self.limit_after)
-
-
-    class SettingsWidget(Gtk.Notebook):
-        ''' A widget for configuring a ImageStripLayout '''
-        def __init__(self, layout):
-            Gtk.Notebook.__init__(self)
-            
-            self.layout = layout    
-            line_args = {
-                "orientation": Gtk.Orientation.HORIZONTAL,
-                "spacing": 24
-            }
-                        
-            #-- Create direction widgets --#
-            label = _("Image strip direction")
-            direction_label = Gtk.Label(label)
-            direction_tooltip = _('''\
-The images that come after the center image are placed \
-towards this direction''')
-            
-            direction_model = Gtk.ListStore(str, str)
-            
-            direction_model.append([LayoutDirection.Up, _("Up")])
-            direction_model.append([LayoutDirection.Right, _("Right")])
-            direction_model.append([LayoutDirection.Down, _("Down")])
-            direction_model.append([LayoutDirection.Left, _("Left")])
-            
-            #-- Create combobox --#
-            direction_selector = Gtk.ComboBox.new_with_model(direction_model)
-            direction_selector.set_id_column(0)
-            direction_selector.set_tooltip_text(direction_tooltip)
-            
-            #-- Add text renderer --#
-            text_renderer = Gtk.CellRendererText()
-            direction_selector.pack_start(text_renderer, True)
-            direction_selector.add_attribute(text_renderer, "text", 1)
-            
-            #-- Alignment --#
-            label = _("Use own alignment")
-            tooltip = _('''Whether to use a different alignment for \
-the layout images than the general view alignment''')
-            
-            alignment_button = Gtk.CheckButton(label)
-            alignment_adjust = Gtk.Adjustment(.5, 0, 1, .1, .25)
-            alignment_scale = Gtk.Scale(adjustment=alignment_adjust)
-            alignment_scale.set_draw_value(False)
-            
-            alignment_button.set_tooltip_text(tooltip)
-            
-            #-- Loop checkbox --#
-            label = _("Loop around the album")
-            loop_tooltip = _('''\
-Place the first image of an album after the last, and vice versa''')
-            loop_button = Gtk.CheckButton.new_with_label(label)
-            loop_button.set_tooltip_text(loop_tooltip)
-            
-            #-- Repeat checkbox --#
-            label = _("Repeat the album images")
-            repeat_tooltip = _('''\
-In albums with few, small images, repeat those images indefinetely''')
-            repeat_button = Gtk.CheckButton.new_with_label(label)
-            repeat_button.set_tooltip_text(repeat_tooltip)
-            
-            #-- Pixel margin --#
-            margin_tooltip = _('''Margin means distance''')
-
-            label = _("Margin between images before the center")
-            margin_before_label = Gtk.Label(label)
-            margin_before_adjust = Gtk.Adjustment(0, 0, 512, 8, 64)
-            margin_before_entry = Gtk.SpinButton(
-                                      adjustment=margin_before_adjust)
-            margin_before_entry.set_tooltip_text(margin_tooltip)
-            
-            label = _("Margin between images after the center")
-            margin_after_label = Gtk.Label(label)
-            margin_after_adjust = Gtk.Adjustment(0, 0, 512, 8, 64)
-            margin_after_entry = Gtk.SpinButton(adjustment=margin_after_adjust)
-            margin_after_entry.set_tooltip_text(margin_tooltip)
-            
-            #-- Performance stuff --#
-            label = _('''\
-These settings affect how many images are laid out at the same time.
-If you are having performance problems, consider decreasing these values.''')
-            performance_label = Gtk.Label(label)
-                        
-            #-- Pixel target --#
-            space_tooltip = _('''A good value is around twice your \
-screen height or width, depending on the strip direction''')
-
-            label = _("Pixels to fill before the center")
-            space_before_label = Gtk.Label(label)
-            space_before_entry, space_before_adjust = utility.SpinAdjustment(
-                 0, 0, 8192, 32, 256, align=True,
-             )
-            space_before_entry.set_tooltip_text(space_tooltip)
-            
-            label = _("Pixels to fill after the center")
-            space_after_label = Gtk.Label(label)
-            space_after_entry, space_after_adjust = utility.SpinAdjustment(
-                0, 0, 8192, 32, 256, align=True,
-            )
-            space_after_entry.set_tooltip_text(space_tooltip)
-            
-            # Count limits
-            limits_tooltip = _('''\
-This is only useful if the images being laid out \
-are too small to breach the pixel count limit''')
-                        
-            label = _("Image limit before the center")
-            limit_before_label = Gtk.Label(label)
-            limit_before_entry, limit_before_adjust = utility.SpinAdjustment(
-                0, 0, 512, 1, 10, align=True)
-            limit_before_entry.set_tooltip_text(limits_tooltip)
-            
-            label = _("Image limit after the center")
-            limit_after_label = Gtk.Label(label)
-            limit_after_entry, limit_after_adjust = utility.SpinAdjustment(
-                0, 0, 512, 1, 10, align=True)
-            limit_after_entry.set_tooltip_text(limits_tooltip)
-            
-            # Bind properties
-            direction_selector.connect(
-                "changed", self._refresh_marks, alignment_scale)
-            utility.Bind(self.layout,
-                ("direction", direction_selector, "active-id"),
-                ("own-alignment", alignment_button, "active"),
-                ("alignment", alignment_adjust, "value"),
-                ("loop", loop_button, "active"),
-                ("repeat", repeat_button, "active"),
-                ("margin-before", margin_before_adjust, "value"),
-                ("margin-after", margin_after_adjust, "value"),
-                ("limit-before", limit_before_adjust, "value"),
-                ("limit-after", limit_after_adjust, "value"),
-                ("space-before", space_before_adjust, "value"),
-                ("space-after", space_after_adjust, "value"),
-                ("own-alignment", alignment_scale, "sensitive"),
-                bidirectional=True, synchronize=True
-            )
-            
-            # Add tabs, pack lines
-            def add_tab(self, label):
-                gtk_label = Gtk.Label(label)
-                box = utility.WidgetStack()
-                box_pad = utility.PadNotebookContent(box)
-                self.append_page(box_pad, gtk_label)
-                return box
-            
-            left_aligned_labels = [
-                direction_label,
-                margin_before_label, margin_after_label,
-                performance_label,
-                space_before_label, space_after_label,
-                limit_before_label, limit_after_label]
-                
-            for label in left_aligned_labels:
-                label.set_alignment(0, .5)
-                
-            direction_label.set_hexpand(True)
-            space_before_label.set_hexpand(True)
-            performance_label.set_line_wrap(True)
-            
-            appearance_grid = utility.WidgetGrid(
-                (direction_label, direction_selector),
-                (alignment_button, alignment_scale)
-            )
-            
-            appearance_grid.attach(Gtk.Separator(), 0, 2, 2, 1)
-            utility.WidgetGrid(
-                (margin_before_label, margin_before_entry),
-                (margin_after_label, margin_after_entry),
-                grid=appearance_grid, start_row=3
-            )
-            
-            appearance_grid.attach(Gtk.Separator(), 0, 5, 2, 1)
-            loop_line = utility.WidgetLine(loop_button, repeat_button)
-            appearance_grid.attach(loop_line, 0, 6, 2, 1)
-            
-            performance_grid = utility.WidgetGrid()
-            performance_grid.attach(performance_label, 0, 0, 2, 1)
-            
-            performance_grid.attach(Gtk.Separator(), 0, 1, 2, 1)
-            utility.WidgetGrid(
-                (space_before_label, space_before_entry),
-                (space_after_label, space_after_entry),
-                grid=performance_grid, start_row=2,
-            )
-            
-            performance_grid.attach(Gtk.Separator(), 0, 4, 2, 1)
-            utility.WidgetGrid(
-                (limit_before_label, limit_before_entry),
-                (limit_after_label, limit_after_entry),
-                grid=performance_grid, start_row=5,
-            )
-            
-            appearance_pad = utility.PadNotebookContent(appearance_grid)
-            performance_pad = utility.PadNotebookContent(performance_grid)
-                
-            label = _("Appearance")
-            appearance_label = Gtk.Label(label)
-            self.append_page(appearance_pad, appearance_label)
-            
-            label = _("Performance")
-            performance_label = Gtk.Label(label)
-            self.append_page(performance_pad, performance_label)
-            
-            self.show_all()
-            
-        def _refresh_marks(self, combobox, scale):
-            scale.clear_marks()
-            active_id = combobox.get_active_id()
-            if active_id in ("left", "right"):
-                scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Top"))
-                scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Middle"))
-                scale.add_mark(1, Gtk.PositionType.BOTTOM, _("Bottom"))
-                    
-            else:
-                scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Left"))
-                scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Center"))
-                scale.add_mark(1, Gtk.PositionType.BOTTOM, _("Right"))
     
     
-    def add_ui(self, uimanager, merge_id):
+    def save_preferences(self, layout):
+        preferences = layout.app.settings["layout", "image-strip"].data
+        
+        utility.SetDictFromProperties(
+            layout, preferences,
+            "alignment", "direction", "loop", "repeat",
+            "margin-before", "margin-after",
+            "space-before", "space-after",
+            "limit-before", "limit-after",
+            "own-alignment"
+        )
+    
+    def create_settings_widget(self, layout):
+        return ImageStripLayoutSettingsWidget(layout)
+        
+    def add_ui(self, layout, uimanager, merge_id):
         placeholder_path = "/ui/menubar/view/layout/layout-configure-menu"
         
         direction_name = "image-strip-layout-direction"
-        uimanager.add_ui(merge_id, placeholder_path,
-                         direction_name, direction_name,
-                         Gtk.UIManagerItemType.MENU, False)
+        uimanager.add_ui(
+            merge_id, placeholder_path, direction_name, direction_name,
+            Gtk.UIManagerItemType.MENU, False
+        )
         ui_list = [
             (placeholder_path, [
                 "image-strip-layout-loop",
@@ -1508,25 +1263,30 @@ are too small to breach the pixel count limit''')
             ]),
         ]
         
-        def add_some_ui(path, name):
-            pass
-        
         for a_path, a_name_list in ui_list:
             for a_name in a_name_list:
-                uimanager.add_ui(merge_id, a_path, a_name, a_name,
-                                 Gtk.UIManagerItemType.MENUITEM, False)
+                uimanager.add_ui(
+                    merge_id, a_path, a_name, a_name,
+                    Gtk.UIManagerItemType.MENUITEM, False
+                )
+    
+    def get_action_group(self, layout):
+        if layout._action_group is None:
+            self._setup_actions(layout)
+            
+        return layout._action_group
+    
+    def _setup_actions(self, layout):
+        actions = layout._action_group = Gtk.ActionGroup("image-strip-layout")
         
-    def setup_actions(self):
-        actions = self.ui_action_group = Gtk.ActionGroup("image-strip-layout")
-        
-        def direction_chosen(action, current_action, self):
+        def direction_chosen(action, current_action, layout):
             current_value = current_action.get_current_value()
             new_value = LayoutDirection.Enum[current_value]
-            if self.direction != new_value:
-                self.direction = new_value
+            if layout.direction != new_value:
+                layout.direction = new_value
                 
-        def direction_changed(self, something, some_action):
-            direction_value = LayoutDirection.Enum.index(self.direction)
+        def direction_changed(layout, something, some_action):
+            direction_value = LayoutDirection.Enum.index(layout.direction)
             some_action.set_current_value(direction_value)
             
         
@@ -1550,7 +1310,7 @@ are too small to breach the pixel count limit''')
         ]
         
         signaling_params = {
-            "image-strip-layout-direction-up" : (direction_chosen, self)
+            "image-strip-layout-direction-up" : (direction_chosen, layout)
         }
         
         loop_group, direction_group = [], []
@@ -1577,8 +1337,9 @@ are too small to breach the pixel count limit''')
                     # Group data = RadioAction
                     signal_name = "changed"
                     radio_value, group_list = group_data
-                    an_action = Gtk.RadioAction(name, label, tip, stock,
-                                                radio_value)
+                    an_action = Gtk.RadioAction(
+                        name, label, tip, stock, radio_value
+                    )
                     # Join the group of last radioaction in the list
                     if group_list:
                         an_action.join_group(group_list[-1])
@@ -1598,41 +1359,250 @@ are too small to breach the pixel count limit''')
         loop_action = actions.get_action("image-strip-layout-loop")
         repeat_action = actions.get_action("image-strip-layout-repeat")
         
-        utility.Bind(self, 
+        utility.Bind(
+            layout, 
             ("loop", loop_action, "active"),
             ("repeat", repeat_action, "active"),
             bidirectional=True, synchronize=True
         )
         
         up_option = actions.get_action("image-strip-layout-direction-up")
-        self.connect("notify::direction", direction_changed, up_option)
-        direction_value = LayoutDirection.Enum.index(self.direction)
+        layout.connect("notify::direction", direction_changed, up_option)
+        direction_value = LayoutDirection.Enum.index(layout.direction)
         up_option.set_current_value(direction_value)
+
+
+class ImageStripLayoutSettingsWidget(Gtk.Notebook):
+    ''' A widget for configuring a ImageStripLayout '''
+    def __init__(self, layout):
+        Gtk.Notebook.__init__(self)
         
+        self.layout = layout    
+        line_args = {
+            "orientation": Gtk.Orientation.HORIZONTAL,
+            "spacing": 24
+        }
+                    
+        #-- Create direction widgets --#
+        label = _("Image strip direction")
+        direction_label = Gtk.Label(label)
+        direction_tooltip = _('''\
+The images that come after the center image are placed \
+towards this direction''')
         
-#--- Making the built-in layouts avaiable ---#
-from extending import LayoutOption
+        direction_model = Gtk.ListStore(str, str)
+        
+        direction_model.append([LayoutDirection.Up, _("Up")])
+        direction_model.append([LayoutDirection.Right, _("Right")])
+        direction_model.append([LayoutDirection.Down, _("Down")])
+        direction_model.append([LayoutDirection.Left, _("Left")])
+        
+        #-- Create combobox --#
+        direction_selector = Gtk.ComboBox.new_with_model(direction_model)
+        direction_selector.set_id_column(0)
+        direction_selector.set_tooltip_text(direction_tooltip)
+        
+        #-- Add text renderer --#
+        text_renderer = Gtk.CellRendererText()
+        direction_selector.pack_start(text_renderer, True)
+        direction_selector.add_attribute(text_renderer, "text", 1)
+        
+        #-- Alignment --#
+        label = _("Use own alignment")
+        tooltip = _('''Whether to use a different alignment for \
+the layout images than the general view alignment''')
+        
+        alignment_button = Gtk.CheckButton(label)
+        alignment_adjust = Gtk.Adjustment(.5, 0, 1, .1, .25)
+        alignment_scale = Gtk.Scale(adjustment=alignment_adjust)
+        alignment_scale.set_draw_value(False)
+        
+        alignment_button.set_tooltip_text(tooltip)
+        
+        #-- Loop checkbox --#
+        label = _("Loop around the album")
+        loop_tooltip = _('''\
+Place the first image of an album after the last, and vice versa''')
+        loop_button = Gtk.CheckButton.new_with_label(label)
+        loop_button.set_tooltip_text(loop_tooltip)
+        
+        #-- Repeat checkbox --#
+        label = _("Repeat the album images")
+        repeat_tooltip = _('''\
+In albums with few, small images, repeat those images indefinetely''')
+        repeat_button = Gtk.CheckButton.new_with_label(label)
+        repeat_button.set_tooltip_text(repeat_tooltip)
+        
+        #-- Pixel margin --#
+        margin_tooltip = _('''Margin means distance''')
 
-# Setup single image layout option
-SingleImageLayout.Option = LayoutOption(
-    codename="single-image",
-    name=_("Single Image"),
-    description=_("Shows a single image")
-)
+        label = _("Margin between images before the center")
+        margin_before_label = Gtk.Label(label)
+        margin_before_adjust = Gtk.Adjustment(0, 0, 512, 8, 64)
+        margin_before_entry = Gtk.SpinButton(
+                                  adjustment=margin_before_adjust)
+        margin_before_entry.set_tooltip_text(margin_tooltip)
+        
+        label = _("Margin between images after the center")
+        margin_after_label = Gtk.Label(label)
+        margin_after_adjust = Gtk.Adjustment(0, 0, 512, 8, 64)
+        margin_after_entry = Gtk.SpinButton(adjustment=margin_after_adjust)
+        margin_after_entry.set_tooltip_text(margin_tooltip)
+        
+        #-- Performance stuff --#
+        label = _('''\
+These settings affect how many images are laid out at the same time.
+If you are having performance problems, consider decreasing these values.''')
+        performance_label = Gtk.Label(label)
+                    
+        #-- Pixel target --#
+        space_tooltip = _('''A good value is around twice your \
+screen height or width, depending on the strip direction''')
 
-SingleImageLayout.Option.create_layout = SingleImageLayout
+        label = _("Pixels to fill before the center")
+        space_before_label = Gtk.Label(label)
+        space_before_entry, space_before_adjust = utility.SpinAdjustment(
+             0, 0, 8192, 32, 256, align=True,
+         )
+        space_before_entry.set_tooltip_text(space_tooltip)
+        
+        label = _("Pixels to fill after the center")
+        space_after_label = Gtk.Label(label)
+        space_after_entry, space_after_adjust = utility.SpinAdjustment(
+            0, 0, 8192, 32, 256, align=True,
+        )
+        space_after_entry.set_tooltip_text(space_tooltip)
+        
+        # Count limits
+        limits_tooltip = _('''\
+This is only useful if the images being laid out \
+are too small to breach the pixel count limit''')
+                    
+        label = _("Image limit before the center")
+        limit_before_label = Gtk.Label(label)
+        limit_before_entry, limit_before_adjust = utility.SpinAdjustment(
+            0, 0, 512, 1, 10, align=True)
+        limit_before_entry.set_tooltip_text(limits_tooltip)
+        
+        label = _("Image limit after the center")
+        limit_after_label = Gtk.Label(label)
+        limit_after_entry, limit_after_adjust = utility.SpinAdjustment(
+            0, 0, 512, 1, 10, align=True)
+        limit_after_entry.set_tooltip_text(limits_tooltip)
+        
+        # Bind properties
+        direction_selector.connect(
+            "changed", self._refresh_marks, alignment_scale)
+        utility.Bind(self.layout,
+            ("direction", direction_selector, "active-id"),
+            ("own-alignment", alignment_button, "active"),
+            ("alignment", alignment_adjust, "value"),
+            ("loop", loop_button, "active"),
+            ("repeat", repeat_button, "active"),
+            ("margin-before", margin_before_adjust, "value"),
+            ("margin-after", margin_after_adjust, "value"),
+            ("limit-before", limit_before_adjust, "value"),
+            ("limit-after", limit_after_adjust, "value"),
+            ("space-before", space_before_adjust, "value"),
+            ("space-after", space_after_adjust, "value"),
+            ("own-alignment", alignment_scale, "sensitive"),
+            bidirectional=True, synchronize=True
+        )
+        
+        # Add tabs, pack lines
+        def add_tab(self, label):
+            gtk_label = Gtk.Label(label)
+            box = utility.WidgetStack()
+            box_pad = utility.PadNotebookContent(box)
+            self.append_page(box_pad, gtk_label)
+            return box
+        
+        left_aligned_labels = [
+            direction_label,
+            margin_before_label, margin_after_label,
+            performance_label,
+            space_before_label, space_after_label,
+            limit_before_label, limit_after_label]
+            
+        for label in left_aligned_labels:
+            label.set_alignment(0, .5)
+            
+        direction_label.set_hexpand(True)
+        space_before_label.set_hexpand(True)
+        performance_label.set_line_wrap(True)
+        
+        appearance_grid = utility.WidgetGrid(
+            (direction_label, direction_selector),
+            (alignment_button, alignment_scale)
+        )
+        
+        appearance_grid.attach(Gtk.Separator(), 0, 2, 2, 1)
+        utility.WidgetGrid(
+            (margin_before_label, margin_before_entry),
+            (margin_after_label, margin_after_entry),
+            grid=appearance_grid, start_row=3
+        )
+        
+        appearance_grid.attach(Gtk.Separator(), 0, 5, 2, 1)
+        loop_line = utility.WidgetLine(loop_button, repeat_button)
+        appearance_grid.attach(loop_line, 0, 6, 2, 1)
+        
+        performance_grid = utility.WidgetGrid()
+        performance_grid.attach(performance_label, 0, 0, 2, 1)
+        
+        performance_grid.attach(Gtk.Separator(), 0, 1, 2, 1)
+        utility.WidgetGrid(
+            (space_before_label, space_before_entry),
+            (space_after_label, space_after_entry),
+            grid=performance_grid, start_row=2,
+        )
+        
+        performance_grid.attach(Gtk.Separator(), 0, 4, 2, 1)
+        utility.WidgetGrid(
+            (limit_before_label, limit_before_entry),
+            (limit_after_label, limit_after_entry),
+            grid=performance_grid, start_row=5,
+        )
+        
+        appearance_pad = utility.PadNotebookContent(appearance_grid)
+        performance_pad = utility.PadNotebookContent(performance_grid)
+            
+        label = _("Appearance")
+        appearance_label = Gtk.Label(label)
+        self.append_page(appearance_pad, appearance_label)
+        
+        label = _("Performance")
+        performance_label = Gtk.Label(label)
+        self.append_page(performance_pad, performance_label)
+        
+        self.show_all()
+        
+    def _refresh_marks(self, combobox, scale):
+        scale.clear_marks()
+        active_id = combobox.get_active_id()
+        if active_id in ("left", "right"):
+            scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Top"))
+            scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Middle"))
+            scale.add_mark(1, Gtk.PositionType.BOTTOM, _("Bottom"))
+                
+        else:
+            scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Left"))
+            scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Center"))
+            scale.add_mark(1, Gtk.PositionType.BOTTOM, _("Right"))
 
+class BuiltInLayouts(extending.ComponentPackage):
+    @staticmethod
+    def add_on(app):
+        components = app.components
+        components.add_category("layout-option", "Layout Option")
+        
+        # Create and add the single image layout option
+        single_image_option = SingleImageLayoutOption()
+        components.add("layout-option", single_image_option)
+        
+        # Create and add the image strip layout option
+        app.settings.get_groups("layout", "image-strip", create=True)
+        image_strip_option = ImageStripLayoutOption()
+        components.add("layout-option", image_strip_option)
 
-# Setup image strip layout option
-ImageStripLayout.Option = LayoutOption(
-    codename="image-strip",
-    name=_("Image Strip"),
-    description=_("Shows many images side by side")
-)
-
-ImageStripLayout.Option.create_layout = ImageStripLayout.FromPreferences
-
-
-# Append options
-LayoutOption.List.append(SingleImageLayout.Option)
-LayoutOption.List.append(ImageStripLayout.Option)
+extending.LoadedComponentPackages.add(BuiltInLayouts)

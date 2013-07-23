@@ -671,14 +671,37 @@ class SettingsGroup(GObject.Object):
     
     def __getitem__(self, codename):
         """Returns a subgroup under codename"""
-        return self._subgroups[codename]
+        if isinstance(codename, tuple):
+            return self.get_groups(*codename)[-1]
+        else:
+            return self._subgroups[codename]
     
-    def create_settings_group(self, codename):
+    def get_groups(self, *some_codenames, create=False):
+        """Returns a list of settings groups children of this group"""
+        result = []
+        a_group = self
+        for a_codename in some_codenames:
+            some_subgroups = a_group._subgroups
+            try:
+                a_group = some_subgroups[a_codename]
+            except KeyError:
+                if create:
+                    some_subgroups[a_codename] = a_group = SettingsGroup()
+                    
+                else:
+                    raise
+            
+            result.append(a_group)
+            
+        return result
+        
+    def create_group(self, codename):
         """Creates and returns a subgroup using codename as key.
         
         KeyError is raised if a subgroup already exists under the same codename
         
         """
+        
         if codename in self._subgroups:
             raise KeyError
         
@@ -794,14 +817,11 @@ def LoadForWindow(window):
     
     try:
         layout_codename = settings_data["layout-codename"]
-    except KeyError:
+        layout_option = window.app.components["layout-option", layout_codename]
+    except Exception:
         pass
     else:
-        option_list = extending.LayoutOption.List
-        for an_option in option_list:
-            if an_option.codename == layout_codename:
-                window.layout_option = an_option
-                break
+        window.layout_option = layout_option
 
 def SaveFromWindow(window):
     settings_data = window.app.settings["window"].data
