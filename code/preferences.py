@@ -16,18 +16,18 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
-from gi.repository import Gio, GLib, Gtk, Gdk, GObject
+from gi.repository import Gtk, GObject
 from gettext import gettext as _
-import cairo, math, os
+import os
 import extending, organization, notification, mousing, utility
-
-Settings = Gio.Settings("com.example.pynorama")
 
 class Dialog(Gtk.Dialog):
     def __init__(self, app):
-        Gtk.Dialog.__init__(self, _("Pynorama Preferences"), None,
+        Gtk.Dialog.__init__(
+            self, _("Pynorama Preferences"), None,
             Gtk.DialogFlags.DESTROY_WITH_PARENT,
-            (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
+            (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
+        )
         
         self.set_default_size(400, 400)
         self.app = app
@@ -637,10 +637,125 @@ def GetMouseHandlerLabel(handler, default=""):
 import json
 from os.path import join as join_path
 
-def LoadForApp(app):
-    app.zoom_effect = Settings.get_double("zoom-effect")
-    app.spin_effect = Settings.get_int("rotation-effect")
+
+class SettingsGroup(GObject.Object):
+    """An object for storing application settings in.
     
+    This object is serialized into JSON as one single object using
+    key/values from .data and then codename/settings from its subgroups.
+    
+    On application start up, any and all extensions that use the preferences
+    module should create a settings group using create_settings_group
+    and connect the "load" signal.
+    
+    The "save" signal is called before saving. It's a good idea to populate
+    .data with data that can't be mapped to a dictionary using that signal.
+    
+    For most cases, the settings data should be stored in the .data.
+    A subgroup should only be created for supporting extensions in that
+    settings namespace.
+    
+    """
+    
+    __gsignals__ = {
+        "save": (GObject.SIGNAL_NO_HOOKS, None, []),
+        "load": (GObject.SIGNAL_NO_HOOKS, None, [])
+    }
+    
+    
+    def __init__(self):
+        GObject.Object.__init__(self)
+        self._subgroups = {}
+        self.data = {}
+    
+    
+    def __getitem__(self, codename):
+        """Returns a subgroup under codename"""
+        if isinstance(codename, tuple):
+            return self.get_groups(*codename)[-1]
+        else:
+            return self._subgroups[codename]
+    
+    def get_groups(self, *some_codenames, create=False):
+        """Returns a list of settings groups children of this group"""
+        result = []
+        a_group = self
+        for a_codename in some_codenames:
+            some_subgroups = a_group._subgroups
+            try:
+                a_group = some_subgroups[a_codename]
+            except KeyError:
+                if create:
+                    some_subgroups[a_codename] = a_group = SettingsGroup()
+                    
+                else:
+                    raise
+            
+            result.append(a_group)
+            
+        return result
+        
+    def create_group(self, codename):
+        """Creates and returns a subgroup using codename as key.
+        
+        KeyError is raised if a subgroup already exists under the same codename
+        
+        """
+        
+        if codename in self._subgroups:
+            raise KeyError
+        
+        new_group = SettingsGroup()
+        self._subgroups[codename] = new_group
+        return new_group
+        
+    
+    #~ A bunch of recursive methods down this line ~#
+    def set_all_data(self, data):
+        """Sets its .data and its subgroups .data from a dictionary
+        
+        If a key in the dictionary is a subgroup codename, then the key will
+        be removed from the dictionary and the value of that key is used to
+        set the subgroup .data
+        
+        """
+        some_codename_keys = self._subgroups.keys() & data.keys()
+        for a_codename_key in some_codename_keys:
+            a_subdata = data.pop(a_codename_key)
+            a_subgroup = self._subgroups[a_codename_key]
+            a_subgroup.set_all_data(a_subdata)
+            
+        self.data = data
+    
+    def get_all_data(self):
+        """Returns a dict combining its .data with all its subgroups .data
+        
+        If a key in .data is also a subgroup codename, the subgroup.data
+        will replace that key value.
+        
+        """
+        all_dat_data = dict(self.data)
+        
+        for a_codename, a_subgroup in self._subgroups.items():
+            all_dat_data[a_codename] = a_subgroup.get_all_data()
+        
+        return all_dat_data
+    
+    
+    def save_everything(self):
+        """Emits a "save" signal to it self and its subgroups"""
+        self.emit("save")
+        for a_subgroup in self._subgroups.values():
+            a_subgroup.save_everything()
+    
+    def load_everything(self):
+        """Emits a "load" signal to it self and its subgroups"""
+        self.emit("load")
+        for a_subgroup in self._subgroups.values():
+            a_subgroup.load_everything()
+
+
+def LoadForApp(app):
     try:
         # Directory is preferences.Directory
         json_path = join_path(app.preferences_directory, "preferences.json")
@@ -651,158 +766,135 @@ def LoadForApp(app):
         try:
             with open(json_path) as prefs_file:
                 root_obj = json.load(prefs_file)
-            
         except Exception:
             notification.log_exception("Failed to load preferences file")
-        
         else:
-            mouse_obj = root_obj.get("mouse", None)
-            if mouse_obj:
-                LoadMouseSettings(app, mouse_obj)
+            app.settings.set_all_data(root_obj)
+            app.settings.load_everything()
             
     except Exception:
         notification.log_exception("Couldn't load mouse handler preferences")
         
         
 def SaveFromApp(app):
-    Settings.set_double("zoom-effect", app.zoom_effect)
-    Settings.set_int("rotation-effect", app.spin_effect)
-    
     try:
         os.makedirs(app.preferences_directory, exist_ok=True)
         
     except FileExistsError:
+        # For whatever reason, this still can happen
         pass
     
     json_path = join_path(app.preferences_directory, "preferences.json")
     try:
-        root_obj = {}
-        root_obj["mouse"] = GetMouseSettings(app)
+        app.settings.save_everything()
+        settings_data = app.settings.get_all_data()
         
         with open(json_path, "w") as prefs_file:
             json.dump(
-                root_obj, prefs_file,
-                sort_keys=True, indent="\t", separators=(",", ": ")
+                settings_data, prefs_file,
+                sort_keys=True, indent=4, separators=(",", ": ")
             )
             
     except Exception:
         notification.log_exception("Couldn't save mouse handler preferences")
 
-
-def LoadForWindow(window):    
-    window.toolbar_visible = Settings.get_boolean("interface-toolbar")
-    window.statusbar_visible = Settings.get_boolean("interface-statusbar")
-    
-    hscrollbar = Settings.get_enum("interface-horizontal-scrollbar")
-    vscrollbar = Settings.get_enum("interface-vertical-scrollbar")
-    window.hscrollbar_placement = hscrollbar
-    window.vscrollbar_placement = vscrollbar
-    
-    auto_zoom = Settings.get_boolean("auto-zoom")
-    auto_zoom_minify = Settings.get_boolean("auto-zoom-minify")
-    auto_zoom_magnify = Settings.get_boolean("auto-zoom-magnify")
-    auto_zoom_mode = Settings.get_enum("auto-zoom-mode")
-    
-    window.set_auto_zoom_mode(auto_zoom_mode)
-    window.set_auto_zoom(auto_zoom, auto_zoom_minify, auto_zoom_magnify)
-    
-    layout_codename = Settings.get_string("layout-codename")
-    
-    option_list = extending.LayoutOption.List
-    for an_option in option_list:
-        if an_option.codename == layout_codename:
-            window.layout_option = an_option
-            break
-
-def SaveFromWindow(window):    
-    Settings.set_boolean("interface-toolbar", window.toolbar_visible)
-    Settings.set_boolean("interface-statusbar", window.statusbar_visible)
-    
-    hscrollbar = window.hscrollbar_placement
-    vscrollbar = window.vscrollbar_placement
-    Settings.set_enum("interface-horizontal-scrollbar", hscrollbar)
-    Settings.set_enum("interface-vertical-scrollbar", vscrollbar)
-    
-    auto_zoom, auto_zoom_minify, auto_zoom_magnify = window.get_auto_zoom()
-    auto_zoom_mode = window.get_auto_zoom_mode()
-    
-    Settings.set_boolean("auto-zoom", auto_zoom)
-    Settings.set_boolean("auto-zoom-minify", auto_zoom_minify)
-    Settings.set_boolean("auto-zoom-magnify", auto_zoom_magnify)
-    Settings.set_enum("auto-zoom-mode", auto_zoom_mode)
-    
-    fullscreen = window.get_fullscreen()
-    Settings.set_boolean("start-fullscreen", fullscreen)
+def LoadForWindow(window):
+    settings_data = window.app.settings["window"].data
+    utility.SetPropertiesFromDict(
+        window, settings_data,
+        "autozoom-enabled", "autozoom-can-minify", "autozoom-can-magnify",
+        statusbar_visible="interface-statusbar",
+        toolbar_visible= "interface-toolbar",
+        hscrollbar_placement= "scrollbar-horizontal-placement",
+        vscrollbar_placement= "scrollbar-vertical-placement"
+    )
     
     try:
-        layout_codename = window.layout_option.codename
+        layout_codename = settings_data["layout-codename"]
+        layout_option = window.app.components["layout-option", layout_codename]
     except Exception:
         pass
-        
     else:
-        Settings.set_string("layout-codename", window.layout_option.codename)
+        window.layout_option = layout_option
 
-
-def LoadForAlbum(album):
-    album.freeze_notify()
+def SaveFromWindow(window):
+    settings_data = window.app.settings["window"].data
+    utility.SetDictFromProperties(window, settings_data,
+        "autozoom-enabled", "autozoom-can-minify", "autozoom-can-magnify",
+        statusbar_visible="interface-statusbar",
+        toolbar_visible="interface-toolbar",
+        hscrollbar_placement="scrollbar-horizontal-placement",
+        vscrollbar_placement="scrollbar-vertical-placement"
+    )
+    
+    settings_data["start-fullscreen"] = window.get_fullscreen()
+    
     try:
-        album.autosort = Settings.get_boolean("sort-auto")
-        album.reverse = Settings.get_boolean("sort-reverse")
-        
-        comparer_value = Settings.get_enum("sort-mode")
-        album.comparer = organization.SortingKeys.Enum[comparer_value]
-        
+        settings_data["layout-codename"] = window.layout_option.codename
+    except Exception:
+        pass
+    
+
+def LoadForAlbum(album, app_settings=None, album_settings=None):
+    if not album_settings:
+        album_settings = album_settings or app_settings["album"]
+    
+    settings_data = album_settings.data
+    album.freeze_notify()
+    utility.SetPropertiesFromDict(
+        album, settings_data, autosort="sort-auto", reverse="sort-reverse"
+    )
+    try:
+        sort_mode = settings_data.get("sort-mode", 0)
+        album.comparer = organization.SortingKeys.Enum[sort_mode]
+    except KeyError:
+        pass
     finally:
         album.thaw_notify()
 
     
-def SaveFromAlbum(album):
-    Settings.set_boolean("sort-auto", album.autosort)
-    Settings.set_boolean("sort-reverse", album.reverse)
+def SaveFromAlbum(album, app_settings=None, album_settings=None):
+    if not album_settings:
+        album_settings = app_settings["album"]
     
-    comparer_value = organization.SortingKeys.Enum.index(album.comparer)
-    Settings.set_enum("sort-mode", comparer_value)    
+    settings_data = album_settings.data
+    settings_data["sort-auto"] = album.autosort
+    settings_data["sort-reverse"] = album.reverse
+    
+    sort_mode = organization.SortingKeys.Enum.index(album.comparer)
+    settings_data["sort-mode"] = sort_mode
 
 
-def LoadForView(view):
-    view.freeze_notify()
-    try:
-        # Load alignment
-        view.alignment_x = Settings.get_double("view-horizontal-alignment")
-        view.alignment_y = Settings.get_double("view-vertical-alignment")
-        
-        # Load interpolation filter settings
-        interp_min_value = Settings.get_enum("interpolation-minify")
-        interp_mag_value = Settings.get_enum("interpolation-magnify")
-        interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
-                      cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
-        view.minify_filter = interp_map[interp_min_value]
-        view.magnify_filter = interp_map[interp_mag_value]
+def LoadForView(view, app_settings=None, view_settings=None):
+    if not view_settings:
+        view_settings = app_settings["view"]
     
-    finally:
-        view.thaw_notify()
+    settings_data = view_settings.data
+    utility.SetPropertiesFromDict(
+        view, settings_data, "alignment-x", "alignment-y",
+        minify_filter="interpolation-minify",
+        magnify_filter="interpolation-magnify"
+    )
     
     
-def SaveFromView(view):
+def SaveFromView(view, app_settings=None, view_settings=None):
+    if not view_settings:
+        view_settings = app_settings["view"]
+    
+    settings_data = view_settings.data
     # Save alignment
-    Settings.set_double("view-horizontal-alignment", view.alignment_x)
-    Settings.set_double("view-vertical-alignment", view.alignment_y)
-    
-    # Save interpolation filter settings
-    interp_map = [cairo.FILTER_NEAREST, cairo.FILTER_BILINEAR,
-                  cairo.FILTER_FAST, cairo.FILTER_GOOD, cairo.FILTER_BEST]
-    interp_min_value = interp_map.index(view.minify_filter)
-    interp_mag_value = interp_map.index(view.magnify_filter)
-    Settings.set_enum("interpolation-minify", interp_min_value)
-    Settings.set_enum("interpolation-magnify", interp_mag_value)
+    utility.SetDictFromProperties(
+        view, settings_data, "alignment-x", "alignment-y",
+        minify_filter="interpolation-minify",
+        magnify_filter="interpolation-magnify"
+    )
 
 
-def LoadMouseSettings(app, mouse_obj):
+def LoadMouseMechanismsSettings(meta_mouse_handler, mechanisms_settings):
     ''' Loads mouse settings from a dictionary '''
-    mechanisms_obj = mouse_obj["mechanisms"]
     
-    add_mouse_mechanism = app.meta_mouse_handler.add
-    for a_brand, some_mechanisms in mechanisms_obj.items():
+    add_mouse_mechanism = meta_mouse_handler.add
+    for a_brand, some_mechanisms in mechanisms_settings.items():
         # Try to get the factory with a "a_brand" codename
         a_factory = extending.GetMouseMechanismFactory(a_brand)
         if not a_factory:
@@ -831,18 +923,18 @@ def LoadMouseSettings(app, mouse_obj):
                     "Failed to load a mouse mechanism"
                 )
 
-def GetMouseSettings(app):
+
+def GetMouseMechanismsSettings(meta_mouse_handler):
     ''' Returns a dictionary with all mouse settings to be stored as JSON '''
-    result = {}
-    result["mechanisms"] = mechanism_objs = {}
+    mechanism_objs = {}
     
-    get_mechanisms = app.meta_mouse_handler.get_handlers
+    get_mechanisms = meta_mouse_handler.get_handlers
     brand_mechanisms = (m for m in get_mechanisms() if m.factory)
     
     for a_handler in brand_mechanisms:
         try:
             a_brand = a_handler.factory.codename
-            a_binding = app.meta_mouse_handler[a_handler]
+            a_binding = meta_mouse_handler[a_handler]
             
             a_mechanism_obj = {
                 "binding": { 
@@ -870,7 +962,10 @@ def GetMouseSettings(app):
                 mechanism_objs[a_brand] = a_brand_mechanisms = []
                 
             a_brand_mechanisms.append(a_mechanism_obj)
-    return result
+    return mechanism_objs
+
+from gi.repository import Gdk
+import math
 
 class PointScale(Gtk.DrawingArea):
     ''' A widget like a Gtk.HScale and Gtk.VScale together. '''

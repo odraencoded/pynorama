@@ -68,6 +68,21 @@ class IdlyMethod:
         return self._queued
 
 
+def SetPropertiesFromDict(obj, dct, *params, **kwargs):
+    """Sets a GObject properties from keys in a dictionary"""
+    names = dict((v, v) for v in params)
+    names.update((v, k) for k, v in kwargs.items()) # swap prop=key to key=prop
+    names_to_set = names.keys() & dct.keys()
+    properties = dict((names[k], dct[k]) for k in names_to_set)
+    obj.set_properties(**properties)
+
+def SetDictFromProperties(obj, dct, *params, **kwargs):
+    """Sets a dictionary values from a GObject properties"""
+    names = dict((v, v) for v in params)
+    names.update(kwargs) # swap prop=key to key=prop
+    prop_values = obj.get_properties(*names.keys())
+    dct.update(zip(names.values(), prop_values))
+
 #-- widget Creation macros down this line --#
 
 from gi.repository import GObject, Gdk, Gtk

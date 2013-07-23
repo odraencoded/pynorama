@@ -47,14 +47,31 @@ class ImageViewer(Gtk.Application):
         self.memory_check_queued = False
         self.meta_mouse_handler = mousing.MetaMouseHandler()
         self.meta_mouse_handler.connect(
-            "handler-removed", self._removed_mouse_handler)
+            "handler-removed", self._removed_mouse_handler
+        )
         
         self.mouse_handler_dialogs = dict()
         
+        self.settings = preferences.SettingsGroup()
+        self.settings.create_group("window")
+        self.settings.create_group("album")
+        self.settings.create_group("view")
+        self.settings.create_group("layout")
+        mouse_settings = self.settings.create_group("mouse")
+        
+        self.settings.connect("save", self._save_settings)
+        self.settings.connect("load", self._load_settings)
+        mouse_settings.connect("save", self._save_mouse_settings)
+        mouse_settings.connect("load", self._load_mouse_settings)
         
     # --- Gtk.Application interface down this line --- #
     def do_startup(self):
         Gtk.Application.do_startup(self)
+        
+        # Setup components
+        self.components = extending.ComponentMap()
+        for an_app_component in extending.LoadedComponentPackages:
+            an_app_component.add_on(self)
         
         preferences.LoadForApp(self)
         
@@ -88,7 +105,7 @@ class ImageViewer(Gtk.Application):
     
     
     #-- Some properties down this line --#
-    zoom_effect = GObject.Property(type=float, default=2)
+    zoom_effect = GObject.Property(type=float, default=1.25)
     spin_effect = GObject.Property(type=float, default=90)
     
     def open_image_dialog(self, album, window=None):
@@ -233,8 +250,12 @@ class ImageViewer(Gtk.Application):
             image_view.mouse_adapter = mousing.MouseAdapter(image_view)
             self.meta_mouse_handler.attach(image_view.mouse_adapter)
             
-            fillscreen = preferences.Settings.get_boolean("start-fullscreen")
-            a_window.set_fullscreen(fillscreen)
+            try:
+                fillscreen = self.settings["window"].data["start-fullscreen"]
+                a_window.set_fullscreen(fillscreen)
+            except KeyError:
+                pass
+                
             return a_window
             
             
@@ -384,7 +405,30 @@ class ImageViewer(Gtk.Application):
         pixelated_image = loading.PixbufDataImageSource(pixels, "Pixels")
         return [pixelated_image]
     
+    def _save_settings(self, app_settings):
+        utility.SetDictFromProperties(
+            self, self.settings.data,
+            "zoom-effect", "spin-effect"
+        )
     
+    def _load_settings(self, app_settings):
+        utility.SetPropertiesFromDict(
+            self, self.settings.data,
+            "zoom-effect", "spin-effect"
+        )
+    
+    def _save_mouse_settings(self, mouse_settings):
+        """Populates the .settings["mouse"] .data"""
+        mechanisms_data = preferences.GetMouseMechanismsSettings(
+            self.meta_mouse_handler
+        )
+        mouse_settings.data["mechanisms"] = mechanisms_data
+    
+    def _load_mouse_settings(self, mouse_settings):
+        preferences.LoadMouseMechanismsSettings(
+            self.meta_mouse_handler, mouse_settings.data["mechanisms"]
+        )
+
 class ViewerWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         Gtk.ApplicationWindow.__init__(
@@ -397,17 +441,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self._refresh_index = utility.IdlyMethod(self._refresh_index)
         self._refresh_transform = utility.IdlyMethod(self._refresh_transform)
         
-        # Auto zoom stuff
-        self.auto_zoom_magnify = False
-        self.auto_zoom_minify = True
-        self.auto_zoom_mode = 0
-        self.auto_zoom_enabled = False
-        # If the user changes the zoom set by auto_zoom, 
-        # then auto_zoom isn't called after rotating or resizing
-        # the imageview
-        self.auto_zoom_zoom_modified = False
-        # Album variables
-        
+        # If the user changes the zoom set by .autozoom, 
+        # then .autozoom isn't called after rotating or resizing the imageview
+        self._autozoom_zoom_modified = False
         
         self._focus_loaded_handler_id = None
         self._old_focused_image = None
@@ -450,14 +486,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         self.view = viewing.ImageView()
         # Setup a bunch of reactions to all sorts of things
-        self.view.connect("notify::magnification",
-                               self.magnification_changed)
-        self.view.connect("notify::rotation", self.reapply_auto_zoom)
-        self.view.connect("size-allocate", self.reapply_auto_zoom)
-        self.view.connect("notify::magnification", self.view_changed)
-        self.view.connect("notify::rotation", self.view_changed)
-        self.view.connect("notify::horizontal-flip", self.view_changed)
-        self.view.connect("notify::vertical-flip", self.view_changed)
+        self.view.connect("notify::magnification", self._changed_magnification)
+        self.view.connect("notify::rotation", self._reapply_autozoom)
+        self.view.connect("size-allocate", self._reapply_autozoom)
+        self.view.connect("notify::magnification", self._changed_view)
+        self.view.connect("notify::rotation", self._changed_view)
+        self.view.connect("notify::horizontal-flip", self._changed_view)
+        self.view.connect("notify::vertical-flip", self._changed_view)
         
         self.view_scroller.add(self.view)
         self.view_scroller.show_all()
@@ -526,34 +561,36 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.view.drag_dest_set_target_list(target_list)
         self.view.connect("drag-data-received", self.dragged_data)
         
+        
         # Setup layout stuff
         self.layout_dialog = None
-        self.avl = organization.AlbumViewLayout(album=self.album,
-                                                view=self.view)
+        self.avl = organization.AlbumViewLayout(
+            album=self.album, view=self.view
+        )
         
         self.avl.connect("notify::layout", self._layout_changed)
         self.avl.connect("focus-changed", self._focus_changed)
         
-        
         # Build layout menu
         self._layout_action_group = None
         self._layout_ui_merge_id = None
-        
         self._layout_options_merge_ids = dict()
-        optionList = extending.LayoutOption.List
+        self._layout_options_codenames = []
         
         other_option = self.actions.get_action("layout-other-option")
         other_option.connect("changed", self._layout_option_chosen)
         
-        for an_index, an_option in enumerate(optionList):
+        option_list = self.app.components["layout-option"]
+        for an_index, an_option in enumerate(option_list):
             a_merge_id = self.uimanager.new_merge_id()
             
             # create action
             an_action_name = "layout-option-" + an_option.codename
-            an_action = Gtk.RadioAction(an_action_name, an_option.name,
-                                        an_option.description,
-                                        None, an_index)
-                                        
+            an_action = Gtk.RadioAction(
+                an_action_name, an_option.label, an_option.description,
+                None, an_index
+            )
+            
             an_action.join_group(other_option)
             self.actions.add_action(an_action)
             
@@ -568,6 +605,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             )
             
             self._layout_options_merge_ids[an_option] = a_merge_id
+            self._layout_options_codenames.append(an_option.codename)
             
         # Bind properties
         bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
@@ -583,7 +621,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
             ("ordering-mode", get_action("sort-name"), "current-value"),
             ("toolbar-visible", get_action("ui-toolbar"), "active"),
             ("statusbar-visible", get_action("ui-statusbar"), "active"),
-            bidirectional=True
+            ("autozoom-enabled", get_action("autozoom-enable"), "active"),
+            ("autozoom-mode", get_action("autozoom-fit"), "current-value"),
+            ("autozoom-can-minify", get_action("autozoom-magnify"), "active"),
+            ("autozoom-can-magnify", get_action("autozoom-minify"), "active"),
+            bidirectional=True, synchronize=True
         )
         
         self.view.bind_property(
@@ -597,6 +639,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
             bidi_flag | sync_flag
         )
         
+        
+        self.connect("notify::autozoom-enabled", self._changed_autozoom)
+        self.connect("notify::autozoom-mode", self._changed_autozoom)
+        self.connect("notify::autozoom-can-magnify", self._changed_autozoom)
+        self.connect("notify::autozoom-can-minify", self._changed_autozoom)
         self.connect("notify::vscrollbar-placement", self._changed_scrollbars)
         self.connect("notify::hscrollbar-placement", self._changed_scrollbars)
         self.connect("notify::ordering-mode", self._changed_ordering_mode)
@@ -607,12 +654,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
         # Load preferences
         other_option.set_current_value(0)
         preferences.LoadForWindow(self)
-        preferences.LoadForView(self.view)
-        preferences.LoadForAlbum(self.album)
+        preferences.LoadForView(self.view, self.app.settings)
+        preferences.LoadForAlbum(self.album, self.app.settings)
         
         # Refresh status widgets
         self._refresh_transform()
         self._refresh_index()
+        
         
     def setup_actions(self):
         self.uimanager = Gtk.UIManager()
@@ -680,22 +728,22 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 _("Makes the image look smaller"), Gtk.STOCK_ZOOM_OUT),
             ("zoom-none", _("No _Zoom"),
                 _("Shows the image at it's normal size"), Gtk.STOCK_ZOOM_100),
-            # Auto-zoom submenu
-            ("auto-zoom", _("_Automatic Zoom"), 
+            # autozoom submenu
+            ("autozoom", _("_Automatic Zoom"), 
                     _("Automatic zooming features")),
-                ("auto-zoom-enable", _("Enable _Automatic Zoom"),
+                ("autozoom-enable", _("Enable _Automatic Zoom"),
                     _("Enables the automatic zoom features")),
-                ("auto-zoom-fit", _("Fi_t Image"),
+                ("autozoom-fit", _("Fi_t Image"),
                     _("Fits the image completely inside the window")),
-                ("auto-zoom-fill", _("Fi_ll Window"),
+                ("autozoom-fill", _("Fi_ll Window"),
                     _("Fills the window completely with the image")),
-                ("auto-zoom-match-width", _("Match _Width"),
+                ("autozoom-match-width", _("Match _Width"),
                     _("Gives the image the same width as the window")),
-                ("auto-zoom-match-height", _("Match _Height"),
+                ("autozoom-match-height", _("Match _Height"),
                     _("Gives the image the same height as the window")),
-                ("auto-zoom-minify", _("Mi_nify Large Images"),
+                ("autozoom-minify", _("Mi_nify Large Images"),
                     _("Let the automatic zoom minify images")),
-                ("auto-zoom-magnify", _("Ma_gnify Small Images"),
+                ("autozoom-magnify", _("Ma_gnify Small Images"),
                     _("Let the automatic zoom magnify images")),
             # Transform submenu
             ("transform", _("_Transform"), _("Viewport transformation")),
@@ -777,10 +825,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
             "zoom-in" : (lambda data: self.zoom_view(1),),
             "zoom-out" : (lambda data: self.zoom_view(-1),),
             "zoom-none" : (lambda data: self.set_view_zoom(1),),
-            "auto-zoom-enable" : (self.change_auto_zoom,),
-            "auto-zoom-fit" : (self.change_auto_zoom,),
-            "auto-zoom-magnify" : (self.change_auto_zoom,),
-            "auto-zoom-minify" : (self.change_auto_zoom,),
             "rotate-cw" : (lambda data: self.rotate_view(1),),
             "rotate-ccw" : (lambda data: self.rotate_view(-1),),
             "flip-h" : (lambda data: self.flip_view(False),),
@@ -805,13 +849,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
         toggleable_actions = {
             "sort-auto" : None,
             "sort-reverse" : None,
-            "auto-zoom-enable" : None,
-            "auto-zoom-fit" : (ZoomMode.FitContent, zoom_mode_group),
-            "auto-zoom-fill" : (ZoomMode.FillView, zoom_mode_group),
-            "auto-zoom-match-width" : (ZoomMode.MatchWidth, zoom_mode_group),
-            "auto-zoom-match-height" : (ZoomMode.MatchHeight, zoom_mode_group),
-            "auto-zoom-minify" : None,
-            "auto-zoom-magnify" : None,
+            "autozoom-enable" : None,
+            "autozoom-fit" : (ZoomMode.FitContent, zoom_mode_group),
+            "autozoom-fill" : (ZoomMode.FillView, zoom_mode_group),
+            "autozoom-match-width" : (ZoomMode.MatchWidth, zoom_mode_group),
+            "autozoom-match-height" : (ZoomMode.MatchHeight, zoom_mode_group),
+            "autozoom-minify" : None,
+            "autozoom-magnify" : None,
             "fullscreen" : None,
             "sort-name" : (0, sort_group),
             "sort-char" : (1, sort_group),
@@ -850,7 +894,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             "zoom-none" : "KP_0",
             "zoom-in" : "KP_Add",
             "zoom-out" : "KP_Subtract",
-            "auto-zoom-enable" : "KP_Multiply",
+            "autozoom-enable" : "KP_Multiply",
             "rotate-cw" : "R",
             "rotate-ccw" : "<ctrl>R",
             "flip-h" : "F",
@@ -952,77 +996,75 @@ class ViewerWindow(Gtk.ApplicationWindow):
 
     
     def _layout_option_chosen(self, radio_action, current_action):
-        ''' Sets the layout-option property from the menu choices '''
+        """Handler for clicking on one of the layout option menu items"""
         current_value = current_action.get_current_value()
         
         if current_value >= 0:
-            self.layout_option = extending.LayoutOption.List[current_value]
-
+            option_codename = self._layout_options_codenames[current_value]
+            self.layout_option = self.app.components[
+                "layout-option", option_codename
+            ]
     
     def _changed_layout_option(self, *data):
-        ''' layout-option handler '''
+        """notify::layout-option signal handler"""
         current_layout = self.avl.layout
-        if not current_layout \
-           or current_layout.source_option != self.layout_option:
-            self.avl.layout = self.layout_option.create_layout()
+        if not current_layout or \
+               current_layout.source_option != self.layout_option:
+            current_layout = self.layout_option.create_layout(self.app)
+            current_layout.source_option = self.layout_option
+            self.avl.layout = current_layout
 
 
     def _layout_changed(self, *args):
-        ''' Handles a layout change in the avl  '''
-        layout = self.avl.layout
+        """notify::layout signal handler for .avl"""
         
-        try:
-            if self.layout_option != layout.source_option:
-                self.layout_option = layout.source_option
-                
-        except Exception:
-            pass
+        layout = self.avl.layout
+        source_option = layout.source_option
+        
+        # Synchronizing self.layout_option and layout.source_option
+        if self.layout_option != source_option:
+            self.layout_option = source_option
             
-        # Refresh the layout options
-        option_list = extending.LayoutOption.List
+        # Update the layout options menu with the current layout option index
+        codename_to_index = self._layout_options_codenames.index
+        try:
+            layout_option_index = codename_to_index(source_option.codename)
+        except Exception:
+            layout_option_index = -1
         other_option = self.actions.get_action("layout-other-option")
-        try:
-            option_index = option_list.index(layout.source_option)
-            
-        except Exception:
-            # The layout is not on the index, so we do something with the menu
-            other_option.set_current_value(-1)
-            
-        else:
-            # The layout is on the index, so we update the menu
-            other_option.set_current_value(option_index)
-            
+        other_option.set_current_value(layout_option_index)
+        
         # Destroy a possibly open layout settings dialog
         if self.layout_dialog:
             self.layout_dialog.destroy()
             self.layout_dialog = None
-            
-        # Turn "configure" menu item insensitive if the layout
-        # doesn't have a settings widget
-        configure = self.actions.get_action("layout-configure")
-        configure.set_sensitive(layout.has_settings_widget)
         
-        # Remove previosly merged ui from the menu
+        # Remove previosly merged ui/menu items from the menu
         if self._layout_action_group:
             self.uimanager.remove_action_group(self._layout_action_group)
             self.uimanager.remove_ui(self._layout_ui_merge_id)
+            self._layout_action_group = None
             self._layout_ui_merge_id = None
         
-        # Merge ui from layout
-        self._layout_action_group = layout.ui_action_group
-        if self._layout_action_group:
+        if source_option.has_menu_items:
+            # Adding action group
+            self._layout_action_group = source_option.get_action_group(layout)
             self.uimanager.insert_action_group(self._layout_action_group, -1)
+            
+            # Merging menu items
             merge_id = self.uimanager.new_merge_id()
             try:
-                layout.add_ui(self.uimanager, merge_id)
-                
+                source_option.add_ui(layout, self.uimanager, merge_id)
             except Exception:
                 notification.log_exception("Error adding layout UI")
                 self._layout_action_group = None
                 self.uimanager.remove_ui(merge_id)
-                
             else:
                 self._layout_ui_merge_id = merge_id
+        
+        # Set whether the "configure" menu item is sensitive
+        configure_action = self.actions.get_action("layout-configure")
+        configure_action.set_sensitive(source_option.has_settings_widget)
         
         
     def _toggled_vscroll(self, action, *data):
@@ -1099,18 +1141,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         self.view_scroller.set_policy(hpolicy, vpolicy)
         self.view_scroller.set_placement(placement)
-
-    
-    def magnification_changed(self, widget, data=None):
-        self.auto_zoom_zoom_modified = True
         
-    def view_changed(self, widget, data):
-        self._refresh_transform.queue()
-    
-    def reapply_auto_zoom(self, *data):
-        if self.auto_zoom_enabled and not self.auto_zoom_zoom_modified:
-            self.auto_zoom()
-
         
     def _refresh_index(self):
         focused_image = self.avl.focus_image
@@ -1318,35 +1349,25 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.set_view_flip(False, False)
         self.set_view_rotation(0)
     
-    def auto_zoom(self):
+    def autozoom(self):
         ''' Zooms automatically! '''
         
         frame = self.avl.focus_frame
-        if frame and (self.auto_zoom_magnify or self.auto_zoom_minify):
+        can_minify = self.autozoom_can_minify
+        can_magnify = self.autozoom_can_magnify
+        if frame and (can_minify or can_magnify):
             rectangle = frame.rectangle
             new_zoom = self.view.zoom_for_size(
-                (rectangle.width, rectangle.height), self.auto_zoom_mode
+                (rectangle.width, rectangle.height), self.autozoom_mode
             )
             
-            if (new_zoom > 1 and self.auto_zoom_magnify) or \
-               (new_zoom < 1 and self.auto_zoom_minify):
+            will_minify_zoom = can_minify and new_zoom > 1
+            will_magnify_zoom = can_magnify and new_zoom < 1
+            if will_minify_zoom or will_magnify_zoom:
                 self.view.magnification = new_zoom
-                self.auto_zoom_zoom_modified = False
+                self._autozoom_zoom_modified = False
             else:
                 self.view.magnification = 1
-                    
-    def change_auto_zoom(self, *data):
-        mode = self.actions.get_action("auto-zoom-fit").get_current_value()
-        magnify = self.actions.get_action("auto-zoom-magnify").get_active()
-        minify = self.actions.get_action("auto-zoom-minify").get_active()
-        enabled = self.actions.get_action("auto-zoom-enable").get_active()
-        
-        self.auto_zoom_magnify = magnify
-        self.auto_zoom_minify = minify
-        self.auto_zoom_mode = mode
-        self.auto_zoom_enabled = enabled
-        if self.auto_zoom_enabled:
-            self.auto_zoom()
     
     
     def toggle_keep_above(self, *data):
@@ -1462,30 +1483,34 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
         else:
             layout = self.avl.layout
+            source_option = layout.source_option
             flags = Gtk.DialogFlags
             try:
-                widget = layout.create_settings_widget()
-                widget.connect("destroy", self._layout_widget_destroyed, layout)
+                widget = source_option.create_settings_widget(layout)
+                widget.connect(
+                    "destroy", self._layout_widget_destroyed, layout
+                )
                 
             except Exception:
                 message = _("Could not create layout settings dialog!")
-                dialog = Gtk.MessageDialog(self,
-                             flags.MODAL | flags.DESTROY_WITH_PARENT,
-                             Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
-                             message)
-                             
+                dialog = Gtk.MessageDialog(
+                    self, flags.MODAL | flags.DESTROY_WITH_PARENT,
+                    Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
+                    message
+                )
+                
                 notification.log_exception(message)
                 dialog.run()
                 dialog.destroy()
             
             else:
-                dialog = Gtk.Dialog(_("Layout Settings"), self,
-                         flags.DESTROY_WITH_PARENT,
-                         (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
+                dialog = Gtk.Dialog(
+                    _("Layout Settings"), self, flags.DESTROY_WITH_PARENT,
+                    (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
+                )
                 
                 widget_pad = utility.PadDialogContent(widget)
                 widget_pad.show()
-                
                 content_area = dialog.get_content_area()
                 content_area.pack_start(widget_pad, True, True, 0)
                 
@@ -1493,19 +1518,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 dialog.present()
                 
                 self.layout_dialog = dialog
-
-
-    def _layout_widget_destroyed(self, widget, layout):
-        layout.save_preferences()
-
-
-    def _layout_dialog_response(self, *data):
-        self.layout_dialog.destroy()
-        self.layout_dialog = None
-
     
-    ''' Methods after this comment are actually kind of a big deal.
-        Do not rename them. '''
     
     def refresh_title(self, image=None):
         if image:
@@ -1520,13 +1533,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
         else:
             self.set_title(_("Pynorama"))
-            
+        
     
     def do_destroy(self, *data):
         # Saves this window preferences
         preferences.SaveFromWindow(self)
-        preferences.SaveFromAlbum(self.album)
-        preferences.SaveFromView(self.view)
+        preferences.SaveFromAlbum(self.album, self.app.settings)
+        preferences.SaveFromView(self.view, self.app.settings)
         try:
             # Tries to save the layout preferences
             self.avl.layout.save_preferences()
@@ -1537,7 +1550,15 @@ class ViewerWindow(Gtk.ApplicationWindow):
         # Clean up the avl
         self.avl.clean()
         return Gtk.Window.do_destroy(self)
-        
+    
+    
+    def _layout_widget_destroyed(self, widget, layout):
+        layout.source_option.save_preferences(layout)
+    
+    def _layout_dialog_response(self, *data):
+        self.layout_dialog.destroy()
+        self.layout_dialog = None
+    
     
     def _image_added(self, album, image, index):
         image.lists += 1
@@ -1623,8 +1644,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
     def _refresh_focus_frame(self):
         if not self._focus_hint:
-            if self.auto_zoom_enabled:
-                self.auto_zoom()
+            if self.autozoom_enabled:
+                self.autozoom()
                 
             self._focus_hint = True
             
@@ -1644,29 +1665,34 @@ class ViewerWindow(Gtk.ApplicationWindow):
     hscrollbar_placement = GObject.Property(type=int, default=1) 
     vscrollbar_placement = GObject.Property(type=int, default=1)
     
+    autozoom_enabled = GObject.Property(type=bool, default=True)
+    autozoom_can_minify = GObject.Property(type=bool, default=True)
+    autozoom_can_magnify = GObject.Property(type=bool, default=False)
+    autozoom_mode = GObject.Property(type=int, default=0)
+    
     layout_option = GObject.Property(type=object)
     
-    def get_auto_zoom(self):
-        enabled = self.actions.get_action("auto-zoom-enable").get_active()
-        minify = self.actions.get_action("auto-zoom-minify").get_active()
-        magnify = self.actions.get_action("auto-zoom-magnify").get_active()
-        return enabled, minify, magnify
-        
-    def set_auto_zoom(self, enabled, minify, magnify):
-        self.actions.get_action("auto-zoom-minify").set_active(minify)
-        self.actions.get_action("auto-zoom-magnify").set_active(magnify)
-        self.actions.get_action("auto-zoom-enable").set_active(enabled)
-        
-    def get_auto_zoom_mode(self):
-        return self.actions.get_action("auto-zoom-fit").get_current_value()
-    def set_auto_zoom_mode(self, mode):
-        self.actions.get_action("auto-zoom-fit").set_current_value(mode)
-        
     def get_fullscreen(self):
         return self.actions.get_action("fullscreen").get_active()
         
     def set_fullscreen(self, value):
         self.actions.get_action("fullscreen").set_active(value)
+    
+    
+    def _reapply_autozoom(self, *data):
+        if self.autozoom_enabled and not self._autozoom_zoom_modified:
+            self.autozoom()
+    
+    def _changed_autozoom(self, *data):
+        if self.autozoom_enabled:
+            self.autozoom()
+    
+    def _changed_view(self, widget, data):
+        self._refresh_transform.queue()
+    
+    def _changed_magnification(self, widget, data=None):
+        self._autozoom_zoom_modified = True
+    
     
     ui_description = '''\
 <ui>
@@ -1711,16 +1737,16 @@ class ViewerWindow(Gtk.ApplicationWindow):
             <menuitem action="zoom-in" />
             <menuitem action="zoom-out" />
             <menuitem action="zoom-none" />
-            <menu action="auto-zoom" >
-                <menuitem action="auto-zoom-enable" />
+            <menu action="autozoom" >
+                <menuitem action="autozoom-enable" />
                 <separator />
-                <menuitem action="auto-zoom-fit" />
-                <menuitem action="auto-zoom-fill" />
-                <menuitem action="auto-zoom-match-width" />
-                <menuitem action="auto-zoom-match-height" />
+                <menuitem action="autozoom-fit" />
+                <menuitem action="autozoom-fill" />
+                <menuitem action="autozoom-match-width" />
+                <menuitem action="autozoom-match-height" />
                 <separator />
-                <menuitem action="auto-zoom-magnify" />
-                <menuitem action="auto-zoom-minify" />
+                <menuitem action="autozoom-magnify" />
+                <menuitem action="autozoom-minify" />
             </menu>
             <separator />
             <menu action="transform">

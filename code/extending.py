@@ -16,26 +16,114 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
 import utility
+from collections import OrderedDict
+
+LoadedComponentPackages = set()
+
+class ComponentPackage:
+    """Represents a set of components that extend the app"""
+    def add_on(self, app):
+        """Adds its components to the app"""
+        raise NotImplementedError
+
+
+class Component:
+    """Something that can be mapped into an component map"""
+    def __init__(self, codename):
+        self.codename = codename
+
+class ComponentMap:
+    def __init__(self):
+        self._categories = OrderedDict()
+    
+    
+    def __getitem__(self, key):
+        if isinstance(key, tuple):
+            category, codename = key
+            return self._categories[category][codename]
+            
+        else:
+            return self._categories[key]
+     
+     
+    def add(self, category, component):
+        """Adds a component to a category in this component map"""
+        self._categories[category].add(component)
+        
+    def add_category(self, category, label=""):
+        """Adds a component category category to this component map"""
+        if category in self._categories:
+            raise KeyError
+        
+        result = ComponentMap.Category(label)
+        self._categories[category] = result
+        return result
+        
+    class Category:
+        def __init__(self, label=""):
+            self._components = OrderedDict()
+            self.label = label
+        
+        def __getitem__(self, codename):
+            return self._components[codename]
+        
+        def __iter__(self):
+            yield from self._components.values()
+        
+        
+        def add(self, component):
+            if component.codename in self._components:
+                raise KeyError
+                
+            self._components[component.codename] = component
 
 class LayoutOption:
     ''' Represents a layout choice. '''
-    
-    # A list of layouts avaiable for the program
-    List = []
     
     def __init__(self, codename="", name="", description=""):
         ''' codename must be a string identifier for this option
             name is a localized label for the layout
             description is a description, duh '''
         self.codename = codename
-        self.name = name
-        self.description = description
-    
-    
-    def create_layout(self):
-        ''' Replaces this with something that creates a layout '''
-        raise NotImplementedError
+        self.label = ""
+        self.description = ""
         
+        # Set this value to true if the layout has a settings dialog
+        self.has_settings_widget = False
+        self.has_menu_items = False
+    
+    def create_layout(self, app):
+        """Creates a layout that this option represents"""
+        raise NotImplementedError
+    
+    
+    def save_preferences(self, layout):
+        """Save the preferences for this layout option based on a layout"""
+        pass
+        
+        
+    def create_settings_widget(self, layout):
+        """Creates a settings widget for a layout instance"""
+        raise NotImplementedError
+    
+    
+    def get_action_group(self, layout):
+        """Returns a Gtk.ActionGroup for a layout
+        
+        This is only called if .has_menu_items is set to True
+        
+        """
+        raise NotImplementedError
+    
+    def add_ui(self, layout, uimanager, merge_id):
+        """ Adds ui into an uimanager using the specified merge_id.
+        
+        This is only called if .has_menu_items is set to True, in which
+        case the action group is added automatically by the ViewerWindow.
+        
+        """
+        raise NotImplementedError
+
 
 class MouseHandlerFactory:
     ''' Manufacturates mouse handlers & accessories '''
