@@ -792,7 +792,7 @@ def SaveFromApp(app):
         with open(json_path, "w") as prefs_file:
             json.dump(
                 settings_data, prefs_file,
-                sort_keys=True, indent=4, separators=(",", ": ")
+                sort_keys=True, indent=2, separators=(",", ": ")
             )
             
     except Exception:

@@ -234,15 +234,6 @@ class MouseAdapter(GObject.GObject):
                 
         self.__from_point = self.__current_point
         return False
-        
-class MouseEvents:
-    Nothing   = int("000000", 2)
-    Moving    = int("000011", 2)
-    Hovering  = int("000001", 2)
-    Pressing  = int("010110", 2)
-    Dragging  = int("001110", 2)
-    Clicking  = int("010100", 2)
-    Scrolling = int("100000", 2)
     
 class MetaMouseHandler(GObject.Object):
     ''' Handles mouse events from mouse adapters for mouse handlers '''
@@ -616,15 +607,28 @@ class MouseHandlerBinding(GObject.Object):
     alt_key = GObject.Property(type=bool, default=False)
 
 
+class MouseEvents:
+    Nothing   = 0b0000000
+    Moving    = 0b0000011
+    Hovering  = 0b0000001 # Movement without pressure
+    Pressing  = 0b0010110 # Pressure regardless of movement
+    Dragging  = 0b0001110 # Pressure and movement
+    Clicking  = 0b0010100
+    Scrolling = 0b0100000 # Handles either scrolling axes
+    Rolling   = 0b1100000 # Handles both scrolling axes
+
+
 class MouseHandler(GObject.Object):
-    ''' Handles mouse events sent by MetaMouseHandler.
-        
-        In order to handle anything, a mouse handler must set its .events
-        attribute, which should not be changed after initialization. '''
+    """Handles mouse events sent by MetaMouseHandler.
+    
+    In order to handle anything, a mouse handler must set its .events
+    attribute, which should not be changed after initialization.
+    
+    """
     
     # The base of the totem pole
-    def __init__(self):
-        GObject.Object.__init__(self)
+    def __init__(self, **kwargs):
+        GObject.Object.__init__(self, **kwargs)
         self.events = MouseEvents.Nothing
         
         # These are set by the app.
@@ -968,39 +972,30 @@ class StretchHandler(MouseHandler):
         return data
 
 
-class SwapMode:
-    NoSwap = 0 # Don't swap anything
-    Swap = 1 # Swap axes
-    VerticalGreater = 2 # Map vertical scrolling with greater axis
-    HorizontalGreater = 3 # Map horizontal scrolling with greater axis
-
-
 class ScrollHandler(MouseHandler):
     ''' Scrolls a view '''
     
-    def __init__(self, relative_speed=.3, pixel_speed = 300,
-                       relative_scrolling=True, inverse = (False, False),
-                       swap_mode = SwapMode.NoSwap, rotate=False):
-        MouseHandler.__init__(self)
-        self.events = MouseEvents.Scrolling
+    def __init__(self, inverse=None, **kwargs):
+        MouseHandler.__init__(self, **kwargs)
+        self.events = MouseEvents.Rolling
         
-        self.pixel_speed = pixel_speed
-        self.relative_speed = relative_speed
-        self.relative_scrolling = relative_scrolling
-        self.inverse_horizontal, self.inverse_vertical = inverse
-        self.rotate = rotate
-        self.swap_mode = swap_mode
+        if inverse:
+            self.inverse_horizontal, self.inverse_vertical = inverse
     
     # Scrolling speed
     pixel_speed = GObject.Property(type=int, default=300)
     relative_speed = GObject.Property(type=float, default=.3)
+    
     # If this is true, speed is scaled to the view dimensions
-    relative_scrolling = GObject.Property(type=bool, default=False)
+    relative_scrolling = GObject.Property(type=bool, default=True)
+    
     # Inverse horizontal and vertical axis, this happens after everything else
     inverse_horizontal = GObject.Property(type=bool, default=False)
     inverse_vertical = GObject.Property(type=bool, default=False)
-    # Axes swapping mode
-    swap_mode = GObject.Property(type=int, default=0)
+    
+    # Whether to swap axes
+    swap_axes = GObject.Property(type=bool, default=False)
+    
     # Rotate scrolling shift with view rotation
     rotate = GObject.Property(type=bool, default=False)
     
@@ -1021,21 +1016,9 @@ class ScrollHandler(MouseHandler):
             
         else:
             scroll_along_size = view.get_boundary()[2:]
-                
-        if self.swap_mode & SwapMode.VerticalGreater:
-            unviewed_ratio = point.divide(scroll_along_size, view_size)
             
-            if point.is_wide(unviewed_ratio):
-                xd, yd = yd, xd
-            
-        if self.swap_mode & SwapMode.Swap:
+        if self.swap_axes:
             xd, yd = yd, xd
-        
-        if self.inverse_horizontal:
-            xd = -xd
-            
-        if self.inverse_vertical:
-            yd = -yd
             
         view.pan((xd, yd))
 
@@ -1402,32 +1385,16 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
         label = _("Rotate scrolling to image coordinates")
         rotate = Gtk.CheckButton(label)
         
-        label = _("Do not swap axes")
-        noswap = Gtk.RadioButton(label=label)
-        label = _("Swap vertical and horizontal scrolling")
-        doswap = Gtk.RadioButton(label=label, group=noswap)
-        label = _("Vertical scrolling scrolls greatest side")
-        vgreater = Gtk.RadioButton(label=label, group=doswap)
-        label = _("Vertical scrolling scrolls smallest side")
-        hgreater = Gtk.RadioButton(label=label, group=vgreater)
+        label = _("Swap horizontal and vertical axes")
+        swap = Gtk.CheckButton(label=label)
         
         utility.InitWidgetStack(self,
             pixel_line, relative_radio, relative_scale,
-            inverseh, inversev, rotate, noswap, doswap, vgreater, hgreater
+            inverseh, inversev, rotate, swap
         )
         self.show_all()
         
         # Bind properties
-        handler.connect("notify::pivot-mode", self._refresh_swap_mode)
-        self.swap_options = {
-            SwapMode.NoSwap : noswap, SwapMode.Swap : doswap,
-            SwapMode.VerticalGreater : vgreater,
-            SwapMode.HorizontalGreater : hgreater
-        }
-        
-        for value, radio in self.swap_options.items():
-            radio.connect("toggled", self._swap_mode_chosen, value)
-        
         handler.connect("notify::relative-scrolling", self._refresh_speed_mode)
         pixel_radio.connect("toggled", self._speed_mode_chosen, False)
         relative_radio.connect("toggled", self._speed_mode_chosen, True)
@@ -1443,19 +1410,10 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
             ("inverse-horizontal", inverseh, "active"),
             ("inverse-vertical", inversev, "active"),
             ("rotate", rotate, "active"),
+            ("swap-axes", swap, "active"),
             bidirectional=True, synchronize=True
         )    
-        self._refresh_swap_mode(handler)
         self._refresh_speed_mode(handler)
-        
-        
-    def _refresh_swap_mode(self, handler, *data):
-        self.swap_options[handler.swap_mode].set_active(True)
-        
-        
-    def _swap_mode_chosen(self, radio, value):
-        if radio.get_active() and self.handler.swap_mode != value:
-            self.handler.swap_mode = value
     
     
     def _refresh_speed_mode(self, handler, *data):
@@ -1485,15 +1443,15 @@ class ScrollHandlerFactory(extending.MouseHandlerFactory):
     @staticmethod
     def get_settings(handler):
         result = {
-            "relative_scrolling" : handler.relative_scrolling,
+            "relative-scrolling" : handler.relative_scrolling,
             "inverse": (handler.inverse_horizontal, handler.inverse_vertical),
             "rotate": handler.rotate,
-            "swap_mode": handler.swap_mode,
+            "swap-axes": handler.swap_axes,
         }
         if handler.relative_scrolling:
-            result["relative_speed"] = handler.relative_speed
+            result["relative-speed"] = handler.relative_speed
         else:
-            result["pixel_speed"] = handler.pixel_speed
+            result["pixel-speed"] = handler.pixel_speed
         return result
     
     
