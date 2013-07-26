@@ -1193,22 +1193,37 @@ from gettext import gettext as _
 class SingleImageLayoutOption(extending.LayoutOption):
     def __init__(self):
         extending.LayoutOption.__init__(self, "single-image")
-        self.label = _("Single Image")
-        self.description = _("Shows a single image")
+    
+    
+    @property
+    def label(self):
+        return _("Single Image")
+    
+    @property
+    def description(self):
+        return _("Shows a single image")
+    
     
     def create_layout(self, app):
         return SingleImageLayout()
-    
-    
+
 
 class ImageStripLayoutOption(extending.LayoutOption):
     def __init__(self):
         extending.LayoutOption.__init__(self, "image-strip")
-        self.label = _("Image Strip")
-        self.description = _("Shows multiple images side by side")
         self.has_settings_widget = True
         self.has_menu_items = True
-        
+    
+    
+    @property
+    def label(self):
+        return _("Image Strip")
+    
+    @property
+    def description(self):
+        return _("Shows multiple images side by side")
+    
+    
     def create_layout(self, app):
         result = ImageStripLayout()
         result.app = app
@@ -1382,7 +1397,7 @@ class ImageStripLayoutSettingsWidget(Gtk.Notebook):
             "orientation": Gtk.Orientation.HORIZONTAL,
             "spacing": 24
         }
-                    
+        
         #-- Create direction widgets --#
         label = _("Image strip direction")
         direction_label = Gtk.Label(label)
@@ -1589,6 +1604,7 @@ are too small to breach the pixel count limit''')
             scale.add_mark(0, Gtk.PositionType.BOTTOM, _("Left"))
             scale.add_mark(.5, Gtk.PositionType.BOTTOM, _("Center"))
             scale.add_mark(1, Gtk.PositionType.BOTTOM, _("Right"))
+
 
 class BuiltInLayouts(extending.ComponentPackage):
     @staticmethod

@@ -19,7 +19,7 @@
 from gi.repository import Gtk, GObject
 from gettext import gettext as _
 import os
-import extending, organization, notification, mousing, utility
+import organization, notification, mousing, utility
 
 class Dialog(Gtk.Dialog):
     def __init__(self, app):
@@ -173,7 +173,7 @@ for the image viewer''')
         # Setup add handlers grid (it is used to add handlers)
         brand_liststore = Gtk.ListStore(object)
         
-        for a_brand in extending.MouseHandlerBrands:
+        for a_brand in app.components["mouse-mechanism-brand"]:
             brand_liststore.append([a_brand])
         
         # Setup listview and selection
@@ -890,13 +890,14 @@ def SaveFromView(view, app_settings=None, view_settings=None):
     )
 
 
-def LoadMouseMechanismsSettings(meta_mouse_handler, mechanisms_settings):
+def LoadMouseMechanismsSettings(app, meta_mouse_handler, mechanisms_settings):
     ''' Loads mouse settings from a dictionary '''
     
+    mouse_factories = app.components["mouse-mechanism-brand"]
     add_mouse_mechanism = meta_mouse_handler.add
     for a_brand, some_mechanisms in mechanisms_settings.items():
         # Try to get the factory with a "a_brand" codename
-        a_factory = extending.GetMouseMechanismFactory(a_brand)
+        a_factory = mouse_factories[a_brand]
         if not a_factory:
             notification.log(
                 "Couldn't find \"%s\" mouse mechanism brand" % a_brand

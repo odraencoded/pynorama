@@ -77,20 +77,31 @@ class ComponentMap:
                 
             self._components[component.codename] = component
 
-class LayoutOption:
+class LayoutOption(Component):
     ''' Represents a layout choice. '''
     
-    def __init__(self, codename="", name="", description=""):
+    def __init__(self, codename=""):
         ''' codename must be a string identifier for this option
             name is a localized label for the layout
             description is a description, duh '''
-        self.codename = codename
-        self.label = ""
-        self.description = ""
+        
+        Component.__init__(self, codename)
         
         # Set this value to true if the layout has a settings dialog
         self.has_settings_widget = False
         self.has_menu_items = False
+    
+    
+    @property
+    def label(self):
+        """A label for the UI"""
+        raise NotImplementedError
+    
+    @property
+    def description(self):
+        """A description for the UI"""
+        raise NotImplementedError
+    
     
     def create_layout(self, app):
         """Creates a layout that this option represents"""
@@ -125,12 +136,12 @@ class LayoutOption:
         raise NotImplementedError
 
 
-class MouseHandlerFactory:
-    ''' Manufacturates mouse handlers & accessories '''
+class MouseHandlerFactory(Component):
+    """Manufacturates a certain kind of mousing.MouseHandler"""
     
-    def __init__(self):
-        self.codename = "" # A string identifier
-        
+    def __init__(self, codename=""):
+        Component.__init__(self, codename)
+    
     
     def produce(self, settings=None):
         if settings:
@@ -144,8 +155,8 @@ class MouseHandlerFactory:
     
     @property
     def label(self):
-        ''' A label for the UI '''
-        return ""
+        """A label for the UI"""
+        raise NotImplementedError
     
     
     def create_default(self):
@@ -165,19 +176,7 @@ class MouseHandlerFactory:
         
         return None
     
-    
     def load_settings(settings):
         ''' Creates a mouse handler with the settings input '''
         
         raise NotImplementedError
-
-
-MouseHandlerBrands = list()
-def GetMouseMechanismFactory(codename):
-    ''' Returns a mouse mechanism factory by the codename '''
-    for a_brand in MouseHandlerBrands:
-        if a_brand.codename == codename:
-            return a_brand
-        
-    else:
-        return None

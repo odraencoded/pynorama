@@ -1189,9 +1189,6 @@ class HoverAndDragHandlerFactory(extending.MouseHandlerFactory):
         return HoverAndDragHandler(drag=self.drag, **settings)
 
 
-DragHandlerFactory = HoverAndDragHandlerFactory(drag=True)
-HoverHandlerFactory = HoverAndDragHandlerFactory(drag=False)
-
 # TODO: Fix MapHandler for multi-image layouts and create its factory
 
 from preferences import PointScale
@@ -1318,7 +1315,6 @@ class SpinHandlerFactory(extending.MouseHandlerFactory):
         clone = dict(settings)
         pivot = LoadPivotSettings(clone.pop("pivot"))
         return SpinHandler(pivot=pivot, **clone)
-SpinHandlerFactory = SpinHandlerFactory()
 
 
 class StretchHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
@@ -1350,7 +1346,6 @@ class StretchHandlerFactory(extending.MouseHandlerFactory):
     @staticmethod
     def load_settings(settings):
         return StretchHandler(pivot=LoadPivotSettings(settings))
-StretchHandlerFactory = StretchHandlerFactory()
 
 
 class ScrollHandlerSettingsWidget(Gtk.Box):
@@ -1459,8 +1454,6 @@ class ScrollHandlerFactory(extending.MouseHandlerFactory):
     def load_settings(settings):
         return ScrollHandler(**settings)
 
-ScrollHandlerFactory = ScrollHandlerFactory()
-
 
 class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
     def __init__(self, handler):
@@ -1544,8 +1537,6 @@ class ZoomHandlerFactory(extending.MouseHandlerFactory):
         return ZoomHandler(
             minify_anchor=minify_anchor, magnify_anchor=magnify_anchor, **clone
         )
-        
-ZoomHandlerFactory = ZoomHandlerFactory()
 
 
 class GearHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
@@ -1611,10 +1602,23 @@ class GearHandlerFactory(extending.MouseHandlerFactory):
         return GearHandler(pivot=pivot, **clone)
 
 
-GearHandlerFactory = GearHandlerFactory()
-
-extending.MouseHandlerBrands.extend([
-    DragHandlerFactory, HoverHandlerFactory, SpinHandlerFactory,
-    StretchHandlerFactory, ScrollHandlerFactory,
-    ZoomHandlerFactory, GearHandlerFactory
-])
+class BuiltInMouseMechanismBrands(extending.ComponentPackage):
+    @staticmethod
+    def add_on(app):
+        components = app.components
+        components.add_category(
+            "mouse-mechanism-brand", "Mouse Mechanism Brand"
+        )
+        
+        brands = [
+            HoverAndDragHandlerFactory(drag=True), # drag
+            HoverAndDragHandlerFactory(drag=False), # hover
+            SpinHandlerFactory(),
+            StretchHandlerFactory(),
+            ZoomHandlerFactory(),
+            GearHandlerFactory(),
+        ]
+        for a_brand in brands:
+            components.add("mouse-mechanism-brand", a_brand)
+            
+extending.LoadedComponentPackages.add(BuiltInMouseMechanismBrands)
