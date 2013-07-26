@@ -77,7 +77,9 @@ class ComponentMap:
                 
             self._components[component.codename] = component
 
-class LayoutOption(Component):
+
+from gi.repository import GObject
+class LayoutOption(Component, GObject.Object):
     ''' Represents a layout choice. '''
     
     def __init__(self, codename=""):
@@ -86,18 +88,19 @@ class LayoutOption(Component):
             description is a description, duh '''
         
         Component.__init__(self, codename)
+        GObject.Object.__init__(self)
         
         # Set this value to true if the layout has a settings dialog
         self.has_settings_widget = False
         self.has_menu_items = False
     
     
-    @property
+    @GObject.Property
     def label(self):
         """A label for the UI"""
         raise NotImplementedError
     
-    @property
+    @GObject.Property
     def description(self):
         """A description for the UI"""
         raise NotImplementedError
@@ -136,11 +139,12 @@ class LayoutOption(Component):
         raise NotImplementedError
 
 
-class MouseHandlerFactory(Component):
+class MouseHandlerFactory(Component, GObject.Object):
     """Manufacturates a certain kind of mousing.MouseHandler"""
     
     def __init__(self, codename=""):
         Component.__init__(self, codename)
+        GObject.Object.__init__(self)
     
     
     def produce(self, settings=None):
@@ -153,7 +157,7 @@ class MouseHandlerFactory(Component):
         return product
     
     
-    @property
+    @GObject.Property
     def label(self):
         """A label for the UI"""
         raise NotImplementedError

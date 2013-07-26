@@ -1155,7 +1155,6 @@ class HoverAndDragHandlerFactory(extending.MouseHandlerFactory):
         extending.MouseHandlerFactory.__init__(self)
         
         self.drag = drag
-        
         if drag:
             self.codename = "drag"
             
@@ -1165,7 +1164,7 @@ class HoverAndDragHandlerFactory(extending.MouseHandlerFactory):
         self.create_settings_widget = HoverAndDragHandlerSettingsWidget
     
     
-    @property
+    @GObject.Property
     def label(self):
         return _("Drag to Pan" if self.drag else "Move Mouse to Pan")
     
@@ -1292,12 +1291,12 @@ class SpinHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 
 class SpinHandlerFactory(extending.MouseHandlerFactory):
     def __init__(self):
-        self.codename = "spin"
+        extending.MouseHandlerFactory.__init__(self, "spin")
         self.create_default = SpinHandler
         self.create_settings_widget = SpinHandlerSettingsWidget
         
         
-    @property
+    @GObject.Property
     def label(self):
         return _("Drag to Spin")
         
@@ -1328,12 +1327,12 @@ class StretchHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 
 class StretchHandlerFactory(extending.MouseHandlerFactory):
     def __init__(self):
-        self.codename = "stretch"
+        extending.MouseHandlerFactory.__init__(self, "stretch")
         self.create_default = StretchHandler
         self.create_settings_widget = StretchHandlerSettingsWidget
         
         
-    @property
+    @GObject.Property
     def label(self):
         return _("Drag to Stretch")
     
@@ -1425,12 +1424,12 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
 
 class ScrollHandlerFactory(extending.MouseHandlerFactory):
     def __init__(self):
-        self.codename = "scroll"
+        extending.MouseHandlerFactory.__init__(self, "scroll")
         self.create_default = ScrollHandler
         self.create_settings_widget = ScrollHandlerSettingsWidget
         
         
-    @property
+    @GObject.Property
     def label(self):
         return _("Scroll to Pan")
         
@@ -1508,12 +1507,12 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 
 class ZoomHandlerFactory(extending.MouseHandlerFactory):
     def __init__(self):
-        self.codename = "zoom"
+        extending.MouseHandlerFactory.__init__(self, "zoom")
         self.create_default = ZoomHandler
         self.create_settings_widget=ZoomHandlerSettingsWidget
     
     
-    @property
+    @GObject.Property
     def label(self):
         return _("Scroll to Zoom")
     
@@ -1576,12 +1575,12 @@ class GearHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
 
 class GearHandlerFactory(extending.MouseHandlerFactory):
     def __init__(self):
-        self.codename = "gear"
+        extending.MouseHandlerFactory.__init__(self, "gear")
         self.create_default = GearHandler
         self.create_settings_widget = GearHandlerSettingsWidget
         
         
-    @property
+    @GObject.Property
     def label(self):
         return _("Scroll to Spin")
     

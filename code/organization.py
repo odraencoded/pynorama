@@ -1195,11 +1195,11 @@ class SingleImageLayoutOption(extending.LayoutOption):
         extending.LayoutOption.__init__(self, "single-image")
     
     
-    @property
+    @GObject.Property
     def label(self):
         return _("Single Image")
     
-    @property
+    @GObject.Property
     def description(self):
         return _("Shows a single image")
     
@@ -1215,11 +1215,11 @@ class ImageStripLayoutOption(extending.LayoutOption):
         self.has_menu_items = True
     
     
-    @property
+    @GObject.Property
     def label(self):
         return _("Image Strip")
     
-    @property
+    @GObject.Property
     def description(self):
         return _("Shows multiple images side by side")
     
