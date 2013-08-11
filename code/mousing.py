@@ -1612,6 +1612,7 @@ class BuiltInMouseMechanismBrands(extending.ComponentPackage):
         brands = [
             HoverAndDragHandlerFactory(drag=True), # drag
             HoverAndDragHandlerFactory(drag=False), # hover
+            ScrollHandlerFactory(),
             SpinHandlerFactory(),
             StretchHandlerFactory(),
             ZoomHandlerFactory(),
