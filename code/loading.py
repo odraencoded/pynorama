@@ -16,261 +16,16 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
-import os, re, datetime, time
+import time
 
-from gi.repository import Gdk, GdkPixbuf, Gio, GObject, GLib, Gtk
+from gi.repository import GdkPixbuf, Gio, GObject, GLib
 from gettext import gettext as _
-import cairo
-import sys
 
-LoaderList = []
-
-class CombinedDialogOption:
-    List = []
-    
-    def __init__(self, loader, name, options):
-        self.loader = loader
-        self.name = name
-        self.options = options
-        
-    def create_filter(self):
-        ''' Creates a Gtk.FileFilter for all these options '''
-        result = Gtk.FileFilter()
-        result.dialog_option = self
-        
-        result.set_name(self.name)
-        for an_option in self.options:
-            for a_pattern in an_option.patterns:
-                result.add_pattern(a_pattern)
-            
-            for a_mime_type in an_option.mime_types:
-                result.add_mime_type(a_mime_type)
-        
-        return result
-
-class DialogOption:
-    List = []
-    
-    def __init__(self, loader, name, patterns=[], mime_types=[]):
-        self.loader = loader
-        self.name = name
-        self.patterns = patterns
-        self.mime_types = mime_types
-        
-    def create_filter(self):
-        ''' Creates a Gtk.FileFilter for this option '''
-        result = Gtk.FileFilter()
-        result.dialog_option = self
-        
-        result.set_name(self.name)
-        for a_pattern in self.patterns:
-            result.add_pattern(a_pattern)
-            
-        for a_mime_type in self.mime_types:
-            result.add_mime_type(a_mime_type)
-        
-        return result
-
-class Context:
-    ''' A loading context is used to return data from loader functions.
-        Loaders can return loaded image nodes, new files to be loaded
-        by other loaders or uris and also report problems with this class. '''
-    
-    BasicFileInfo = ("standard::name," +
-                     "standard::type," +
-                     "standard::content-type")
-    
-    def __init__(self, uris=None, files=None, images=None):
-        self.uris = uris or []
-        self.files = files or []
-        self.images = images or []
-        self.problems = {}
-        
-    def uris_to_files(self):
-        ''' Converts all uris to files and removes them '''
-        new_files = [Gio.File.new_for_uri(an_uri) for an_uri in self.uris]
-        self.files.extend(new_files)
-        del self.uris[:]
-    
-    def load_files_info(self):
-        for a_file in self.files:
-            try:
-                Context.LoadFileInfo(a_file)
-                
-            except Exception as a_problem:
-                self.problems[a_file] = a_problem
-    
-    def add_sibling_files(self, loader):
-        Context.AddSiblingFiles(self, loader, self.files)
-    
-    @staticmethod
-    def LoadFileInfo(gfile):
-        if not hasattr(gfile, "info"):
-            gfile.info = gfile.query_info(
-                               Context.BasicFileInfo,
-                               Gio.FileQueryInfoFlags.NONE,
-                               None)
-                               
-    @staticmethod
-    def AddSiblingFiles(context, loader, gfiles):
-        ''' Add to context files that loader should open
-            and are children of gfiles parents '''
-    
-        # Get parent files from input #
-        parent_files = set()
-        for a_gfile in gfiles:
-            a_parent_file = a_gfile.get_parent()
-            if a_parent_file:
-                parent_files.add(a_parent_file)
-    
-        # Get children files from parent files from input #
-        siblings = set()
-        for a_parent_file in parent_files:
-            # Use BasicFileInfo here to save trouble #
-            try:
-                enumerator = a_parent_file.enumerate_children(
-                                           Context.BasicFileInfo, 0, None)
-            except Exception:
-                continue
-                
-            else:
-                for a_file_info in enumerator:
-                    a_sibling = Gio.File.get_child(
-                                    a_parent_file, a_file_info.get_name())
-                                    
-                    # Only add children files that do not equal an input file #
-                    for a_gfile in gfiles:
-                        if a_gfile.equal(a_sibling):
-                            break # cool trick, huh?
-                    else:
-                        a_sibling.info = a_file_info
-                        siblings.add(a_sibling)
-                    
-        new_files = [a_file for a_file in siblings \
-                                if loader.should_open(a_file)]
-        context.files.extend(new_files)
-
-class LoadersLoader:
-    ''' This loader will dispatch calls to loaders in a list passed to it '''
-    def __init__(self, loaders, reversed_open=False):
-        self.loaders = loaders
-        self.reversed_open = reversed_open
-        
-    def should_open(self, gfile):
-        return any((a_loader.should_open(gfile) for a_loader in self.loaders))
-        
-    def open_file(self, context, gfile):
-        loaders = reversed(self.loaders) if self.reversed_open else self.loaders
-        
-        for a_loader in loaders:
-            if a_loader.should_open(gfile):
-                a_loader.open_file(context, gfile)
-                break
-                
-class DirectoryLoader:
-    ''' A directory loader. Returns files in a directory. '''
-    @classmethod
-    def should_open(cls, gfile):
-        Context.LoadFileInfo(gfile)
-        return gfile.info.get_file_type() == Gio.FileType.DIRECTORY
-                
-    @classmethod
-    def open_file(cls, context, gfile):
-        gfile_enumerator = gfile.enumerate_children(
-                                 Context.BasicFileInfo, 0, None)
-        for a_file_info in gfile_enumerator:
-            try:
-                a_child_file = Gio.File.get_child(gfile, a_file_info.get_name())
-                a_child_file.info = a_file_info
-                context.files.append(a_child_file)
-                
-            except Exception:
-                raise
-                
-class PixbufFileLoader:
-    ''' A GdkPixbuf file loader. Should load images supported by GdkPixbuf '''
-    Options = []
-    Extensions = tuple()
-    
-    @classmethod
-    def should_open(cls, gfile):
-        uri = gfile.get_uri()
-        return uri.endswith(PixbufFileLoader.Extensions)
-        
-    @classmethod
-    def open_file(cls, context, gfile):
-        try:
-            new_image = PixbufFileImageSource(gfile)
-            
-        except Exception:
-            pass
-            
-        else:
-            context.images.append(new_image)
-    
-    @staticmethod
-    def _setup():
-        # Create dialog options for PixbufFileLoader
-        _formats = GdkPixbuf.Pixbuf.get_formats()
-        _mime_types = set()
-        _patterns = set()
-        _extensions = set()
-        for a_format in _formats:
-            # get mime types
-            _mime_types.update(a_format.get_mime_types())
-    
-            # get extensions, create patterns
-    
-            for an_extension in a_format.get_extensions():
-                _patterns.add("*." + an_extension)
-                _extensions.add("." + an_extension)
-        
-        PixbufFileLoader.Extensions = tuple(_extensions)        
-        PixbufFileLoader.DialogOption = DialogOption(
-                                        PixbufFileLoader, _("Pixbuf Images"),
-                                        _patterns, _mime_types)
-                                        
-class PixbufAnimationFileLoader:
-    Extensions = (".gif")
-    
-    @classmethod
-    def should_open(cls, gfile):
-        uri = gfile.get_uri()
-        return uri.endswith(PixbufAnimationFileLoader.Extensions)
-        
-    @classmethod
-    def open_file(cls, context, gfile):
-        try:
-            new_image = PixbufAnimationFileImageSource(gfile)
-            
-        except Exception:
-            pass
-            
-        else:
-            context.images.append(new_image)
-
-PixbufAnimationFileLoader.DialogOption = DialogOption(
-    PixbufAnimationFileLoader, _("Pixbuf Animations"),
-    ["*.gif"], ["image/gif"]
-)
-LoadersLoader.LoaderListLoader = LoadersLoader(LoaderList, reversed_open=True)
-SupportedFilesOption = CombinedDialogOption(
-    LoadersLoader.LoaderListLoader, _("Supported Files"),
-    DialogOption.List
-)
-CombinedDialogOption.List.append(SupportedFilesOption)
-
-PixbufFileLoader._setup()
-
-LoaderList.append(PixbufFileLoader)
-LoaderList.append(PixbufAnimationFileLoader)
-
-DialogOption.List.append(PixbufFileLoader.DialogOption)
-DialogOption.List.append(PixbufAnimationFileLoader.DialogOption)
 
 class DataError(Exception):
     ''' For exceptions due to the current state of the data loaded '''
     pass
+
 
 class Status:
     ''' Statuses for loadable objects '''
@@ -279,13 +34,15 @@ class Status:
     Caching = 1 # Something is going into the disk
     Loading = 2 # Something is going into the memory
 
+
 class Location:
     ''' Locations for loadable data to be. '''
     Nowhere = 0 # The data source is gone, 5ever
     Distant = 1 # The data is in a far away place, should be cached
     Disk = 2 # The data is on disk, easy to load
     Memory = 4 # The data is on memory, already loaded
-    
+
+
 class Loadable(GObject.GObject):
     __gsignals__ = {
         "finished-loading": (GObject.SIGNAL_RUN_FIRST, None, [object])
@@ -321,9 +78,11 @@ class Loadable(GObject.GObject):
     @property
     def is_bad(self):
         return self.status == Status.Bad
-        
+
+
 class Memory(GObject.GObject):
     ''' A very basic memory management thing '''
+    
     __gsignals__ = {
         "thing-enlisted": (GObject.SIGNAL_RUN_FIRST, None, (Loadable,)),
         "thing-requested": (GObject.SIGNAL_RUN_FIRST, None, (Loadable,)),
@@ -339,10 +98,17 @@ class Memory(GObject.GObject):
         self.enlisted_stuff = set()
         self.unlisted_stuff = set()
     
-    def observe(self, thing):
-        ''' Start generating events for a thing  '''
-        thing.connect("notify::uses", self._uses_changed)
-        thing.connect("notify::lists", self._lists_changed)
+    
+    def observe(self, *stuff):
+        """ Starts generating signals for certain resources """
+        self.observe_stuff(stuff)
+    
+    
+    def observe_stuff(self, stuff):
+        for a_thing in stuff:
+            a_thing.connect("notify::uses", self._uses_changed)
+            a_thing.connect("notify::lists", self._lists_changed)
+    
     
     def _uses_changed(self, thing, *data):
         if thing.uses == 1:
@@ -358,6 +124,7 @@ class Memory(GObject.GObject):
             else:
                 self.unused_stuff.add(thing)
                 self.emit("thing-unused", thing)
+    
     
     def _lists_changed(self, thing, *data):
         if thing.lists == 1:
@@ -423,12 +190,22 @@ class ImageSource(Loadable):
 import viewing
 
 class GFileImageSource(ImageSource):
-    def __init__(self, gfile):
+    def __init__(self, gfile, opening_context=None):
         super().__init__()
         self.gfile = gfile
         
-        info = gfile.query_info("standard::display-name", 0, None)
-        self.name = info.get_attribute_as_string("standard::display-name")
+        if opening_context is not None:
+            info = opening_context.query_file_info(
+                gfile, "standard::display-name",
+            )
+        else:
+            info = gfile.query_info(
+                "standard::display-name",
+                Gio.FileQueryInfoFlags.NONE,
+                None
+            )
+            
+        self.name = info.get_display_name()
         self.fullname = self.gfile.get_parse_name()
         
         self.location = Location.Disk if gfile.is_native() else Location.Distant
@@ -476,12 +253,13 @@ class PixbufDataImageSource(ImageSource):
 
 
 class PixbufFileImageSource(GFileImageSource):
-    def __init__(self, gfile):
-        GFileImageSource.__init__(self, gfile)
+    def __init__(self, gfile, **kwargs):
+        GFileImageSource.__init__(self, gfile, **kwargs)
         
         self.status = Status.Good
         self.cancellable = None
-        
+    
+    
     def load(self):
         if self.is_loading:
             raise Exception
@@ -493,7 +271,8 @@ class PixbufFileImageSource(GFileImageSource):
         self.status = Status.Loading
         load_async = GdkPixbuf.Pixbuf.new_from_stream_async
         self.pixbuf = load_async(stream, self.cancellable, self._loaded, None)
-        
+    
+    
     def _loaded(self, me, result, *data):
         self.error = None
         try:
@@ -580,8 +359,8 @@ class PixbufFileImageSource(GFileImageSource):
     
     
 class PixbufAnimationFileImageSource(GFileImageSource):
-    def __init__(self, gfile):
-        GFileImageSource.__init__(self, gfile)
+    def __init__(self, gfile, **kwargs):
+        GFileImageSource.__init__(self, gfile, **kwargs)
         
         self.pixbuf_animation = None
         self.status = Status.Good

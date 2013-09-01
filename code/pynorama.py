@@ -22,10 +22,9 @@ import gc, math, random, os, sys
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
-import extending, utility
-import organization, mousing, loading, preferences, viewing, notification
+import utility, notification, extending, mousing, preferences
+import opening, loading, organization, viewing
 from viewing import ZoomMode
-from loading import DirectoryLoader
 DND_URI_LIST, DND_IMAGE = range(2)
 
 class ImageViewer(Gtk.Application):
@@ -79,7 +78,10 @@ class ImageViewer(Gtk.Application):
         self.memory.connect("thing-requested", self.queue_memory_check)
         self.memory.connect("thing-unused", self.queue_memory_check)
         self.memory.connect("thing-unlisted", self.queue_memory_check)
-            
+        
+        
+        self.opener = opening.OpeningHandler()
+        
         Gtk.Window.set_default_icon_name("pynorama")
     
     
@@ -91,12 +93,53 @@ class ImageViewer(Gtk.Application):
     def do_open(self, files, file_count, hint):
         some_window = self.get_window()
         
-        some_window.go_new = True
-        self.open_files_for_album(some_window.album, files=files,
-                                  search=file_count == 1)
-        some_window.go_new = False
+        all_openers = self.components["file-opener"]
+        context = opening.OpeningContext()
+        context.connect(
+            "finished-session",
+            self._opening_session_finished_cb,
+            some_window.album
+        )
+        self.opener.start_opening(context, files=files, openers=all_openers)
         
         some_window.present()
+    
+    
+    def _opening_session_finished_cb(self, context, session, album):
+        files = []
+        images = []
+        errors = []
+        final_results = opening.OpeningResults()
+        for key, some_results in session.results.items():
+            images.extend(some_results.images)
+            errors.extend(some_results.errors)
+            if some_results.files:
+                files.append((key, some_results.files))
+        
+        notification.log("depth %d: %d images, %d files, %d errors" % (
+                session.depth, len(images), len(files), len(errors)
+            )
+        )
+        
+        if files:
+            continue_opening = True
+            if images and session.depth > 0:
+                continue_opening = False
+                
+            if continue_opening:
+                for key, some_files in files:
+                    notification.log(
+                        "Starting %d depth opening session with %d files" % (
+                            session.depth + 1, len(some_files),
+                        )
+                    )
+                    new_session = context.get_new_session(session, key)
+                    all_openers = self.components["file-opener"]
+                    new_session.add_openers(all_openers)
+                    new_session.add_files(some_files)
+            
+        self.memory.observe(*images)
+        album.extend(images)
     
     
     def do_shutdown(self):
@@ -109,52 +152,92 @@ class ImageViewer(Gtk.Application):
     spin_effect = GObject.Property(type=float, default=90)
     
     def open_image_dialog(self, album, window=None):
-        ''' Creates an "open image..." dialog for
-            adding images into an album. '''
-            
-        image_chooser = Gtk.FileChooserDialog(_("Open Image..."), window,
-                                              Gtk.FileChooserAction.OPEN,
-                                              (Gtk.STOCK_CANCEL,
-                                               Gtk.ResponseType.CANCEL,
-                                               Gtk.STOCK_ADD,
-                                               1,
-                                               Gtk.STOCK_OPEN,
-                                               Gtk.ResponseType.OK))
-            
+        return #TODO: IMPLEMENT!!!11
+        """ Creates an "Open Image..." dialog for
+            adding images into a certain album of images """
+        
+        
+        # The dialog has two "open" buttons: "Open" and "Add"
+        # The Add button always opens the selected files as is and adds them
+        # to the album
+        # The Open button can't "open" directories, it replaces the contents
+        # of the album and it tries to opens other files in the same directory
+        image_chooser = Gtk.FileChooserDialog(
+            _("Open Image..."),
+            window,
+            Gtk.FileChooserAction.OPEN,
+            (
+                Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                Gtk.STOCK_ADD, 1,
+                Gtk.STOCK_OPEN, Gtk.ResponseType.OK
+            )
+        )
+        
+        # The default response must have the "OK" value so that the dialog
+        # goes inside directories instead of returning them
         image_chooser.set_default_response(Gtk.ResponseType.OK)
         image_chooser.set_select_multiple(True)
         image_chooser.set_local_only(False)
         
-        # Add dialog options from "loading" module
-        for a_dialog_option in loading.CombinedDialogOption.List:
-            a_dialog_filter = a_dialog_option.create_filter()
-            image_chooser.add_filter(a_dialog_filter)            
-            
-        for a_dialog_option in loading.DialogOption.List:
-            a_dialog_filter = a_dialog_option.create_filter()
-            image_chooser.add_filter(a_dialog_filter)
-            
-        clear_album = False
-        search_siblings = False
-        choosen_uris = None
+        #~ Create and add the file filters to the file chooser dialog ~#
+        # Add the Supported Files filter
+        file_openers = self.components["file-opener"]
+        supported_files_group = loading.FileOpenerGroup(
+            _("Supported Files"),
+            file_openers
+        )
+        supported_files_filter = supported_files_group.create_file_filter()
+        image_chooser.add_filter(supported_files_filter)
+        
+        # Add the File Openers filters that opted to be visible
+        file_openers_filters = {}
+        for a_file_opener in file_openers:
+            if a_file_opener.show_on_dialog:
+                a_file_filter = a_file_opener.get_file_filter()
+                image_chooser.add_filter(a_file_filter)
+                file_openers_filters[a_file_opener] = a_file_filter
         
         response = image_chooser.run()
+        clear_album = False
+        search_siblings = False
+        uris_to_open = None
         
-        choosen_option = image_chooser.get_filter().dialog_option
         if response in [Gtk.ResponseType.OK, 1]:
-            choosen_uris = image_chooser.get_uris()
+            uris_to_open = image_chooser.get_uris()
         
         if response == Gtk.ResponseType.OK:
             clear_album = True
-            if len(choosen_uris) == 1:
+            if len(uris_to_open) == 1:
                 search_siblings = True
-                
+        
+        chosen_filter = image_chooser.get_filter()
         image_chooser.destroy()
+        
+        if uris_to_open:
+            # Try to get the file opener the selected file filter represents
+            # If the filter was "Supported Files" then the file opener is
+            # guessed by the program
+            try:
+                chosen_opener = file_openers_filters[chosen_filter]
+            except KeyError:
+                avaiable_openers = supported_files_group.file_openers
+            else:
+                avaiable_openers = [chosen_opener]
             
-        if choosen_uris:
-            self.open_files_for_album(album, choosen_option.loader,
-                                      uris=choosen_uris, search=search_siblings,
-                                      replace=clear_album)
+            session = self.opener.create_context()
+            session.add_openers(avaiable_openers)
+            session.set_uris(uris_to_open)
+            session.connect("opened", self._test, album)
+            session.start_opening()
+            
+            '''
+            self.open_files_for_album(
+                album,
+                avaiable_openers,
+                uris=choosen_uris,
+                search=search_siblings,
+                replace=clear_album
+            )'''
     
     
     def show_preferences_dialog(self, target_window=None):
@@ -450,9 +533,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self._old_focused_image = None
         self.go_new = False
         self.album = organization.Album()
-        self.album.connect("image-added", self._image_added)
-        self.album.connect("image-removed", self._image_removed)
-        self.album.connect("order-changed", self._album_order_changed)
+        self.album.connect("image-added", self._album_image_added_cb)
+        self.album.connect("image-removed", self._album_image_removed_cb)
+        self.album.connect("order-changed", self._album_order_changed_cb)
         
         # Set clipboard
         self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
@@ -1435,6 +1518,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             focus.copy_to_clipboard(self.clipboard)
     
     def pasted_data(self, data=None):
+        return #TODO: Implement
         self.go_new = True
         some_uris = self.clipboard.wait_for_uris()
         
@@ -1456,6 +1540,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.go_new = False
         
     def dragged_data(self, widget, context, x, y, selection, info, timestamp):
+        return #TODO: implement
         self.go_new = True
         if info == DND_URI_LIST:
             some_uris = selection.get_uris()
@@ -1561,7 +1646,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.layout_dialog = None
     
     
-    def _image_added(self, album, image, index):
+    def _album_image_added_cb(self, album, image, index):
         image.lists += 1
         self._refresh_index.queue()
         
@@ -1572,11 +1657,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
         elif self.avl.focus_image is None:
             self.avl.go_image(image)
         
-    def _image_removed(self, album, image, index):
+        
+    def _album_image_removed_cb(self, album, image, index):
         image.lists -= 1
         self._refresh_index.queue()
         
-    def _album_order_changed(self, album):
+        
+    def _album_order_changed_cb(self, album):
         self._refresh_index.queue()
 
 
