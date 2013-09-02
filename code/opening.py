@@ -27,7 +27,7 @@
 
 from gi.repository import GdkPixbuf, Gio, GObject, GLib, Gtk
 from gettext import gettext as _
-import extending, utility, loading
+import notification, extending, utility, loading
 from collections import deque
 
 STANDARD_GFILE_INFO = (
@@ -43,6 +43,11 @@ class OpeningHandler(GObject.Object):
     __gsignals__ = {
        "new-context": (GObject.SIGNAL_ACTION, None, [object]),
     }
+    
+    
+    def __init__(self, app):
+        GObject.Object.__init__(self)
+        self.app = app
     
     
     def open_file(self, context, session, gfile, gfile_info):
@@ -87,12 +92,68 @@ class OpeningHandler(GObject.Object):
             return None
     
     
-    def handle(self, context):
+    def handle(self, context, album=None):
+        """
+        Handles the next opening sessions of a context in an app standard
+        way that will add its results to the indicated album
+        
+        """
         self.emit("new-context", context)
         
         context.connect("new-session", self._new_session_cb)
         context.connect("loaded-file-info", self._loaded_file_info_cb)
         context.connect("open-next::file", self._open_next_file_cb)
+        if album is not None:
+            context.connect(
+                "finished-session",
+                self._standard_session_finished_cb,
+                album
+            )
+    
+    
+    def _standard_session_finished_cb(self, context, session, album):
+        files = []
+        images = []
+        errors = []
+        final_results = OpeningResults()
+        for key, some_results in session.results.items():
+            images.extend(some_results.images)
+            errors.extend(some_results.errors)
+            if some_results.files:
+                files.append((key, some_results.files))
+        
+        notification.log("depth %d: %d images, %d files, %d errors" % (
+                session.depth, len(images), len(files), len(errors)
+            )
+        )
+        
+        if files:
+            continue_opening = True
+            if images and session.depth > 0:
+                continue_opening = False
+                
+            if continue_opening:
+                for key, some_files in files:
+                    notification.log(
+                        "Starting %d depth opening session with %d files" % (
+                            session.depth + 1, len(some_files),
+                        )
+                    )
+                    new_session = context.get_new_session(session, key)
+                    
+                    # If the session was created to open the siblings of
+                    # another session, the its child session will have the
+                    # same openers as the session it was created for.
+                    # </overcomplicated>
+                    if session.for_siblings_of_session:
+                        openers = session.for_siblings_of_session.openers
+                    else:
+                        openers = self.app.components["file-opener"]
+                    
+                    new_session.add(files=some_files, openers=openers)
+            
+        self.app.memory.observe(*images)
+        album.extend(images)
     
     
     def start_opening(self, context, files=None, uris=None, openers=None):
@@ -127,6 +188,35 @@ class OpeningHandler(GObject.Object):
         opening them if any of the files already has its information
         
         """
+        
+        if session.search_siblings:
+            if session.search_siblings_session is None:
+                siblings_session = context.get_new_session()
+                siblings_session.add_openers([
+                    self.app.components[
+                        "file-opener", DirectoryOpener.CODENAME
+                    ]
+                ])
+                siblings_session.for_siblings_of_session = session
+                session.search_siblings_session = siblings_session
+            else:
+                siblings_session = session.search_siblings_session
+            
+            parent_files = set()
+            for i in range(len(files)):
+                j = i - len(parent_files)
+                a_file = files[j]
+                try:
+                    if a_file.has_parent(None):
+                        a_parent_file = a_file.get_parent()
+                        parent_files.add(a_parent_file)
+                        del files[j]
+                except Exception as e:
+                    #TODO: Print this correctly
+                    print(e)
+            
+            siblings_session.add_files(parent_files)
+        
         files_to_enqueue = []
         for a_file in files:
             if context.query_missing_info(a_file):
@@ -406,6 +496,10 @@ class OpeningSession(GObject.Object):
             
         self.finished = False
         
+        self.search_siblings = False
+        self.search_siblings_session = None
+        self.for_siblings_of_session = None
+        
         self.results = {}
         
         self.files = files if files is not None else []
@@ -421,14 +515,13 @@ class OpeningSession(GObject.Object):
     
     
     def add(self, files=None, uris=None, openers=None):
-        if files:
-            self.add_files(files)
-        
-        if uris:
-            self.add_uris(uris)
-        
         if openers:
             self.add_openers(openers)
+        if uris:
+            self.add_uris(uris)
+            
+        if files:
+            self.add_files(files)
     
     
     def add_files(self, files):

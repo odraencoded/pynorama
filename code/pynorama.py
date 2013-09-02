@@ -81,7 +81,7 @@ class ImageViewer(Gtk.Application):
         self.memory.connect("thing-unlisted", self.queue_memory_check)
         
         
-        self.opener = opening.OpeningHandler()
+        self.opener = opening.OpeningHandler(self)
         
         Gtk.Window.set_default_icon_name("pynorama")
     
@@ -97,8 +97,10 @@ class ImageViewer(Gtk.Application):
         all_openers = self.components["file-opener"]
         context = opening.OpeningContext()
         
-        self.open_for_album(context, some_window.album)
-        context.new_session().add(files=files, openers=openers)
+        self.opener.handle(context, album=some_window.album)
+        newest_session = context.get_new_session()
+        newest_session.search_siblings = len(files) == 1
+        newest_session.add(files=files, openers=all_openers)
         
         some_window.present()
     
@@ -179,7 +181,7 @@ class ImageViewer(Gtk.Application):
             if a_file_opener.show_on_dialog:
                 a_file_filter = a_file_opener.get_file_filter()
                 image_chooser.add_filter(a_file_filter)
-                file_openers_filters[a_file_opener] = a_file_filter
+                file_openers_filters[a_file_filter] = a_file_opener
         
         
         # Handles the dialog being destroyed after exiting .run
@@ -488,61 +490,13 @@ class ImageViewer(Gtk.Application):
         )
         mouse_settings.data["mechanisms"] = mechanisms_data
     
+    
     def _load_mouse_settings(self, mouse_settings):
         
         preferences.LoadMouseMechanismsSettings(
             self, self.meta_mouse_handler, mouse_settings.data["mechanisms"]
         )
-    
-    
-    def open_for_album(self, context, album):
-        context.connect(
-            "finished-session",
-            self._default_opening_session_finished_cb,
-            album
-        )
-        self.opener.handle(context)
-    
-    def _default_opening_session_finished_cb(self, context, session, album):
-        files = []
-        images = []
-        errors = []
-        final_results = opening.OpeningResults()
-        for key, some_results in session.results.items():
-            images.extend(some_results.images)
-            errors.extend(some_results.errors)
-            if some_results.files:
-                files.append((key, some_results.files))
-        
-        notification.log("depth %d: %d images, %d files, %d errors" % (
-                session.depth, len(images), len(files), len(errors)
-            )
-        )
-        
-        if files:
-            continue_opening = True
-            if images and session.depth > 0:
-                continue_opening = False
-                
-            if continue_opening:
-                for key, some_files in files:
-                    notification.log(
-                        "Starting %d depth opening session with %d files" % (
-                            session.depth + 1, len(some_files),
-                        )
-                    )
-                    new_session = context.get_new_session(session, key)
-                    all_openers = self.components["file-opener"]
-                    new_session.add(files=some_files, openers=all_openers)
-            
-        self.memory.observe(*images)
-        album.extend(images)
-    
-    
-    def _album_from_finished_opening_context_cb(self, context, data):
-        callback, callback_data = data
-        
-        callback(album, callback_data)
+
 
 class ViewerWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
@@ -1605,25 +1559,29 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     def _open_dialog_open_cb(self, uris, openers, opening_context):
         if not opening_context.__added_already:
-            del self.album[:]
-            self.app.open_for_album(opening_context, self.album)
             opening_context.__added_already = True
+            # Set to search for siblings only one file was opened
+            del self.album[:]
+            search_siblings = len(uris) == 1
+            
+            self.app.opener.handle(opening_context, album=self.album)
+        else:
+            search_siblings = False
             
         newest_session = opening_context.get_new_session()
+        newest_session.search_siblings = search_siblings
         newest_session.add(openers=openers, uris=uris)
-        
-        print("open'd", uris)
     
     
     def _open_dialog_add_cb(self, uris, openers, opening_context):
         if not opening_context.__added_already:
-            self.app.open_for_album(opening_context, self.album)
             opening_context.__added_already = True
+            self.app.opener.handle(opening_context, album=self.album)
+            
             
         newest_session = opening_context.get_new_session()
         newest_session.add(openers=openers, uris=uris)
         
-        print("add'd", uris)
         return True
     
     
