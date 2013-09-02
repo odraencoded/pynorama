@@ -173,9 +173,11 @@ class ImageSource(Loadable):
         self.metadata = None
         
         self.fullname, self.name = "", ""
-        
+    
+    
     def __str__(self):
         return self.fullname
+    
     
     def get_metadata(self):
         if not self.metadata:
@@ -183,9 +185,21 @@ class ImageSource(Loadable):
             
         return self.metadata
     
+    
     def create_frame(self):
-        """Returns a new ImageFrame for rendering this ImageSource"""
+        """ Returns a new ImageFrame for rendering this ImageSource"""
         raise NotImplementedError
+    
+    
+    def matches_uri(self, uri):
+        """
+        Returns whether this image somehow matches an uri.
+        A check isn't necessary and the uri isn't necessarily valid.
+        By default this returns false.
+        
+        """
+        return False
+        
 
 import viewing
 
@@ -209,7 +223,10 @@ class GFileImageSource(ImageSource):
         self.fullname = self.gfile.get_parse_name()
         
         self.location = Location.Disk if gfile.is_native() else Location.Distant
-
+    
+    
+    def matches_uri(self, uri):
+        return self.gfile.get_uri() == uri
 
 class PixbufDataImageSource(ImageSource):
     ''' An ImageSource created from a pixbuf

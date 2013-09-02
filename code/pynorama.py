@@ -93,6 +93,7 @@ class ImageViewer(Gtk.Application):
     
     def do_open(self, files, file_count, hint):
         some_window = self.get_window()
+        some_window.wait_and_go_to_uri = files[0].get_uri()
         
         all_openers = self.components["file-opener"]
         context = opening.OpeningContext()
@@ -516,7 +517,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         self._focus_loaded_handler_id = None
         self._old_focused_image = None
-        self.go_new = False
+        self.wait_and_go_to_uri = None
         self.album = organization.Album()
         self.album.connect("image-added", self._album_image_added_cb)
         self.album.connect("image-removed", self._album_image_removed_cb)
@@ -1571,6 +1572,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         newest_session = opening_context.get_new_session()
         newest_session.search_siblings = search_siblings
         newest_session.add(openers=openers, uris=uris)
+        self.wait_and_go_to_uri = uris[0]
     
     
     def _open_dialog_add_cb(self, uris, openers, opening_context):
@@ -1581,6 +1583,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
         newest_session = opening_context.get_new_session()
         newest_session.add(openers=openers, uris=uris)
+        self.wait_and_go_to_uri = uris[0]
         
         return True
     
@@ -1674,9 +1677,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
         image.lists += 1
         self._refresh_index.queue()
         
-        if self.go_new:
-            self.go_new = False
-            self.avl.go_image(image)
+        if self.wait_and_go_to_uri:
+            if image.matches_uri(self.wait_and_go_to_uri):
+                self.wait_and_go_to_uri = None
+                self.avl.go_image(image)
             
         elif self.avl.focus_image is None:
             self.avl.go_image(image)

@@ -111,51 +111,6 @@ class OpeningHandler(GObject.Object):
             )
     
     
-    def _standard_session_finished_cb(self, context, session, album):
-        files = []
-        images = []
-        errors = []
-        final_results = OpeningResults()
-        for key, some_results in session.results.items():
-            images.extend(some_results.images)
-            errors.extend(some_results.errors)
-            if some_results.files:
-                files.append((key, some_results.files))
-        
-        notification.log("depth %d: %d images, %d files, %d errors" % (
-                session.depth, len(images), len(files), len(errors)
-            )
-        )
-        
-        if files:
-            continue_opening = True
-            if images and session.depth > 0:
-                continue_opening = False
-                
-            if continue_opening:
-                for key, some_files in files:
-                    notification.log(
-                        "Starting %d depth opening session with %d files" % (
-                            session.depth + 1, len(some_files),
-                        )
-                    )
-                    new_session = context.get_new_session(session, key)
-                    
-                    # If the session was created to open the siblings of
-                    # another session, the its child session will have the
-                    # same openers as the session it was created for.
-                    # </overcomplicated>
-                    if session.for_siblings_of_session:
-                        openers = session.for_siblings_of_session.openers
-                    else:
-                        openers = self.app.components["file-opener"]
-                    
-                    new_session.add(files=some_files, openers=openers)
-            
-        self.app.memory.observe(*images)
-        album.extend(images)
-    
-    
     def start_opening(self, context, files=None, uris=None, openers=None):
         """
         Starts to open input from a session
@@ -174,8 +129,55 @@ class OpeningHandler(GObject.Object):
             newest_session.add_files(files)
         if uris is not None:
             newest_session.add_uris(uris)
-        
     
+    
+    
+    def _standard_session_finished_cb(self, context, session, album):
+        files = []
+        images = []
+        errors = []
+        final_results = OpeningResults()
+        
+        for key, some_results in session.results.items():
+            if some_results:
+                images.extend(some_results.images)
+                errors.extend(some_results.errors)
+                if some_results.files:
+                    files.append((key, some_results.files))
+        
+        notification.log("depth %d: %d images, %d files, %d errors" % (
+                session.depth, len(images), len(files), len(errors)
+            )
+        )
+        
+        if files:
+            continue_opening = True
+            if images and session.depth > 0:
+                continue_opening = False
+                
+            if continue_opening:
+                # If the session was created to open the siblings of
+                # another session, the its child session will have the
+                # same openers as the session it was created for.
+                # </overcomplicated>
+                if session.for_siblings_of_session:
+                    openers = session.for_siblings_of_session.openers
+                else:
+                    openers = self.app.components["file-opener"]
+                
+                for key, some_files in files:
+                    notification.log(
+                        "Starting %d depth opening session with %d files" % (
+                            session.depth + 1, len(some_files),
+                        )
+                    )
+                    new_session = context.get_new_session(session, key)
+                    
+                    new_session.add(files=some_files, openers=openers)
+            
+        self.app.memory.observe(*images)
+        album.extend(images)
+        
     
     def _new_session_cb(self, context, session, *etc):
         session.connect("added::file", self._added_file_cb, context)
@@ -216,6 +218,7 @@ class OpeningHandler(GObject.Object):
                     print(e)
             
             siblings_session.add_files(parent_files)
+        
         
         files_to_enqueue = []
         for a_file in files:
@@ -293,6 +296,9 @@ class OpeningContext(GObject.Object):
         
         self.sessions = []
         self.open_sessions = set()
+        
+        self.wait_for_first_file = False
+        self.opened_first_file = False
         
         self.incomplete_results = set()
         self.files_being_queried = set()
@@ -422,6 +428,7 @@ class OpeningContext(GObject.Object):
             return False
         
         self.emit("open-next::" + kind, session, next_item)
+        
         self.open_next.queue()
         
         return True
@@ -476,17 +483,19 @@ class OpeningSession(GObject.Object):
         "added" : (GObject.SIGNAL_DETAILED, None, [object]),
         "finished" : (GObject.SIGNAL_ACTION, None, []),
     }
-    def __init__(self, parent, source, files=None, openers=None):
+    def __init__(self, parent, source):
         GObject.Object.__init__(self)
         
         self.source = source
-        self.parent = parent
-        if self.parent is None:
+        self.parent_session = parent
+        self.children_sessions = []
+        if self.parent_session is None:
             self.depth = 0
         else:
+            self.parent_session.children_sessions.append(self)
             ancestry = {parent}
-            while parent.parent is not None:
-                parent = parent.parent
+            while parent.parent_session is not None:
+                parent = parent.parent_session
                 if parent in ancestry:
                     raise ValueError
                 else:
@@ -502,10 +511,10 @@ class OpeningSession(GObject.Object):
         
         self.results = {}
         
-        self.files = files if files is not None else []
-        self.files_set = set(self.files)
-        self.openers = openers if openers is not None else []
-    
+        self.files, self.uris = [], []
+        self.files_set, self.uris_set = set(), set()
+        self.openers = []
+        
     
     def finish(self):
         assert not self.finished
@@ -544,8 +553,8 @@ class OpeningSession(GObject.Object):
         uri_list = list(uris)
         if uri_list:
             self.emit("added::uri", uri_list)
-            self.files.extend(uri_list)
-            self.files_set.update(uri_list)
+            self.uris.extend(uri_list)
+            self.uris_set.update(uri_list)
     
     
     def add_openers(self, openers):
