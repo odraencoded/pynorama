@@ -146,7 +146,7 @@ class ImageViewer(Gtk.Application):
         OPEN_RESPONSE = Gtk.ResponseType.OK # <-- explores directories
         CANCEL_RESPONSE = Gtk.ResponseType.CANCEL
         
-        buttons = (Gtk.STOCK_CANCEL, CANCEL_RESPONSE)
+        buttons = (Gtk.STOCK_CLOSE, CANCEL_RESPONSE)
         if add_cb:
             buttons += (Gtk.STOCK_ADD, ADD_RESPONSE)
         buttons += (Gtk.STOCK_OPEN, OPEN_RESPONSE)
