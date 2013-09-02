@@ -373,101 +373,6 @@ class ImageViewer(Gtk.Application):
             notification.log(notification.Lines.Loaded(thing))
     
     
-    def open_files_for_album(
-        self, album, loader=None, files=None, uris=None,
-        replace=False, search=False, silent=False,
-        manage=True
-    ):
-        ''' Open files or uris for an album '''
-        album_context = loading.Context(files=files, uris=uris)
-        context_sorting = lambda ctx: album.sort_list(ctx.images)
-        
-        self.open_files(
-            album_context, context_sorting=context_sorting,
-            loader=loader, search=search, silent=silent
-        )
-        
-        if album_context.images:
-            if replace:
-                del album[:]
-            
-            if manage:
-                for image in album_context.images:
-                    self.memory.observe(image)
-                    
-            album.extend(album_context.images)
-        
-        
-    def open_files(
-        self, context, loader=None, search=False,
-        context_sorting=None, silent=False
-    ):
-        ''' Open files using loading.LoadersLoader '''
-        if loader is None:
-            loader = loading.LoadersLoader.LoaderListLoader
-        
-        context.uris_to_files()
-        context.load_files_info()
-        for a_file, a_problem in context.problems.items():
-            context.files.remove(a_file)
-        
-        directories = []
-        removed_files = 0
-        for i in range(len(context.files)):
-            index = i - removed_files
-            a_file = context.files[index]
-            try:
-                if DirectoryLoader.should_open(a_file):
-                    removed_files += 1
-                    directories.append(a_file)
-                    del context.files[index]
-            except Exception:
-                raise
-        
-        if search and context.files:
-            # Sibling file loading is not sorted
-            context.add_sibling_files(loader)
-            files = list(context.files)
-            del context.files[:]
-            self.open_context_images(context, files, loader)
-            
-        if directories:
-            self.open_context_images(
-                context, directories, DirectoryLoader,
-                sort_method=context_sorting
-            )
-            
-        if context.files:
-            self.open_context_images(
-                context, context.files, loader,
-                sort_method=context_sorting
-            )
-        
-        if context.problems and not silent:
-            problem_list = []
-            for a_file, a_problem in context.problems.items():
-                problem_list.append((a_file.get_parse_name(), str(a_problem)))
-            
-            message = _("There were problems opening the following files:")
-            columns = [_("File"), _("Error")]
-            
-            notification.alert_list(message, problem_list, columns)
-            
-            
-    def open_context_images(self, context, files, loader, sort_method=None):
-        ''' Opens files in a loader, sort the result with sort_method and
-            append it to context. '''
-        loader_context = loading.Context()
-        for a_file in files:
-            loader.open_file(loader_context, a_file)
-        
-        if sort_method:
-            sort_method(loader_context)
-        
-        context.images.extend(loader_context.images)
-        context.files.extend(loader_context.files)
-        context.uris.extend(loader_context.uris)
-        
     def load_pixels(self, pixels):
         pixelated_image = loading.PixbufDataImageSource(pixels, "Pixels")
         return [pixelated_image]
@@ -1503,14 +1408,49 @@ class ViewerWindow(Gtk.ApplicationWindow):
         if focus:
             focus.copy_to_clipboard(self.clipboard)
     
+    
+    def open_uris(self, uris, openers=None):
+        uri_list = list(uris)
+        if not uri_list:
+            return
+            
+        if openers is None:
+            openers = self.app.components["file-opener"]
+            
+        opening_context = opening.OpeningContext()
+        del self.album[:]
+        self.app.opener.handle(opening_context, album=self.album)
+        
+        search_siblings = len(uri_list) == 1
+        newest_session = opening_context.get_new_session()
+        newest_session.search_siblings = search_siblings
+        newest_session.add(openers=openers, uris=uri_list)
+        self.wait_and_go_to_uri = uri_list[0]
+    
+    
+    def add_uris(self, uris, openers=None):
+        uri_list = list(uris)
+        if not uri_list:
+            return
+            
+        if openers is None:
+            openers = self.app.components["file-opener"]
+            
+        opening_context = opening.OpeningContext()
+        self.app.opener.handle(opening_context, album=self.album)
+        
+        newest_session = opening_context.get_new_session()
+        newest_session.add(openers=openers, uris=uri_list)
+        self.wait_and_go_to_uri = uri_list[0]
+    
+    
     def pasted_data(self, data=None):
-        return #TODO: Implement
-        self.go_new = True
         some_uris = self.clipboard.wait_for_uris()
         
         if some_uris:
-            self.app.open_files_for_album(self.album, uris=some_uris)
-        
+            self.add_uris(some_uris)
+            
+        return #TODO: Implement
         some_text = self.clipboard.wait_for_text()
         if some_text:
             self.app.open_files_for_album(
@@ -1522,27 +1462,20 @@ class ViewerWindow(Gtk.ApplicationWindow):
             new_images = self.app.load_pixels(some_pixels)
             if new_images:
                 self.album.extend(new_images)
-                
-        self.go_new = False
-        
+    
+    
     def dragged_data(self, widget, context, x, y, selection, info, timestamp):
-        return #TODO: implement
-        self.go_new = True
         if info == DND_URI_LIST:
             some_uris = selection.get_uris()
-            if some_uris:
-                self.app.open_files_for_album(self.album, uris=some_uris,
-                                                   search=len(some_uris) == 1,
-                                                   replace=True)
-                                                   
+            self.open_uris(some_uris)
+            
         elif info == DND_IMAGE:
+            return
             some_pixels = selection.get_pixbuf()
             if some_pixels:
                 new_images = self.app.load_pixels(some_pixels)
                 if new_images:
                     self.album.extend(new_images)
-                    
-        self.go_new = False
     
     
     def file_open(self, widget, data=None):
