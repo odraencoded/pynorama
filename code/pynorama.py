@@ -62,7 +62,8 @@ class ImageViewer(Gtk.Application):
         self.settings.connect("load", self._load_settings)
         mouse_settings.connect("save", self._save_mouse_settings)
         mouse_settings.connect("load", self._load_mouse_settings)
-        
+    
+    
     # --- Gtk.Application interface down this line --- #
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -95,51 +96,11 @@ class ImageViewer(Gtk.Application):
         
         all_openers = self.components["file-opener"]
         context = opening.OpeningContext()
-        context.connect(
-            "finished-session",
-            self._opening_session_finished_cb,
-            some_window.album
-        )
-        self.opener.start_opening(context, files=files, openers=all_openers)
+        
+        self.open_for_album(context, some_window.album)
+        context.new_session().add(files=files, openers=openers)
         
         some_window.present()
-    
-    
-    def _opening_session_finished_cb(self, context, session, album):
-        files = []
-        images = []
-        errors = []
-        final_results = opening.OpeningResults()
-        for key, some_results in session.results.items():
-            images.extend(some_results.images)
-            errors.extend(some_results.errors)
-            if some_results.files:
-                files.append((key, some_results.files))
-        
-        notification.log("depth %d: %d images, %d files, %d errors" % (
-                session.depth, len(images), len(files), len(errors)
-            )
-        )
-        
-        if files:
-            continue_opening = True
-            if images and session.depth > 0:
-                continue_opening = False
-                
-            if continue_opening:
-                for key, some_files in files:
-                    notification.log(
-                        "Starting %d depth opening session with %d files" % (
-                            session.depth + 1, len(some_files),
-                        )
-                    )
-                    new_session = context.get_new_session(session, key)
-                    all_openers = self.components["file-opener"]
-                    new_session.add_openers(all_openers)
-                    new_session.add_files(some_files)
-            
-        self.memory.observe(*images)
-        album.extend(images)
     
     
     def do_shutdown(self):
@@ -151,30 +112,53 @@ class ImageViewer(Gtk.Application):
     zoom_effect = GObject.Property(type=float, default=1.25)
     spin_effect = GObject.Property(type=float, default=90)
     
-    def open_image_dialog(self, album, window=None):
-        return #TODO: IMPLEMENT!!!11
-        """ Creates an "Open Image..." dialog for
-            adding images into a certain album of images """
+    def show_open_image_dialog(self,
+            open_cb,
+            add_cb=None,
+            cancel_cb=None,
+            window=None,
+            data=None):
+        """
+        Creates an "Open Image..." dialog for opening images.
         
+        Its behaviour can be controlled with callbacks. The open and add
+        callbacks are called when the user activates either open or add
+        buttons. The add button will not be displayed if the add_cb
+        is set to None.
+        
+        A list of URIs and a list of FileOpeners selected is passed to both
+        open and add callback. Nothing is passed to the cancel callback.
+        
+        If a callback returns True the dialog will not be closed and that
+        same callback might be called again.
+        
+        """
         
         # The dialog has two "open" buttons: "Open" and "Add"
-        # The Add button always opens the selected files as is and adds them
-        # to the album
-        # The Open button can't "open" directories, it replaces the contents
-        # of the album and it tries to opens other files in the same directory
+        # The purpose is to let the user decide between replacing the
+        # images being viewed and adding more images to view
+        # Also, the "open" button can't "open" directories, only explore them.
+        # That is kind of important!
+        ADD_RESPONSE = 1
+        OPEN_RESPONSE = Gtk.ResponseType.OK # <-- explores directories
+        CANCEL_RESPONSE = Gtk.ResponseType.CANCEL
+        
+        buttons = (Gtk.STOCK_CANCEL, CANCEL_RESPONSE)
+        if add_cb:
+            buttons += (Gtk.STOCK_ADD, ADD_RESPONSE)
+        buttons += (Gtk.STOCK_OPEN, OPEN_RESPONSE)
+        
         image_chooser = Gtk.FileChooserDialog(
             _("Open Image..."),
             window,
             Gtk.FileChooserAction.OPEN,
-            (
-                Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-                Gtk.STOCK_ADD, 1,
-                Gtk.STOCK_OPEN, Gtk.ResponseType.OK
-            )
+            buttons
         )
         
         # The default response must have the "OK" value so that the dialog
         # goes inside directories instead of returning them
+        image_chooser.set_modal(True)
+        image_chooser.set_destroy_with_parent(True)
         image_chooser.set_default_response(Gtk.ResponseType.OK)
         image_chooser.set_select_multiple(True)
         image_chooser.set_local_only(False)
@@ -182,7 +166,7 @@ class ImageViewer(Gtk.Application):
         #~ Create and add the file filters to the file chooser dialog ~#
         # Add the Supported Files filter
         file_openers = self.components["file-opener"]
-        supported_files_group = loading.FileOpenerGroup(
+        supported_files_group = opening.FileOpenerGroup(
             _("Supported Files"),
             file_openers
         )
@@ -197,47 +181,44 @@ class ImageViewer(Gtk.Application):
                 image_chooser.add_filter(a_file_filter)
                 file_openers_filters[a_file_opener] = a_file_filter
         
-        response = image_chooser.run()
-        clear_album = False
-        search_siblings = False
-        uris_to_open = None
         
-        if response in [Gtk.ResponseType.OK, 1]:
-            uris_to_open = image_chooser.get_uris()
+        # Handles the dialog being destroyed after exiting .run
+        image_chooser.__destroyed = False
+        def dialog_destroy_cb(dialog, *etc):
+            dialog.__destroyed = True
+        image_chooser.connect("destroy", dialog_destroy_cb)
         
-        if response == Gtk.ResponseType.OK:
-            clear_album = True
-            if len(uris_to_open) == 1:
-                search_siblings = True
-        
-        chosen_filter = image_chooser.get_filter()
-        image_chooser.destroy()
-        
-        if uris_to_open:
-            # Try to get the file opener the selected file filter represents
-            # If the filter was "Supported Files" then the file opener is
-            # guessed by the program
-            try:
-                chosen_opener = file_openers_filters[chosen_filter]
-            except KeyError:
-                avaiable_openers = supported_files_group.file_openers
-            else:
-                avaiable_openers = [chosen_opener]
-            
-            session = self.opener.create_context()
-            session.add_openers(avaiable_openers)
-            session.set_uris(uris_to_open)
-            session.connect("opened", self._test, album)
-            session.start_opening()
-            
-            '''
-            self.open_files_for_album(
-                album,
-                avaiable_openers,
-                uris=choosen_uris,
-                search=search_siblings,
-                replace=clear_album
-            )'''
+        try:
+            run_dialog = True
+            while run_dialog:
+                response = image_chooser.run()
+                if image_chooser.__destroyed:
+                    break
+                
+                uri_list = image_chooser.get_uris()
+                # Get chosen openers list
+                chosen_filter = image_chooser.get_filter()
+                try:
+                    chosen_openers = [file_openers_filters[chosen_filter]]
+                except KeyError:
+                    chosen_openers = supported_files_group.file_openers
+                
+                # Figure out what callback to call
+                run_dialog = False
+                if response == OPEN_RESPONSE:
+                    if open_cb:
+                        run_dialog = open_cb(uri_list, chosen_openers, data)
+                        
+                elif response == ADD_RESPONSE:
+                    if add_cb:
+                        run_dialog = add_cb(uri_list, chosen_openers, data)
+                    
+                elif cancel_cb:
+                    run_dialog = cancel_cb(data)
+        finally:
+            # In case something goes wrong when calling the callbacks
+            # we don't want the to just hang there forever
+            image_chooser.destroy()
     
     
     def show_preferences_dialog(self, target_window=None):
@@ -512,6 +493,56 @@ class ImageViewer(Gtk.Application):
         preferences.LoadMouseMechanismsSettings(
             self, self.meta_mouse_handler, mouse_settings.data["mechanisms"]
         )
+    
+    
+    def open_for_album(self, context, album):
+        context.connect(
+            "finished-session",
+            self._default_opening_session_finished_cb,
+            album
+        )
+        self.opener.handle(context)
+    
+    def _default_opening_session_finished_cb(self, context, session, album):
+        files = []
+        images = []
+        errors = []
+        final_results = opening.OpeningResults()
+        for key, some_results in session.results.items():
+            images.extend(some_results.images)
+            errors.extend(some_results.errors)
+            if some_results.files:
+                files.append((key, some_results.files))
+        
+        notification.log("depth %d: %d images, %d files, %d errors" % (
+                session.depth, len(images), len(files), len(errors)
+            )
+        )
+        
+        if files:
+            continue_opening = True
+            if images and session.depth > 0:
+                continue_opening = False
+                
+            if continue_opening:
+                for key, some_files in files:
+                    notification.log(
+                        "Starting %d depth opening session with %d files" % (
+                            session.depth + 1, len(some_files),
+                        )
+                    )
+                    new_session = context.get_new_session(session, key)
+                    all_openers = self.components["file-opener"]
+                    new_session.add(files=some_files, openers=all_openers)
+            
+        self.memory.observe(*images)
+        album.extend(images)
+    
+    
+    def _album_from_finished_opening_context_cb(self, context, data):
+        callback, callback_data = data
+        
+        callback(album, callback_data)
 
 class ViewerWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
@@ -1557,10 +1588,45 @@ class ViewerWindow(Gtk.ApplicationWindow):
                     self.album.extend(new_images)
                     
         self.go_new = False
-                                
+    
+    
     def file_open(self, widget, data=None):
-        self.app.open_image_dialog(self.album, self)
+        opening_context = opening.OpeningContext()
+        opening_context.__added_already = False
         
+        self.app.show_open_image_dialog(
+            self._open_dialog_open_cb,
+            self._open_dialog_add_cb,
+            None,
+            self,
+            opening_context
+        )
+    
+    
+    def _open_dialog_open_cb(self, uris, openers, opening_context):
+        if not opening_context.__added_already:
+            del self.album[:]
+            self.app.open_for_album(opening_context, self.album)
+            opening_context.__added_already = True
+            
+        newest_session = opening_context.get_new_session()
+        newest_session.add(openers=openers, uris=uris)
+        
+        print("open'd", uris)
+    
+    
+    def _open_dialog_add_cb(self, uris, openers, opening_context):
+        if not opening_context.__added_already:
+            self.app.open_for_album(opening_context, self.album)
+            opening_context.__added_already = True
+            
+        newest_session = opening_context.get_new_session()
+        newest_session.add(openers=openers, uris=uris)
+        
+        print("add'd", uris)
+        return True
+    
+    
     def show_layout_dialog(self, *data):
         ''' Shows a dialog with the layout settings widget '''
         

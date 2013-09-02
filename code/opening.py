@@ -41,7 +41,7 @@ class OpeningHandler(GObject.Object):
     """ Provides methods to open things """
     
     __gsignals__ = {
-       "start-context": (GObject.SIGNAL_ACTION, None, [object]),
+       "new-context": (GObject.SIGNAL_ACTION, None, [object]),
     }
     
     
@@ -87,7 +87,15 @@ class OpeningHandler(GObject.Object):
             return None
     
     
-    def start_opening(self, context, files=None, openers=None):
+    def handle(self, context):
+        self.emit("new-context", context)
+        
+        context.connect("new-session", self._new_session_cb)
+        context.connect("loaded-file-info", self._loaded_file_info_cb)
+        context.connect("open-next::file", self._open_next_file_cb)
+    
+    
+    def start_opening(self, context, files=None, uris=None, openers=None):
         """
         Starts to open input from a session
         
@@ -95,11 +103,7 @@ class OpeningHandler(GObject.Object):
         
         """
         
-        self.emit("start-context", context)
-        
-        context.connect("new-session", self._new_session_cb)
-        context.connect("loaded-file-info", self._loaded_file_info_cb)
-        context.connect("open-next::file", self._open_next_file_cb)
+        self.handle(context)
         
         newest_session = context.get_new_session()
         
@@ -107,24 +111,53 @@ class OpeningHandler(GObject.Object):
             newest_session.add_openers(openers)
         if files is not None:
             newest_session.add_files(files)
-        
+        if uris is not None:
+            newest_session.add_uris(uris)
         
     
     
     def _new_session_cb(self, context, session, *etc):
         session.connect("added::file", self._added_file_cb, context)
+        session.connect("added::uri", self._added_uri_cb, context)
     
     
     def _added_file_cb(self, session, files, context):
-        start_opening = False
+        """
+        Queries file info of files added to a session and starts
+        opening them if any of the files already has its information
+        
+        """
+        files_to_enqueue = []
         for a_file in files:
             if context.query_missing_info(a_file):
-                context.enqueue_file(session, a_file)
-                start_opening = True
-        
-        if start_opening:
-            context.open_next.queue()
+                files_to_enqueue.append(a_file)
+                
+        context.enqueue_files(session, files_to_enqueue)
     
+    
+    def _added_uri_cb(self, session, uris, context):
+        """
+        Removes URIs whose protocol is file:slashes and adds them as
+        files instead
+        
+        """
+        
+        new_file_for_uri = Gio.File.new_for_uri
+        converted_files = []
+        for i in range(len(uris)):
+            j = i -len(converted_files)
+            an_uri = uris[j]
+            if an_uri.lower().startswith("file:"):
+                # Probably, all local URIs start with file: and then
+                # some slashes... probably...
+                a_converted_file = new_file_for_uri(an_uri)
+                converted_files.append(a_converted_file)
+                del uris[j]
+        
+        session.add_files(converted_files)
+        context.enqueue_uris(session, uris)
+
+        # If there are any non-local URIs, then we will open them
     
     def _create_filter_info(self, context, gfile_info):
         """ Returns a Gtk.FileFilterInfo for filtering FileOpeners """
@@ -138,17 +171,15 @@ class OpeningHandler(GObject.Object):
     
     
     def _loaded_file_info_cb(self, context, gfile, *etc):
-        """ Handles getting file info by opening the next file in the queue """
-        
+        """ Enqueues a file that has got its file info to be opened """
+        gfile_list = [gfile]
         for a_session in context.open_sessions:
             if gfile in a_session.files_set:
-                context.enqueue_file(a_session, gfile)
+                context.enqueue_files(a_session, gfile_list)
     
     
     def _open_next_file_cb(self, context, session, gfile):
         """ Opens the next """
-        if context.file_opening_queue:
-            context.open_next.queue()
         
         gfile_info = context.file_info_cache[gfile]
         self.open_file(context, session, gfile, gfile_info)
@@ -161,7 +192,6 @@ class OpeningContext(GObject.Object):
         "new-session" : (GObject.SIGNAL_ACTION, None, [object]),
         "finished-session" : (GObject.SIGNAL_ACTION, None, [object]),
         "opened" : (GObject.SIGNAL_DETAILED, None, [object, object]),
-        "exhausted" : (GObject.SIGNAL_DETAILED, None, [object]),
         # Valid details for the above signals are ::file and ::uri
         "loaded_file_info": (GObject.SIGNAL_RUN_LAST, None, [object, object]),
         "open-next": (GObject.SIGNAL_DETAILED, None, [object, object]),
@@ -176,7 +206,7 @@ class OpeningContext(GObject.Object):
         
         self.incomplete_results = set()
         self.files_being_queried = set()
-        self.file_opening_queue = deque()
+        self.opening_queue = deque()
         self.file_info_cache = {}
         
         self.open_next = utility.IdlyMethod(self.open_next)
@@ -185,30 +215,31 @@ class OpeningContext(GObject.Object):
     
     def get_new_session(self, parent=None, source=None):
         """ Gets the latest non-finished opening session """
-        new_session = None
-        if self.sessions:
-            for a_session in reversed(self.sessions):
-                if not a_session.finished \
-                   and a_session.parent == parent \
-                   and a_session.source == source:
-                    new_session = a_session
-                    break
-                
-        if new_session is None:
-            new_session = OpeningSession(parent, source)
-            self.sessions.append(new_session)
-            self.open_sessions.add(new_session)
-            new_session.connect("finished", self._session_finished_cb)
-            
-            self.emit("new-session", new_session)
-            
+        new_session = OpeningSession(parent, source)
+        self.sessions.append(new_session)
+        self.open_sessions.add(new_session)
+        new_session.connect("finished", self._session_finished_cb)
+        self.emit("new-session", new_session)
+        
         return new_session
     
     
-    def enqueue_file(self, session, gfile):
-        """ Queues a file to be opened """
-        self.file_opening_queue.append((session, gfile))
-        self.open_next.queue()
+    def enqueue_files(self, session, files):
+        """ Queues files to be opened """
+        if files:
+            self.opening_queue.extend(
+                ("file", session, a_file) for a_file in files
+            )
+            self.open_next.queue()
+    
+    
+    def enqueue_uris(self, session, uris):
+        """ Queues uris to be opened """ 
+        if uris:
+            self.opening_queue.extend(
+                ("uri", session, an_uri) for an_uri in uris
+            )
+            self.open_next.queue()
     
     
     def set_file_results(self, session, gfile, results):
@@ -296,11 +327,12 @@ class OpeningContext(GObject.Object):
         """
         
         try:
-            session, next_file = self.file_opening_queue.popleft()
+            kind, session, next_item = self.opening_queue.popleft()
         except IndexError: # There are no files in the queue!
             return False
         
-        self.emit("open-next::file", session, next_file)
+        self.emit("open-next::" + kind, session, next_item)
+        self.open_next.queue()
         
         return True
     
@@ -382,30 +414,45 @@ class OpeningSession(GObject.Object):
     
     
     def finish(self):
-        if not self.finished:
-            self.emit("finished")
+        assert not self.finished
+        
+        self.finished = True
+        self.emit("finished")
+    
+    
+    def add(self, files=None, uris=None, openers=None):
+        if files:
+            self.add_files(files)
+        
+        if uris:
+            self.add_uris(uris)
+        
+        if openers:
+            self.add_openers(openers)
     
     
     def add_files(self, files):
         """ Adds files to be opened in this session """
         if self.finished:
             raise Exception
-            
-        if files:
-            self.files.extend(files)
-            self.files_set.update(files)
-            self.emit("added::file", list(files))
+        
+        file_list = list(files)
+        if file_list:
+            self.emit("added::file", file_list)
+            self.files.extend(file_list)
+            self.files_set.update(file_list)
     
     
     def add_uris(self, uris):
         """ Adds uris to be opened in this session """
         if self.finished:
             raise Exception
-            
-        return
-        self.stuff_to_open["uris"] = deque(uris)
-        self.emit("added::uri", list(uris))
-        #file_list = deque(Gio.File.new_for_uri(an_uri) for an_uri in uris)
+        
+        uri_list = list(uris)
+        if uri_list:
+            self.emit("added::uri", uri_list)
+            self.files.extend(uri_list)
+            self.files_set.update(uri_list)
     
     
     def add_openers(self, openers):
@@ -608,8 +655,6 @@ class DirectoryOpener(FileOpener):
         context, results = data
         try:
             gfile_enumerator = gfile.enumerate_children_finish(async_result)
-        except GLib.Error:
-            print(help(GLib.Error))
         except Exception as e:
             results.errors.append(e)
         else:
