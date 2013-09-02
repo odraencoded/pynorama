@@ -846,11 +846,14 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
             avl.update_sides.queue()
             self._reposition_frames(avl)
     
+    
     def _order_changed(self, album, avl):
         self._clear_images(avl)
         old_center_image = avl.center_image
         avl.center_index = avl.center_image = avl.center_frame = None
-        self._insert_image(avl, 0, old_center_image)
+        if old_center_image is not None:
+            self._insert_image(avl, 0, old_center_image)
+    
     
     def _insert_image(self, avl, index, image):
         ''' Handles a image inserted in an album '''
