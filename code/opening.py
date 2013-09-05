@@ -44,10 +44,9 @@ class OpeningHandler(GObject.Object):
        "new-context": (GObject.SIGNAL_ACTION, None, [object]),
     }
     
-    
-    def __init__(self, app):
-        GObject.Object.__init__(self)
+    def __init__(self, app, **kwargs):
         self.app = app
+        GObject.Object.__init__(self, **kwargs)
     
     
     def open_file(self, context, session, gfile, gfile_info):
@@ -130,30 +129,87 @@ class OpeningHandler(GObject.Object):
         if uris is not None:
             newest_session.add_uris(uris)
     
-    
+    #-- Properties down this line --#
+    warning_depth_threshold = GObject.Property(type=int, default=1)
+    warning_file_count_threshold = GObject.Property(type=int, default=500)
+    warning_image_count_threshold = GObject.Property(type=int, default=0)
     
     def _standard_session_finished_cb(self, context, session, album):
+        """
+        Standard handling for finished opening sessions
+        
+        It adds images to an album and 
+        
+        """
         files = []
         images = []
         errors = []
-        final_results = OpeningResults()
         
-        for key, some_results in session.results.items():
-            if some_results:
-                images.extend(some_results.images)
-                errors.extend(some_results.errors)
-                if some_results.files:
-                    files.append((key, some_results.files))
+        if session.search_siblings:
+            parent_files = list()
+            parent_uris = set()
+            # FIXME: This method doesn't work if there are images and files
+            # results, which never actually happens in the app because
+            # search_files is only true when there is only one file to open
+            for a_key, some_results in session.results.items():
+                if some_results:
+                    errors.extend(some_results.errors)
+                    if some_results.files:
+                        files.append((a_key, some_results.files))
+                        
+                    else:
+                        try:
+                            a_parent_key = a_key.get_parent()
+                            a_parent_uri = a_parent_key.get_uri()
+                        except (TypeError, AttributeError):
+                            pass
+                        except Exception:
+                            print(e)
+                        else:
+                            if a_parent_uri not in parent_uris:
+                                parent_files.append(a_parent_key)
+                                parent_uris.add(a_parent_uri)
+            
+            if parent_files:
+                directory_opener = self.app.components[
+                    "file-opener",
+                    DirectoryOpener.CODENAME
+                ]
+                
+                siblings_session = context.get_new_session()
+                siblings_session.add_openers([directory_opener])
+                siblings_session.add_files(parent_files)
+                
+        else:   # not session.search_siblings
+            for key, some_results in session.results.items():
+                if some_results:
+                    images.extend(some_results.images)
+                    errors.extend(some_results.errors)
+                    if some_results.files:
+                        files.append((key, some_results.files))
+        
         
         notification.log("depth %d: %d images, %d files, %d errors" % (
                 session.depth, len(images), len(files), len(errors)
             )
         )
         
+        self.app.memory.observe(*images)
+        album.extend(images)
+        
+        # TODO: New URIs handling, error handling, no opener found handling
         if files:
+            # TODO: Implement warning dialogs
             continue_opening = True
-            if images and session.depth > 0:
+            if len(files) >= self.warning_file_count_threshold:
+                notification.log("Too many files")
                 continue_opening = False
+                
+            if len(images) > self.warning_image_count_threshold:
+                notification.log("Enough images")
+                if session.depth >= self.warning_depth_threshold:
+                    notification.log("Too deep")
+                    continue_opening = False
                 
             if continue_opening:
                 # If the session was created to open the siblings of
@@ -175,8 +231,6 @@ class OpeningHandler(GObject.Object):
                     
                     new_session.add(files=some_files, openers=openers)
             
-        self.app.memory.observe(*images)
-        album.extend(images)
         
     
     def _new_session_cb(self, context, session, *etc):
@@ -190,35 +244,6 @@ class OpeningHandler(GObject.Object):
         opening them if any of the files already has its information
         
         """
-        
-        if session.search_siblings:
-            if session.search_siblings_session is None:
-                siblings_session = context.get_new_session()
-                siblings_session.add_openers([
-                    self.app.components[
-                        "file-opener", DirectoryOpener.CODENAME
-                    ]
-                ])
-                siblings_session.for_siblings_of_session = session
-                session.search_siblings_session = siblings_session
-            else:
-                siblings_session = session.search_siblings_session
-            
-            parent_files = set()
-            for i in range(len(files)):
-                j = i - len(parent_files)
-                a_file = files[j]
-                try:
-                    if a_file.has_parent(None):
-                        a_parent_file = a_file.get_parent()
-                        parent_files.add(a_parent_file)
-                        del files[j]
-                except Exception as e:
-                    #TODO: Print this correctly
-                    print(e)
-            
-            siblings_session.add_files(parent_files)
-        
         
         files_to_enqueue = []
         for a_file in files:
@@ -288,6 +313,7 @@ class OpeningContext(GObject.Object):
         # Valid details for the above signals are ::file and ::uri
         "loaded_file_info": (GObject.SIGNAL_RUN_LAST, None, [object, object]),
         "open-next": (GObject.SIGNAL_DETAILED, None, [object, object]),
+        "finished": (GObject.SIGNAL_ACTION, None, []),
     }
     
     
@@ -296,21 +322,20 @@ class OpeningContext(GObject.Object):
         
         self.sessions = []
         self.open_sessions = set()
+        self.finished = False
         
-        self.wait_for_first_file = False
-        self.opened_first_file = False
-        
-        self.incomplete_results = set()
-        self.files_being_queried = set()
-        self.opening_queue = deque()
         self.file_info_cache = {}
         
+        self.opening_queue = deque()
+        self.incomplete_results = set()
+        self.files_being_queried = set()
         self.open_next = utility.IdlyMethod(self.open_next)
-        self.file_results = {}
     
     
     def get_new_session(self, parent=None, source=None):
         """ Gets the latest non-finished opening session """
+        assert not self.finished
+        
         new_session = OpeningSession(parent, source)
         self.sessions.append(new_session)
         self.open_sessions.add(new_session)
@@ -338,9 +363,14 @@ class OpeningContext(GObject.Object):
             self.open_next.queue()
     
     
+    def finish(self):
+        if not self.finished:
+            self.finished = True
+            self.emit("finished")
+    
+    
     def set_file_results(self, session, gfile, results):
         """ Set the results for trying to open a file """
-        self.file_results[gfile] = results
         session.results[gfile] = results
         if results.completed:
             self.emit("opened::flie", results, gfile)
@@ -451,6 +481,8 @@ class OpeningContext(GObject.Object):
     def _session_finished_cb(self, session):
         self.open_sessions.remove(session)
         self.emit("finished-session", session)
+        if not self.open_sessions:
+            self.finish()
     
     
     def _queried_missing_info_cb(self, gfile, result, *etc):
@@ -560,7 +592,6 @@ class OpeningSession(GObject.Object):
     def add_openers(self, openers):
         """ Add openers to open stuff in this session """
         self.openers.extend(openers)
-
 
 
 class OpeningResults(GObject.Object):

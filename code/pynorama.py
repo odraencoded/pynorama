@@ -422,7 +422,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         self._focus_loaded_handler_id = None
         self._old_focused_image = None
-        self.wait_and_go_to_uri = None
+        self.opening_context = None
         self.album = organization.Album()
         self.album.connect("image-added", self._album_image_added_cb)
         self.album.connect("image-removed", self._album_image_removed_cb)
@@ -1409,46 +1409,37 @@ class ViewerWindow(Gtk.ApplicationWindow):
             focus.copy_to_clipboard(self.clipboard)
     
     
-    def open_uris(self, uris, openers=None):
+    def open_uris(self,
+                  uris,
+                  openers=None,
+                  replace=False,
+                  search_siblings=False,
+                  go_to_first=True):
+        """ Opens uris """
         uri_list = list(uris)
-        if not uri_list:
-            return
+        if uri_list:
+            if openers is None:
+                openers = self.app.components["file-opener"]
             
-        if openers is None:
-            openers = self.app.components["file-opener"]
+            if replace:
+                del self.album[:]
             
-        opening_context = opening.OpeningContext()
-        del self.album[:]
-        self.app.opener.handle(opening_context, album=self.album)
-        
-        search_siblings = len(uri_list) == 1
-        newest_session = opening_context.get_new_session()
-        newest_session.search_siblings = search_siblings
-        newest_session.add(openers=openers, uris=uri_list)
-        self.wait_and_go_to_uri = uri_list[0]
-    
-    
-    def add_uris(self, uris, openers=None):
-        uri_list = list(uris)
-        if not uri_list:
-            return
+            opening_context = self.get_opening_context()
+            if not opening_context.__added_already:
+                self.app.opener.handle(opening_context, album=self.album)
+                opening_context.__added_already = True
             
-        if openers is None:
-            openers = self.app.components["file-opener"]
-            
-        opening_context = opening.OpeningContext()
-        self.app.opener.handle(opening_context, album=self.album)
-        
-        newest_session = opening_context.get_new_session()
-        newest_session.add(openers=openers, uris=uri_list)
-        self.wait_and_go_to_uri = uri_list[0]
+            newest_session = opening_context.get_new_session()
+            newest_session.search_siblings = search_siblings
+            newest_session.add(openers=openers, uris=uri_list)
+            opening_context.__go_to_uri = uris[0] if go_to_first else None
     
     
     def pasted_data(self, data=None):
         some_uris = self.clipboard.wait_for_uris()
         
         if some_uris:
-            self.add_uris(some_uris)
+            self.open_uris(some_uris)
             
         return #TODO: Implement
         some_text = self.clipboard.wait_for_text()
@@ -1467,10 +1458,15 @@ class ViewerWindow(Gtk.ApplicationWindow):
     def dragged_data(self, widget, context, x, y, selection, info, timestamp):
         if info == DND_URI_LIST:
             some_uris = selection.get_uris()
-            self.open_uris(some_uris)
+            is_single_uri = len(some_uris) == 1
+            self.open_uris(
+                some_uris,
+                replace=True,
+                search_siblings=is_single_uri
+            )
             
         elif info == DND_IMAGE:
-            return
+            return #TODO: Implement this
             some_pixels = selection.get_pixbuf()
             if some_pixels:
                 new_images = self.app.load_pixels(some_pixels)
@@ -1479,8 +1475,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def file_open(self, widget, data=None):
-        opening_context = opening.OpeningContext()
-        opening_context.__added_already = False
+        opening_context = self.get_opening_context()
         
         self.app.show_open_image_dialog(
             self._open_dialog_open_cb,
@@ -1491,34 +1486,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
         )
     
     
-    def _open_dialog_open_cb(self, uris, openers, opening_context):
-        if not opening_context.__added_already:
-            opening_context.__added_already = True
-            # Set to search for siblings only one file was opened
-            del self.album[:]
-            search_siblings = len(uris) == 1
-            
-            self.app.opener.handle(opening_context, album=self.album)
-        else:
-            search_siblings = False
-            
-        newest_session = opening_context.get_new_session()
-        newest_session.search_siblings = search_siblings
-        newest_session.add(openers=openers, uris=uris)
-        self.wait_and_go_to_uri = uris[0]
-    
-    
-    def _open_dialog_add_cb(self, uris, openers, opening_context):
-        if not opening_context.__added_already:
-            opening_context.__added_already = True
-            self.app.opener.handle(opening_context, album=self.album)
-            
-            
-        newest_session = opening_context.get_new_session()
-        newest_session.add(openers=openers, uris=uris)
-        self.wait_and_go_to_uri = uris[0]
-        
-        return True
+    def get_opening_context(self):
+        self.opening_context = opening_context = opening.OpeningContext()
+        opening_context.__added_already = False
+        opening_context.__go_to_uri = None
+        opening_context.connect("finished", self._opening_context_finished_cb)
+        return opening_context
     
     
     def show_layout_dialog(self, *data):
@@ -1610,9 +1583,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
         image.lists += 1
         self._refresh_index.queue()
         
-        if self.wait_and_go_to_uri:
-            if image.matches_uri(self.wait_and_go_to_uri):
-                self.wait_and_go_to_uri = None
+        if self.opening_context and self.opening_context.__go_to_uri:
+            if image.matches_uri(self.opening_context.__go_to_uri):
+                self.opening_context.__go_to_uri = None
                 self.avl.go_image(image)
             
         elif self.avl.focus_image is None:
@@ -1699,6 +1672,42 @@ class ViewerWindow(Gtk.ApplicationWindow):
             self._focus_hint = True
             
         self._refresh_transform.queue()
+    
+    
+    def _opening_context_finished_cb(self, context):
+        assert self.opening_context is context, (self.opening_context, context)
+        # If the center image is none for some reason, then it changes the
+        # center image to the first image in the sorted album
+        avl = self.avl
+        if avl.focus_image is None:
+            avl.album.sort()
+            try:
+                first_image = avl.album[0]
+            except IndexError:
+                pass
+            else:
+                avl.go_image(first_image)
+        
+        self.opening_context = None
+    
+    
+    def _open_dialog_open_cb(self, uris, openers, *etc):
+        opening_context = self.get_opening_context()
+        replace = not opening_context.__added_already
+        search_siblings = replace and len(uris) == 1
+        print("open, replace: ", replace, "search:", search_siblings)
+        self.open_uris(
+            uris,
+            openers=openers,
+            replace=replace,
+            search_siblings=search_siblings
+         )
+    
+    
+    def _open_dialog_add_cb(self, uris, openers, *etc):
+        self.open_uris(uris, openers=openers)
+        return True
+    
     
     #--- Properties down this line ---#
     
