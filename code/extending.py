@@ -31,6 +31,9 @@ class Component:
     """Something that can be mapped into an component map"""
     def __init__(self, codename):
         self.codename = codename
+    
+    def __str__(self):
+        return "<" + self.codename + " component>"
 
 class ComponentMap:
     """ A map of component categories specified by a codename

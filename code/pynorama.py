@@ -27,6 +27,12 @@ import opening, loading, organization, viewing
 from viewing import ZoomMode
 DND_URI_LIST, DND_IMAGE = range(2)
 
+
+uilogger = notification.Logger("interface")
+applogger = notification.Logger("app")
+
+sys.excepthook = applogger.log_exception_info
+
 class ImageViewer(Gtk.Application):
     Version = "v0.2.3"
     
@@ -305,7 +311,7 @@ class ImageViewer(Gtk.Application):
                 # constructor comes before any errors it gets added to the
                 # application windows list, and the application will not quit
                 # while the list is not empty.</programmerrage>
-                notification.log("\nCould not create the first window\n")
+                applogger.log_error("Could not create the first window")
                 windows = self.get_windows()
                 if len(windows) > 0:
                     self.remove_window(windows[0])
@@ -333,6 +339,8 @@ class ImageViewer(Gtk.Application):
             
             
     def memory_check(self):
+        logger = notification.Logger("loading")
+        
         self.memory_check_queued = False
         
         while self.memory.enlisted_stuff:
@@ -344,7 +352,7 @@ class ImageViewer(Gtk.Application):
                 unlisted_thing = self.memory.unlisted_stuff.pop()
                 if unlisted_thing.is_loading or unlisted_thing.on_memory:
                     unlisted_thing.unload()
-                    notification.log(notification.Lines.Unloaded(unlisted_thing))
+                    logger.debug(notification.Lines.Unloaded(unlisted_thing))
                     
             while self.memory.unused_stuff:
                 unused_thing = self.memory.unused_stuff.pop()
@@ -352,7 +360,7 @@ class ImageViewer(Gtk.Application):
                 if unused_thing.on_disk:
                     if unused_thing.is_loading or unused_thing.on_memory:
                         unused_thing.unload()
-                        notification.log(notification.Lines.Unloaded(unused_thing))
+                        logger.debug(notification.Lines.Unloaded(unused_thing))
                         
             gc.collect()
             
@@ -360,17 +368,19 @@ class ImageViewer(Gtk.Application):
             requested_thing = self.memory.requested_stuff.pop()
             if not (requested_thing.is_loading or requested_thing.on_memory):
                 requested_thing.load()
-                notification.log(notification.Lines.Loading(requested_thing))
+                logger.debug(notification.Lines.Loading(requested_thing))
                 
         return False
         
         
     def log_loading_finish(self, thing, error):
+        logger = notification.Logger("loading")
+        
         if error:
-            notification.log(notification.Lines.Error(error))
+            logger.log_error(notification.Lines.Error(error))
             
         elif thing.on_memory:
-            notification.log(notification.Lines.Loaded(thing))
+            logger.log(notification.Lines.Loaded(thing))
     
     
     def load_pixels(self, pixels):
@@ -419,7 +429,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
         # If the user changes the zoom set by .autozoom, 
         # then .autozoom isn't called after rotating or resizing the imageview
         self._autozoom_zoom_modified = False
-        
         self._focus_loaded_handler_id = None
         self._old_focused_image = None
         self.opening_context = None
@@ -1031,7 +1040,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             try:
                 source_option.add_ui(layout, self.uimanager, merge_id)
             except Exception:
-                notification.log_exception("Error adding layout UI")
+                uilogger.log_error("Error adding layout UI")
+                uilogger.log_exception()
                 self._layout_action_group = None
                 self.uimanager.remove_ui(merge_id)
             else:
@@ -1416,10 +1426,25 @@ class ViewerWindow(Gtk.ApplicationWindow):
                   search_siblings=False,
                   go_to_first=True):
         """ Opens uris """
+        
         uri_list = list(uris)
         if uri_list:
+            # Logging just because
+            uilogger.log("Opening %d URI(s)" % len(uri_list))
+            uilogger.debug_list(uri_list)
+            uilogger.debug("Parameters")
+            uilogger.debug_dict({
+                "Replace": replace,
+                "Sibling Search": search_siblings,
+                "Go to First": go_to_first
+            })
+            
             if openers is None:
+                uilogger.debug("All openers included")
                 openers = self.app.components["file-opener"]
+            else:
+                uilogger.debug("Selected openers")
+                uilogger.debug_list(openers)
             
             if replace:
                 del self.album[:]
@@ -1436,10 +1461,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def pasted_data(self, data=None):
+        uilogger.log("Pasting...")
         some_uris = self.clipboard.wait_for_uris()
         
         if some_uris:
+            uilogger.log("Found URIs!")
             self.open_uris(some_uris)
+            
+            
             
         return #TODO: Implement
         some_text = self.clipboard.wait_for_text()
@@ -1456,9 +1485,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def dragged_data(self, widget, context, x, y, selection, info, timestamp):
+        uilogger.log("Drag'n'dropping...")
         if info == DND_URI_LIST:
+            uilogger.log("Found URIs!")
             some_uris = selection.get_uris()
-            is_single_uri = len(some_uris) == 1
+            uri_count = len(some_uris)
+            is_single_uri = uri_count == 1
+            
             self.open_uris(
                 some_uris,
                 replace=True,
@@ -1487,11 +1520,16 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def get_opening_context(self):
-        self.opening_context = opening_context = opening.OpeningContext()
-        opening_context.__added_already = False
-        opening_context.__go_to_uri = None
-        opening_context.connect("finished", self._opening_context_finished_cb)
-        return opening_context
+        if not self.opening_context:
+            uilogger.debug("Creating new opening context")
+            new_context = opening.OpeningContext()
+            new_context.__added_already = False
+            new_context.__go_to_uri = None
+            new_context.connect("finished", self._opening_context_finished_cb)
+            self.opening_context = new_context
+            
+            
+        return self.opening_context
     
     
     def show_layout_dialog(self, *data):
@@ -1512,13 +1550,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 
             except Exception:
                 message = _("Could not create layout settings dialog!")
+                uilogger.log_error(message)
+                uilogger.log_exception()
+                
                 dialog = Gtk.MessageDialog(
                     self, flags.MODAL | flags.DESTROY_WITH_PARENT,
                     Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
                     message
                 )
-                
-                notification.log_exception(message)
                 dialog.run()
                 dialog.destroy()
             
@@ -1564,7 +1603,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             self.avl.layout.save_preferences()
             
         except Exception:
-            pass
+            uilogger.log_error("Error destroying window")
+            uilogger.log_exception()
         
         # Clean up the avl
         self.avl.clean()
@@ -1585,10 +1625,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         if self.opening_context and self.opening_context.__go_to_uri:
             if image.matches_uri(self.opening_context.__go_to_uri):
+                uilogger.debug("Going to image matching opening context URI")
                 self.opening_context.__go_to_uri = None
                 self.avl.go_image(image)
             
         elif self.avl.focus_image is None:
+            uilogger.debug("No focus image, going to newly added image.")
             self.avl.go_image(image)
         
         
@@ -1678,6 +1720,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
         assert self.opening_context is context, (self.opening_context, context)
         # If the center image is none for some reason, then it changes the
         # center image to the first image in the sorted album
+        
+        uilogger.log("Opening context finished")
         avl = self.avl
         if avl.focus_image is None:
             avl.album.sort()
@@ -1686,6 +1730,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             except IndexError:
                 pass
             else:
+                uilogger.debug("No focus image, going to first image.")
                 avl.go_image(first_image)
         
         self.opening_context = None
@@ -1695,7 +1740,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
         opening_context = self.get_opening_context()
         replace = not opening_context.__added_already
         search_siblings = replace and len(uris) == 1
-        print("open, replace: ", replace, "search:", search_siblings)
         self.open_uris(
             uris,
             openers=openers,

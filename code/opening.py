@@ -30,6 +30,8 @@ from gettext import gettext as _
 import notification, extending, utility, loading
 from collections import deque
 
+logger = notification.Logger("opening")
+
 STANDARD_GFILE_INFO = (
     "standard::display-name", 
     "standard::type",
@@ -146,6 +148,7 @@ class OpeningHandler(GObject.Object):
         errors = []
         
         if session.search_siblings:
+            logger.debug("Depth %s sibling search..." % session.depth)
             parent_files = list()
             parent_uris = set()
             # FIXME: This method doesn't work if there are images and files
@@ -162,15 +165,20 @@ class OpeningHandler(GObject.Object):
                             a_parent_key = a_key.get_parent()
                             a_parent_uri = a_parent_key.get_uri()
                         except (TypeError, AttributeError):
+                            # Nevermind, key was not a GFile
                             pass
                         except Exception:
-                            print(e)
+                            logger.log_error("Error getting file parent")
+                            logger.log_exception()
                         else:
                             if a_parent_uri not in parent_uris:
                                 parent_files.append(a_parent_key)
                                 parent_uris.add(a_parent_uri)
             
+            logger.debug("Found %s parent(s)" % len(parent_files))
             if parent_files:
+                logger.debug_list(f.get_uri() for f in parent_files)
+                
                 directory_opener = self.app.components[
                     "file-opener",
                     DirectoryOpener.CODENAME
@@ -179,8 +187,10 @@ class OpeningHandler(GObject.Object):
                 siblings_session = context.get_new_session()
                 siblings_session.add_openers([directory_opener])
                 siblings_session.add_files(parent_files)
-                
-        else:   # not session.search_siblings
+            
+        else: # not session.search_siblings
+            # TODO: Remove files in sessions created to search sibling
+            # files of another session that were opened in that first session
             for key, some_results in session.results.items():
                 if some_results:
                     images.extend(some_results.images)
@@ -189,7 +199,8 @@ class OpeningHandler(GObject.Object):
                         files.append((key, some_results.files))
         
         
-        notification.log("depth %d: %d images, %d files, %d errors" % (
+        logger.debug(
+            "Depth %d session results: %d images, %d files, %d errors" % (
                 session.depth, len(images), len(files), len(errors)
             )
         )
@@ -202,14 +213,17 @@ class OpeningHandler(GObject.Object):
             # TODO: Implement warning dialogs
             continue_opening = True
             if len(files) >= self.warning_file_count_threshold:
-                notification.log("Too many files")
+                logger.log("File count exceeded warning threshold")
                 continue_opening = False
                 
             if len(images) > self.warning_image_count_threshold:
-                notification.log("Enough images")
                 if session.depth >= self.warning_depth_threshold:
-                    notification.log("Too deep")
+                    logger.log(
+                        "Depth and image count exceeded warning threshold"
+                    )
                     continue_opening = False
+            else:
+                logger.debug("Going deeper; Too few images in results")
                 
             if continue_opening:
                 # If the session was created to open the siblings of
@@ -222,16 +236,15 @@ class OpeningHandler(GObject.Object):
                     openers = self.app.components["file-opener"]
                 
                 for key, some_files in files:
-                    notification.log(
-                        "Starting %d depth opening session with %d files" % (
+                    logger.debug(
+                        "Starting depth %d session with %d files" % (
                             session.depth + 1, len(some_files),
                         )
                     )
                     new_session = context.get_new_session(session, key)
                     
                     new_session.add(files=some_files, openers=openers)
-            
-        
+    
     
     def _new_session_cb(self, context, session, *etc):
         session.connect("added::file", self._added_file_cb, context)

@@ -17,6 +17,93 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
+import traceback, sys
+
+from sys import stdout, stderr
+
+# ANSI color codes for console colouring
+ColorCodes = {
+    "interface": "\x1b[33;1m", # Bright yellow
+    "opening": "\x1b[33m", # Yellow
+    "loading": "\x1b[32;1m", # Green
+    "error": "\x1b[37;41;1m", # Red
+    "error": "\x1b[31;1m" # Red
+}
+
+RESET_COLOR_CODE = "\x1b[0m" # Resets the color
+SEPARATOR_LENGTH = 40 # Length of ~~~~~~~....~~~~ separators.
+
+class Logger:
+    """ Fancy class for fancy logging """
+    
+    Last = ""
+    
+    def __init__(self, codename):
+        self.codename = codename
+        self._prefix = ColorCodes.get(codename, "")
+        if self._prefix:
+            self._suffix = RESET_COLOR_CODE
+        else:
+            self._suffix = ""
+    
+    
+    def log(self, message):
+        self._replace_last(stdout)
+        print(self._prefix + message + self._suffix)
+    
+    
+    def log_list(self, iterable):
+        message = "\n".join("* " + str(i) for i in iterable)
+        self.log(message)
+    
+    
+    def log_dict(self,  dictionary):
+        message = "\n".join("* %s: %s" % (k, v) for k, v in dictionary.items())
+        self.log(message)
+    
+    
+    def log_error(self, message):
+        self._replace_last(stderr)
+        
+        error_code = ColorCodes["error"]
+        print(error_code + message + RESET_COLOR_CODE, file=stderr)
+    
+    
+    def log_exception(self, exception=None):
+        if exception is None:
+            # Print the current exception
+            self.log_exception_info(*sys.exc_info())
+        else:
+            self.log_exception_info(None, exception, None)
+    
+    
+    def log_exception_info(self, exc_type, exc, exc_tb):
+        message_list = traceback.format_exception(exc_type, exc, exc_tb)
+        message = "\n".join(message_list)
+        self.log_error(message)
+    
+    
+    if __debug__:
+        debug = log
+        debug_dict = log_dict
+        debug_list = log_list
+        def _replace_last(self, file):
+            """
+            Prints a separating line if the last Logger's codename
+            was different from this logger codename.
+            
+            """
+            if Logger.Last != self.codename:
+                Logger.Last = self.codename
+                sep_length = max(SEPARATOR_LENGTH - len(self.codename), 2)
+                half_length = sep_length / 2
+                separators = "~" * int(half_length)
+                print(separators, self.codename, separators, file=file)
+    else:
+        def debug(*stuff, **more_stuff): pass
+        _replace_last = debug_list = debug_dict = debug
+
+
 def log(message):
     print(message)
 
