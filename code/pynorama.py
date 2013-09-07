@@ -1598,10 +1598,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
         preferences.SaveFromWindow(self)
         preferences.SaveFromAlbum(self.album, self.app.settings)
         preferences.SaveFromView(self.view, self.app.settings)
+        layout = self.avl.layout
         try:
             # Tries to save the layout preferences
-            self.avl.layout.save_preferences()
-            
+            source_option = layout.source_option
+            source_option.save_preferences(layout)
         except Exception:
             uilogger.log_error("Error destroying window")
             uilogger.log_exception()
