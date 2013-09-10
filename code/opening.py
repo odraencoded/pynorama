@@ -25,10 +25,12 @@
 
 """
 
-from gi.repository import GdkPixbuf, Gio, GObject, GLib, Gtk
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk
 from gettext import gettext as _
 import notification, extending, utility, loading
 from collections import deque
+from urllib.parse import urlparse
+from os import path as os_path
 
 logger = notification.Logger("opening")
 
@@ -52,9 +54,9 @@ class OpeningHandler(GObject.Object):
     
     
     def open_file(self, context, session, gfile, gfile_info):
-        """ Tries to open a file with an appropriate FileOpener """
+        """ Tries to open a Gio.File with an appropriate FileOpener """
         results = OpeningResults()
-        guessed_opener = self.guess_opener(context, session, gfile_info)
+        guessed_opener = self.guess_file_opener(context, session, gfile_info)
         
         if guessed_opener:
             results.opener = guessed_opener
@@ -70,10 +72,49 @@ class OpeningHandler(GObject.Object):
         context.set_file_results(session, gfile, results)
     
     
-    def guess_opener(self, context, session, gfile_info):
+    def open_selection(self, selection_data):
         """
-        Returns a file opener within the context that appears to be compatible
-        with the file type specified in the file info
+        Tries to open a Gtk.Selection with an appropriate SelectionOpener
+        
+        """
+        
+        results = OpeningResults()
+        selection_openers = self.app.components[SelectionOpener.CATEGORY]
+        
+        opener, target = self.guess_selection_opener(
+            selection_openers,
+            selection=selection_data
+        )
+        if opener:
+            results.opener = opener
+            try:
+                opener.open_selection(results, selection_data)
+            except Exception as e:
+                results.errors.append(e)
+                results.complete()
+            
+        else:
+            results.complete()
+            
+        return results
+    
+    
+    def open_clipboard(self, clipboard):
+        """ Opens a Gtk.Clipboard """
+        results = OpeningResults()
+        clipboard.request_contents(
+            Gdk.Atom.intern("TARGETS", False),
+            self._clipboard_targets_request_cb,
+            results
+        )
+        
+        return results
+    
+    
+    def guess_file_opener(self, context, session, gfile_info):
+        """
+        Returns a FileOpener within the context that appears to be compatible
+        with the file type specified by the file info
         
         Returns None if it can't be guessed
         
@@ -88,9 +129,38 @@ class OpeningHandler(GObject.Object):
             a_file_filter = an_opener.get_file_filter()
             if a_file_filter.filter(gfile_filter_info):
                 return an_opener
-                
         else:
             return None
+    
+    
+    def guess_selection_opener(self, openers, selection=None, targets=None):
+        """
+        Tries to guess a SelectionOpener for a selection
+        
+        Returns a tuple indicating which SelectionOpener matches the
+        Gtk.SelectionData and which Gdk.Atom was used to determine that.
+        
+        If no SelectionOpener can be found it returns a tuple containing two
+        None elements.
+        
+        """
+        # Get targets for opener guessing
+        if not targets:
+            success, targets = selection.get_targets()
+            if not success:
+                logger.debug("get_targets failed, trying get_target")
+                targets = [selection.get_target()]
+        
+        logger.debug("Selection targets")
+        logger.debug_list(t.name() for t in targets)
+        
+        for an_opener in openers:
+            for a_target in targets:
+                for another_target in an_opener.atom_targets:
+                    if a_target == another_target:
+                        return an_opener, a_target
+        else:
+            return None, None
     
     
     def handle(self, context, album=None):
@@ -104,6 +174,7 @@ class OpeningHandler(GObject.Object):
         context.connect("new-session", self._new_session_cb)
         context.connect("loaded-file-info", self._loaded_file_info_cb)
         context.connect("open-next::file", self._open_next_file_cb)
+        context.connect("open-next::uri", self._open_next_uri_cb)
         if album is not None:
             context.connect(
                 "finished-session",
@@ -247,6 +318,7 @@ class OpeningHandler(GObject.Object):
     
     
     def _new_session_cb(self, context, session, *etc):
+        """ Connect handlers for a new opening session """
         session.connect("added::file", self._added_file_cb, context)
         session.connect("added::uri", self._added_uri_cb, context)
     
@@ -276,7 +348,7 @@ class OpeningHandler(GObject.Object):
         new_file_for_uri = Gio.File.new_for_uri
         converted_files = []
         for i in range(len(uris)):
-            j = i -len(converted_files)
+            j = i - len(converted_files)
             an_uri = uris[j]
             if an_uri.lower().startswith("file:"):
                 # Probably, all local URIs start with file: and then
@@ -286,9 +358,9 @@ class OpeningHandler(GObject.Object):
                 del uris[j]
         
         session.add_files(converted_files)
-        context.enqueue_uris(session, uris)
-
         # If there are any non-local URIs, then we will open them
+        context.enqueue_uris(session, uris)
+    
     
     def _create_filter_info(self, context, gfile_info):
         """ Returns a Gtk.FileFilterInfo for filtering FileOpeners """
@@ -310,10 +382,56 @@ class OpeningHandler(GObject.Object):
     
     
     def _open_next_file_cb(self, context, session, gfile):
-        """ Opens the next """
+        """ Opens a Gio.File from a context's opening queue """
         
         gfile_info = context.file_info_cache[gfile]
         self.open_file(context, session, gfile, gfile_info)
+    
+    
+    def _open_next_uri_cb(self, context, session, uri):
+        """ Opens an URI string from a context's opening queue """
+        
+        # TODO: Implement some sort of URI opener here
+        results = OpeningResults()
+        opener = None
+        if opener:
+            pass
+        else:
+            # GFile with URI fallback
+            converted_file = Gio.File.new_for_uri(uri)
+            results.files.append(converted_file)
+            results.complete()
+            
+            context.set_uri_results(session, uri, results)
+    
+    
+    def _clipboard_targets_request_cb(self, clipboard, selection, results):
+        """ Callback for requesting the targets of a Gtk.Clipboard """
+        selection_openers = self.app.components[SelectionOpener.CATEGORY]
+        opener, target = self.guess_selection_opener(
+            selection_openers,
+            selection=selection
+        )
+        if opener:
+            results.opener = opener
+            clipboard.request_contents(
+                target,
+                self._clipboard_content_request_cb,
+                results
+            )
+            
+        else:
+            # Can't open this
+            results.complete()
+    
+    
+    def _clipboard_content_request_cb(self, clipboard, selection, results):
+        """ Callback for requesting the content of a Gtk.Clipboard """
+        try:
+            results.opener.open_selection(results, selection)
+        except Exception as e:
+            results.errors.append(e)
+            results.complete()
 
 
 class OpeningContext(GObject.Object):
@@ -335,15 +453,23 @@ class OpeningContext(GObject.Object):
         
         self.sessions = []
         self.open_sessions = set()
+        # A set of sessions that aren't finished yet
         self.finished = False
-        
+        # Whether the context is finished
         self.file_info_cache = {}
+        # A cache of GFileInfo objects
+        
+        self.connect("notify::keep-open", self._notify_keep_open_cb)
         
         self.opening_queue = deque()
         self.incomplete_results = set()
         self.files_being_queried = set()
         self.open_next = utility.IdlyMethod(self.open_next)
     
+    
+    # Whether to keep the context "unfinished" even if the criteria to
+    # finish it is true
+    keep_open = GObject.Property(type=bool, default=False)
     
     def get_new_session(self, parent=None, source=None):
         """ Gets the latest non-finished opening session """
@@ -360,23 +486,37 @@ class OpeningContext(GObject.Object):
     
     def enqueue_files(self, session, files):
         """ Queues files to be opened """
-        if files:
-            self.opening_queue.extend(
-                ("file", session, a_file) for a_file in files
-            )
-            self.open_next.queue()
+        assert not self.finished
+        
+        self.opening_queue.extend(
+            ("file", session, a_file) for a_file in files
+        )
+        self.open_next.queue()
     
     
     def enqueue_uris(self, session, uris):
         """ Queues uris to be opened """ 
-        if uris:
-            self.opening_queue.extend(
-                ("uri", session, an_uri) for an_uri in uris
-            )
-            self.open_next.queue()
+        assert not self.finished
+        
+        self.opening_queue.extend(
+            ("uri", session, an_uri) for an_uri in uris
+        )
+        self.open_next.queue()
+    
+    
+    def enqueue_selections(self, session, selections):
+        """ Queues selections to be opened """
+        assert not self.finished
+        
+        self.opening_queue.extend(
+            ("selection", session, a_selection) for a_selection in selections
+        )
+        self.open_next.queue()
     
     
     def finish(self):
+        assert not self.finished
+        
         if not self.finished:
             self.finished = True
             self.emit("finished")
@@ -386,7 +526,7 @@ class OpeningContext(GObject.Object):
         """ Set the results for trying to open a file """
         session.results[gfile] = results
         if results.completed:
-            self.emit("opened::flie", results, gfile)
+            self.emit("opened::file", results, gfile)
             self._check_finished(session)
         else:
             self.incomplete_results.add(results)
@@ -394,6 +534,21 @@ class OpeningContext(GObject.Object):
                 "completed",
                 self._results_completed_cb,
                 ("file", gfile, session)
+            )
+    
+    
+    def set_uri_results(self, session, uri, results):
+        """ Set the results for trying to open an uri """
+        session.results[uri] = results
+        if results.completed:
+            self.emit("opened::uri", results, uri)
+            self._check_finished(session)
+        else:
+            self.incomplete_results.add(results)
+            results.connect(
+                "completed",
+                self._results_completed_cb,
+                ("uri", uri, session)
             )
     
     
@@ -495,6 +650,14 @@ class OpeningContext(GObject.Object):
         self.open_sessions.remove(session)
         self.emit("finished-session", session)
         if not self.open_sessions:
+            if self.keep_open:
+                logger.debug("Opening context kept open")
+            else:
+                self.finish()
+    
+    
+    def _notify_keep_open_cb(self, *etc):
+        if not self.keep_open and not self.open_sessions:
             self.finish()
     
     
@@ -524,6 +687,17 @@ class OpeningContext(GObject.Object):
 
 
 class OpeningSession(GObject.Object):
+    """
+    Represents a single cycle in the opening system.
+    
+    A session contains opening input such as files and URIs which are then
+    converted by an OpeningHandler into images, more files and uris.
+    
+    The output files and uris are then used to create new opening sessions.
+    How and when exactly that happens should be OpeningHandler dependant.
+    
+    """
+    
     __gsignals__ = {
         "added" : (GObject.SIGNAL_DETAILED, None, [object]),
         "finished" : (GObject.SIGNAL_ACTION, None, []),
@@ -559,7 +733,7 @@ class OpeningSession(GObject.Object):
         self.files, self.uris = [], []
         self.files_set, self.uris_set = set(), set()
         self.openers = []
-        
+    
     
     def finish(self):
         assert not self.finished
@@ -579,9 +753,8 @@ class OpeningSession(GObject.Object):
     
     
     def add_files(self, files):
-        """ Adds files to be opened in this session """
-        if self.finished:
-            raise Exception
+        """ Adds Gio.File objects to be opened in this session """
+        assert not self.finished
         
         file_list = list(files)
         if file_list:
@@ -591,15 +764,24 @@ class OpeningSession(GObject.Object):
     
     
     def add_uris(self, uris):
-        """ Adds uris to be opened in this session """
-        if self.finished:
-            raise Exception
+        """ Adds URI strings to be opened in this session """
+        assert not self.finished
         
         uri_list = list(uris)
         if uri_list:
             self.emit("added::uri", uri_list)
             self.uris.extend(uri_list)
             self.uris_set.update(uri_list)
+    
+    
+    def add_clipboards(self, clipboards):
+        """ Adds Gtk.Clipboard objects to be opened in this session """
+        assert not self.finished
+        
+        clipboard_list = list(clipboards)
+        if clipboard_list:
+            self.emit("added::clipboard", clipboard_list)
+            self.clipboards.extend(clipboard_list)
     
     
     def add_openers(self, openers):
@@ -649,27 +831,17 @@ class OpeningResults(GObject.Object):
         
         return self
     
+    
     def __str__(self):
         return "<OpeningResults: %d image(s), %d file(s), %d error(s)>" % (
             len(self.images), len(self.files), len(self.errors)
         )
     
-    @property
-    def has_output(self):
-        """ Whether files, images or uris have been added to the results """
-        return bool(self.images or self.files or self.uris)
-    
     
     @property
-    def has_input(self):
-        """ Whether the results contain data to start a new opening context """
-        return self.files or self.uris
-    
-    
-    @property
-    def could_open(self):
-        """ Whether the results' opener successfully opened the input """
-        return bool(not self.has_output and self.errors)
+    def empty(self):
+        """ Returns whether there is any output contained in these results """
+        return not(self.files or self.uris or self.images or self.errors)
     
     
     def complete(self):
@@ -681,11 +853,39 @@ class OpeningResults(GObject.Object):
         opening the source of these results and they should be processed
         
         """
+        assert not self.completed
         
         if not self.completed:
             self.completed = True
             self.emit("completed")
             
+
+class SelectionOpener(GObject.Object, extending.Component):
+    """ An interface to open images from Gtk.SelectionData """
+    
+    CATEGORY = "selection-opener"
+    
+    def __init__(self, codename, targets=None):
+        GObject.Object.__init__(self)
+        extending.Component.__init__(self, codename)
+        
+        # A set of targets from a selection that 
+        # this opener should be able to open
+        
+        if targets:
+            self.set_targets_from_strings(targets)
+        else:
+            self.atom_targets = set()
+    
+    
+    def set_targets_from_strings(self, targets):
+        self.atom_targets = set(Gdk.Atom.intern(t, False) for t in targets)
+    
+    
+    def open_selection(self, selection, results):
+        """ Opens a Gdk.Selection """
+        raise NotImplementedError
+    
 
 class FileOpener(GObject.Object, extending.Component):
     """ An interface to open files for the image viewer.
@@ -694,6 +894,8 @@ class FileOpener(GObject.Object, extending.Component):
     opened by other file openers.
     
     """
+    
+    CATEGORY = "file-opener"
     
     def __init__(self, codename, extensions=None, mime_types=None):
         """ Initializes a file opener for certain extensions and mime_types """
@@ -797,6 +999,7 @@ class DirectoryOpener(FileOpener):
             (context, results)
         )
     
+    
     def _enumerate_children_async_cb(self, gfile, async_result, data):
         context, results = data
         try:
@@ -830,8 +1033,13 @@ class DirectoryOpener(FileOpener):
         enumerator.close_finish(async_result)
 
 
-class PixbufFileOpener(FileOpener):
-    """ Opens image files supported by the GdkPixbuf library """
+class PixbufOpener(SelectionOpener, FileOpener):
+    """
+    Opens image files supported by the GdkPixbuf library
+    
+    Also opens selections whose target is supported by the GdkPixbuf library
+    
+    """
     
     CODENAME = "gdk-pixbuf"
     
@@ -845,8 +1053,12 @@ class PixbufFileOpener(FileOpener):
                 extensions.add(an_extension)
         
         FileOpener.__init__(self, 
-            PixbufFileOpener.CODENAME, 
+            PixbufOpener.CODENAME, 
             extensions, 
+            mime_types
+        )
+        SelectionOpener.__init__(self,
+            PixbufOpener.CODENAME,
             mime_types
         )
     
@@ -867,6 +1079,18 @@ class PixbufFileOpener(FileOpener):
         else:
             results.images.append(new_image)
             
+        results.complete()
+    
+    
+    def open_selection(self, results, selection):
+        """
+        Gets a pixbuf from a Gtk.SelectionData and creates an image source
+        from it.
+        
+        """
+        pixbuf = selection.get_pixbuf()
+        image_source = loading.PixbufDataImageSource(pixbuf)
+        results.images.append(image_source)
         results.complete()
 
 
@@ -904,19 +1128,96 @@ class PixbufAnimationFileOpener(FileOpener):
         results.complete()
 
 
+class URIListSelectionOpener(SelectionOpener):
+    """ Opens selections whose target is "text/uri-list" """
+    CODENAME = "uri-list"
+    
+    def __init__(self):
+        SelectionOpener.__init__(self,
+            URIListSelectionOpener.CODENAME,
+            ["text/uri-list"]
+        )
+    
+    
+    @GObject.Property
+    def label(self):
+        return _("URI list")
+    
+    
+    def open_selection(self, results, selection):
+        uris = selection.get_uris()
+        if uris:
+            results.uris.extend(uris)
+        results.complete()
+
+
+class TextSelectionOpener(SelectionOpener):
+    """ Opens selections whose target is "text/plain" as URIs """
+    CODENAME = "uri-text"
+    
+    def __init__(self):
+        # XXX: This is essentially the Gtk.SelectionData uses
+        # for checking whether its targets_include_text
+        # Except here it's missing the text/plain;charset=locale
+        # because I can't find the g_get_charset method
+        SelectionOpener.__init__(self,
+            TextSelectionOpener.CODENAME,
+            [
+                "UTF8_STRING",
+                "TEXT",
+                "COMPOUND_TEXT",
+                "text/plain",
+                "text/plain;charset=utf-8",
+            ]
+        )
+        self.atom_targets.add(Gdk.TARGET_STRING)
+    
+    
+    @GObject.Property
+    def label(self):
+        return _("URI Text")
+    
+    
+    def open_selection(self, results, selection):
+        text = selection.get_text()
+        
+        parse_result = urlparse(text)
+        if parse_result.scheme and parse_result.path \
+                and (parse_result.netloc or parse_result.scheme == "file"):
+            results.uris.append(text)
+        elif os_path.isabs(text):
+            # Wildly assuming this is a valid filename
+            # just because it starts with a slash
+            text = "file://" + os_path.normcase(os_path.normcase(text))
+            results.uris.append(text)
+            
+        results.complete()
+
+
 class BuiltInOpeners(extending.ComponentPackage):
     """ A component package for installing the built in openers """
     @staticmethod
     def add_on(app):
         components = app.components
-        components.add_category("file-opener", "File Opener")
+        components.add_category(FileOpener.CATEGORY, "File Opener")
+        components.add_category(SelectionOpener.CATEGORY, "Selection Opener")
         
-        openers = [
-            DirectoryOpener(),
-            PixbufFileOpener(),
-            PixbufAnimationFileOpener(),
-        ]
-        for an_opener in openers:
-            components.add("file-opener", an_opener)
+        pixbuf_opener = PixbufOpener()
+        
+        file_openers = (
+            DirectoryOpener(), # Opens directories
+            pixbuf_opener, # Opens images
+            PixbufAnimationFileOpener(), # Opens animations
+        )
+        for an_opener in file_openers:
+            components.add(FileOpener.CATEGORY, an_opener)
+        
+        selection_openers = (
+            pixbuf_opener, # Opens images
+            URIListSelectionOpener(), # Opens uri lists
+            TextSelectionOpener() # Tries to parse text into uris
+        )
+        for an_opener in selection_openers:
+            components.add(SelectionOpener.CATEGORY, an_opener)
 
 extending.LoadedComponentPackages.add(BuiltInOpeners)

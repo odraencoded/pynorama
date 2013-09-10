@@ -383,10 +383,6 @@ class ImageViewer(Gtk.Application):
             logger.log(notification.Lines.Loaded(thing))
     
     
-    def load_pixels(self, pixels):
-        pixelated_image = loading.PixbufDataImageSource(pixels, "Pixels")
-        return [pixelated_image]
-    
     def _save_settings(self, app_settings):
         utility.SetDictFromProperties(
             self, self.settings.data,
@@ -436,9 +432,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.album.connect("image-added", self._album_image_added_cb)
         self.album.connect("image-removed", self._album_image_removed_cb)
         self.album.connect("order-changed", self._album_order_changed_cb)
-        
-        # Set clipboard
-        self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         
         # Create layout
         vlayout = Gtk.VBox()
@@ -543,7 +536,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         target_list.add_uri_targets(DND_URI_LIST)
         
         self.view.drag_dest_set_target_list(target_list)
-        self.view.connect("drag-data-received", self.dragged_data)
+        self.view.connect("drag-data-received", self._dnd_received_cb)
         
         
         # Setup layout stuff
@@ -793,8 +786,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
         ]
         
         signaling_params = {
-            "open" : (self.file_open,),
-            "paste" : (self.pasted_data,),
+            "open" : (lambda w: self.show_open_image_dialog(),),
+            "paste" : (lambda w: self.paste(),),
             "copy": (self.copy_image,),
             "sort" : (lambda data: self.album.sort(),),
             "sort-reverse" : (self._toggled_reverse_sort,),
@@ -1425,7 +1418,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                   replace=False,
                   search_siblings=False,
                   go_to_first=True):
-        """ Opens uris """
+        """ Opens a set of URIs and adds its results to this window album """
         
         uri_list = list(uris)
         if uri_list:
@@ -1460,55 +1453,24 @@ class ViewerWindow(Gtk.ApplicationWindow):
             opening_context.__go_to_uri = uris[0] if go_to_first else None
     
     
-    def pasted_data(self, data=None):
+    def paste(self, clipboard=None):
+        """ Pastes something from a clipboard """
         uilogger.log("Pasting...")
-        some_uris = self.clipboard.wait_for_uris()
-        
-        if some_uris:
-            uilogger.log("Found URIs!")
-            self.open_uris(some_uris)
+        if clipboard is None:
+            # Get default clipboard
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
             
-            
-            
-        return #TODO: Implement
-        some_text = self.clipboard.wait_for_text()
-        if some_text:
-            self.app.open_files_for_album(
-                self.album, uris=[some_text], silent=True
-            )
-        
-        some_pixels = self.clipboard.wait_for_image()
-        if some_pixels:
-            new_images = self.app.load_pixels(some_pixels)
-            if new_images:
-                self.album.extend(new_images)
+        results = self.app.opener.open_clipboard(clipboard)
+        if results.completed:
+            self._completed_paste_results_cb(results)
+        else:
+            results.connect("completed", self._completed_paste_results_cb)
     
     
-    def dragged_data(self, widget, context, x, y, selection, info, timestamp):
-        uilogger.log("Drag'n'dropping...")
-        if info == DND_URI_LIST:
-            uilogger.log("Found URIs!")
-            some_uris = selection.get_uris()
-            uri_count = len(some_uris)
-            is_single_uri = uri_count == 1
-            
-            self.open_uris(
-                some_uris,
-                replace=True,
-                search_siblings=is_single_uri
-            )
-            
-        elif info == DND_IMAGE:
-            return #TODO: Implement this
-            some_pixels = selection.get_pixbuf()
-            if some_pixels:
-                new_images = self.app.load_pixels(some_pixels)
-                if new_images:
-                    self.album.extend(new_images)
-    
-    
-    def file_open(self, widget, data=None):
+    def show_open_image_dialog(self):
+        """ Shows the open image dialog for this window """
         opening_context = self.get_opening_context()
+        opening_context.keep_open = True
         
         self.app.show_open_image_dialog(
             self._open_dialog_open_cb,
@@ -1517,9 +1479,16 @@ class ViewerWindow(Gtk.ApplicationWindow):
             self,
             opening_context
         )
+        
+        opening_context.keep_open = False
     
     
     def get_opening_context(self):
+        """
+        Returns this window OpeningContext creating one
+        if it doesn't already exists.
+        
+        """
         if not self.opening_context:
             uilogger.debug("Creating new opening context")
             new_context = opening.OpeningContext()
@@ -1527,7 +1496,6 @@ class ViewerWindow(Gtk.ApplicationWindow):
             new_context.__go_to_uri = None
             new_context.connect("finished", self._opening_context_finished_cb)
             self.opening_context = new_context
-            
             
         return self.opening_context
     
@@ -1612,8 +1580,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
         return Gtk.Window.do_destroy(self)
     
     
+    #~ Album/view/layout stuff down this line ~#
+    
     def _layout_widget_destroyed(self, widget, layout):
         layout.source_option.save_preferences(layout)
+    
     
     def _layout_dialog_response(self, *data):
         self.layout_dialog.destroy()
@@ -1717,6 +1688,76 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self._refresh_transform.queue()
     
     
+    #~ UI related callbacks down this line ~#
+    
+    def _dnd_received_cb(self, widget, ctx, x, y, selection, info, time):
+        """ Callback for drag'n'drop "received" event """
+        uilogger.log("Drag'n'dropping...")
+        results = self.app.opener.open_selection(selection)
+        if results.completed:
+            self._completed_drop_results_cb(results)
+        else:
+            results.connect("completed", self._completed_drop_results_cb)
+    
+    
+    def _completed_drop_results_cb(self, results, *etc):
+        """
+        Callback for the opening results of a drag'n'drop "complete" signal
+        
+        """
+        if results.uris:
+            uilogger.log("Found URIs in drop")
+            is_single_uri = len(results.uris) == 1
+            is_trigger = not self.get_opening_context().__added_already
+            self.open_uris(
+                results.uris, 
+                replace=is_trigger,
+                search_siblings=is_single_uri
+            )
+        
+        if results.images:
+            uilogger.log("Found images in drop")
+            # TODO: Implement something so that ImageSources
+            # don't have to be "manually" added to the memory thingy...
+            # actually reimplement the entire memory management thingy.
+            self.app.memory.observe_stuff(results.images)
+            self.album.extend(results.images)
+        
+        if results.errors:
+            uilogger.log_error("There were errors opening the drop")
+            for e in results.errors:
+                uilogger.log_exception(e)
+        
+        if results.empty:
+            uilogger.log_error("Found nothing in drop")
+    
+    
+    def _completed_paste_results_cb(self, results, *etc):
+        """
+        Callback for the opening results of a paste "complete" signal
+        
+        """
+        if results.uris:
+            uilogger.log("Found URIs in paste")
+            self.open_uris(results.uris)
+        
+        if results.images:
+            uilogger.log("Found images in paste")
+            # TODO: Implement something so that ImageSources
+            # don't have to be "manually" added to the memory thingy...
+            # actually reimplement the entire memory management thingy.
+            self.app.memory.observe_stuff(results.images)
+            self.album.extend(results.images)
+        
+        if results.errors:
+            uilogger.log_error("There were errors opening the paste")
+            for e in results.errors:
+                uilogger.log_exception(e)
+        
+        if results.empty:
+            uilogger.log_error("Found nothing in paste")
+    
+    
     def _opening_context_finished_cb(self, context):
         assert self.opening_context is context, (self.opening_context, context)
         # If the center image is none for some reason, then it changes the
@@ -1750,6 +1791,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def _open_dialog_add_cb(self, uris, openers, *etc):
+        opening_context = self.get_opening_context()
         self.open_uris(uris, openers=openers)
         return True
     
