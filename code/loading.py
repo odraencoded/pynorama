@@ -228,6 +228,7 @@ class GFileImageSource(ImageSource):
     def matches_uri(self, uri):
         return self.gfile.get_uri() == uri
 
+
 class PixbufDataImageSource(ImageSource):
     ''' An ImageSource created from a pixbuf
         This ImageSource can not be loaded or unloaded
@@ -253,9 +254,9 @@ class PixbufDataImageSource(ImageSource):
         self.metadata.height = self.surface.get_height()
         self.metadata.modification_date = time.time()
         self.metadata.data_size = 0
-        
+    
+    
     def unload(self):
-        PixbufImageSource.unload(self)
         self.surface = None
         self.location &= ~Location.Memory
         self.status = Status.Bad
@@ -263,6 +264,7 @@ class PixbufDataImageSource(ImageSource):
         
     def create_frame(self):
         return viewing.SurfaceSourceImageFrame(self)
+    
     
     def copy_to_clipboard(self, clipboard):
         pixbuf = viewing.PixbufFromSurface(self.surface)
