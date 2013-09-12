@@ -166,7 +166,7 @@ class ImageViewer(Gtk.Application):
         
         # The default response must have the "OK" value so that the dialog
         # goes inside directories instead of returning them
-        image_chooser.set_modal(True)
+        image_chooser.set_modal(False)
         image_chooser.set_destroy_with_parent(True)
         image_chooser.set_default_response(Gtk.ResponseType.OK)
         image_chooser.set_select_multiple(True)
@@ -192,42 +192,53 @@ class ImageViewer(Gtk.Application):
         
         
         # Handles the dialog being destroyed after exiting .run
-        image_chooser.__destroyed = False
-        def dialog_destroy_cb(dialog, *etc):
-            dialog.__destroyed = True
-        image_chooser.connect("destroy", dialog_destroy_cb)
-        
-        try:
-            run_dialog = True
-            while run_dialog:
-                response = image_chooser.run()
-                if image_chooser.__destroyed:
-                    break
-                
-                uri_list = image_chooser.get_uris()
-                # Get chosen openers list
-                chosen_filter = image_chooser.get_filter()
-                try:
-                    chosen_openers = [file_openers_filters[chosen_filter]]
-                except KeyError:
-                    chosen_openers = supported_files_group.file_openers
-                
+        def dialog_response_cb(image_chooser, response):
+            if image_chooser.__destroyed:
+                return
+            
+            uri_list = image_chooser.get_uris()
+            # Get chosen openers list
+            chosen_filter = image_chooser.get_filter()
+            try:
+                chosen_openers = [file_openers_filters[chosen_filter]]
+            except KeyError:
+                chosen_openers = supported_files_group.file_openers
+            
+            try:
                 # Figure out what callback to call
-                run_dialog = False
+                keep_dialog = False
                 if response == OPEN_RESPONSE:
                     if open_cb:
-                        run_dialog = open_cb(uri_list, chosen_openers, data)
+                        keep_dialog = open_cb(uri_list, chosen_openers, data)
                         
                 elif response == ADD_RESPONSE:
                     if add_cb:
-                        run_dialog = add_cb(uri_list, chosen_openers, data)
+                        keep_dialog = add_cb(uri_list, chosen_openers, data)
                     
                 elif cancel_cb:
-                    run_dialog = cancel_cb(data)
-        finally:
-            # In case something goes wrong when calling the callbacks
-            # we don't want the to just hang there forever
-            image_chooser.destroy()
+                    keep_dialog = cancel_cb(data)
+            
+            except:
+                # In case something goes wrong when calling the callbacks
+                # we don't want the to just hang there forever
+                image_chooser.destroy()
+                raise
+            
+            if not keep_dialog:
+                image_chooser.destroy()
+        
+        image_chooser.connect("response", dialog_response_cb)
+        
+        # This avoids an error if the dialog is destroyed because its
+        # parent has been destroyed
+        image_chooser.__destroyed = False
+        def dialog_destroy_cb(dialog, *etc):
+            dialog.__destroyed = True
+            
+        image_chooser.connect("destroy", dialog_destroy_cb)
+        
+        image_chooser.present()
+        return image_chooser
     
     
     def show_preferences_dialog(self, target_window=None):
@@ -1470,17 +1481,25 @@ class ViewerWindow(Gtk.ApplicationWindow):
     def show_open_image_dialog(self):
         """ Shows the open image dialog for this window """
         opening_context = self.get_opening_context()
-        opening_context.hold_open()
         
-        self.app.show_open_image_dialog(
-            self._open_dialog_open_cb,
-            self._open_dialog_add_cb,
-            None,
-            self,
-            opening_context
-        )
-        
-        opening_context.let_close()
+        try:
+            dialog = opening_context.__open_dialog
+        except AttributeError:
+            # Show an open dialog
+            opening_context.hold_open()
+            
+            dialog = self.app.show_open_image_dialog(
+                self._open_dialog_open_cb,
+                self._open_dialog_add_cb,
+                None,
+                self,
+                opening_context
+            )
+            opening_context.__open_dialog = dialog
+            
+            dialog.connect("destroy", self._open_dialog_destroy_cb)
+        else:
+            dialog.present()
     
     
     def get_opening_context(self):
@@ -1794,6 +1813,23 @@ class ViewerWindow(Gtk.ApplicationWindow):
         opening_context = self.get_opening_context()
         self.open_uris(uris, openers=openers)
         return True
+    
+    
+    def _open_dialog_destroy_cb(self, open_dialog):
+        """
+        Let the opening context emit the "finished" signal after the open
+        dialog is destroyed.
+        
+        """
+        context = self.get_opening_context()
+        try:
+            ctx_dialog = context.__open_dialog
+        except AttributeError:
+            pass
+        else:
+            if open_dialog is ctx_dialog:
+                del context.__open_dialog
+                context.let_close()
     
     
     #--- Properties down this line ---#
