@@ -202,10 +202,12 @@ class OpeningHandler(GObject.Object):
         if uris is not None:
             newest_session.add_uris(uris)
     
+    
     #-- Properties down this line --#
     warning_depth_threshold = GObject.Property(type=int, default=1)
     warning_file_count_threshold = GObject.Property(type=int, default=500)
     warning_image_count_threshold = GObject.Property(type=int, default=0)
+    
     
     def _standard_session_finished_cb(self, context, session, album):
         """
@@ -286,35 +288,39 @@ class OpeningHandler(GObject.Object):
             if len(files) >= self.warning_file_count_threshold:
                 logger.log("File count exceeded warning threshold")
                 continue_opening = False
-                
-            if len(images) > self.warning_image_count_threshold:
-                if session.depth >= self.warning_depth_threshold:
+            
+            if session.depth >= self.warning_depth_threshold:
+                if len(images) > self.warning_image_count_threshold:
                     logger.log(
                         "Depth and image count exceeded warning threshold"
                     )
                     continue_opening = False
-            else:
-                logger.debug("Going deeper; Too few images in results")
+                else:
+                    logger.debug("Going deeper; Too few images in results")
                 
             if continue_opening:
-                # If the session was created to open the siblings of
-                # another session, the its child session will have the
-                # same openers as the session it was created for.
-                # </overcomplicated>
-                if session.for_siblings_of_session:
-                    openers = session.for_siblings_of_session.openers
-                else:
-                    openers = self.app.components["file-opener"]
-                
-                for key, some_files in files:
-                    logger.debug(
-                        "Starting depth %d session with %d files" % (
-                            session.depth + 1, len(some_files),
-                        )
-                    )
-                    new_session = context.get_new_session(session, key)
-                    
-                    new_session.add(files=some_files, openers=openers)
+                self._continue_opening(context, session, files)
+    
+    
+    def _continue_opening(self, context, session, files):
+        # If the session was created to open the siblings of
+        # another session, the its child session will have the
+        # same openers as the session it was created for.
+        # </overcomplicated>
+        if session.for_siblings_of_session:
+            openers = session.for_siblings_of_session.openers
+        else:
+            openers = self.app.components[FileOpener.CATEGORY]
+        
+        for key, some_files in files:
+            logger.debug(
+                "Starting depth %d session with %d files" % (
+                    session.depth + 1, len(some_files),
+                )
+            )
+            new_session = context.get_new_session(session, key)
+            
+            new_session.add(files=some_files, openers=openers)
     
     
     def _new_session_cb(self, context, session, *etc):
@@ -456,10 +462,10 @@ class OpeningContext(GObject.Object):
         # A set of sessions that aren't finished yet
         self.finished = False
         # Whether the context is finished
+        self._keep_open_counter = 0
+        # Freezes the context so that it doesn't emit a "finished" signal
         self.file_info_cache = {}
         # A cache of GFileInfo objects
-        
-        self.connect("notify::keep-open", self._notify_keep_open_cb)
         
         self.opening_queue = deque()
         self.incomplete_results = set()
@@ -469,7 +475,34 @@ class OpeningContext(GObject.Object):
     
     # Whether to keep the context "unfinished" even if the criteria to
     # finish it is true
-    keep_open = GObject.Property(type=bool, default=False)
+    @GObject.Property
+    def keep_open(self):
+        """ Whether the context should be kept opened """
+        return self._keep_open_counter > 0
+    
+    
+    def hold_open(self):
+        """
+        Forces the context not to emit the "finished" signal when the criteria
+        for emitting that signal is met.
+        
+        let_close() should be called once for every time hold_open() is called.
+        
+        """
+        self._keep_open_counter += 1
+        if self._keep_open_counter == 1:
+            self.notify("keep-open")
+    
+    
+    def let_close(self):
+        """
+        Lets the context emit the "finished" signal when the criteria is met.
+        
+        """
+        self._keep_open_counter -= 1
+        if self._keep_open_counter == 0:
+            self.notify("keep-open")
+    
     
     def get_new_session(self, parent=None, source=None):
         """ Gets the latest non-finished opening session """
@@ -647,6 +680,11 @@ class OpeningContext(GObject.Object):
     
     
     def _session_finished_cb(self, session):
+        """
+        Emits the "finished-session" signal and asserts whether the context
+        itself is finished.
+        
+        """
         self.open_sessions.remove(session)
         self.emit("finished-session", session)
         if not self.open_sessions:
@@ -657,7 +695,13 @@ class OpeningContext(GObject.Object):
     
     
     def _notify_keep_open_cb(self, *etc):
+        """
+        Emits the "finished" signal if the context was finished while it was
+        kept open.
+        
+        """
         if not self.keep_open and not self.open_sessions:
+            logger.debug("Opening context unfrozen and closing")
             self.finish()
     
     

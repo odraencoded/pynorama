@@ -1470,7 +1470,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     def show_open_image_dialog(self):
         """ Shows the open image dialog for this window """
         opening_context = self.get_opening_context()
-        opening_context.keep_open = True
+        opening_context.hold_open()
         
         self.app.show_open_image_dialog(
             self._open_dialog_open_cb,
@@ -1480,7 +1480,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             opening_context
         )
         
-        opening_context.keep_open = False
+        opening_context.let_close()
     
     
     def get_opening_context(self):
