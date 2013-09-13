@@ -23,6 +23,7 @@ from sys import stdout, stderr
 
 # ANSI color codes for console colouring
 ColorCodes = {
+    "preferences": "\x1b[34;1m", # Blue
     "interface": "\x1b[33;1m", # Bright yellow
     "opening": "\x1b[33m", # Yellow
     "loading": "\x1b[32;1m", # Green

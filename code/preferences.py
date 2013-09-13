@@ -21,6 +21,8 @@ from gettext import gettext as _
 import os
 import organization, notification, mousing, utility
 
+logger = notification.Logger("preferences")
+
 class Dialog(Gtk.Dialog):
     def __init__(self, app):
         Gtk.Dialog.__init__(
@@ -567,7 +569,8 @@ the chosen mouse button")
                 settings_widget = factory.create_settings_widget(handler)
                 
             except Exception:
-                notification.log_exception("Couldn't create settings widget")
+                logger.log_error("Couldn't create settings widget")
+                logger.log_exception()
                 
             else:
                 vbox.pack_end(settings_widget, True, True, 0)
@@ -755,7 +758,12 @@ class SettingsGroup(GObject.Object):
             a_subgroup.load_everything()
 
 
+#~ Functions that are on this module for convenience but really should have ~#
+#~ been made instance methods down this double line.                        ~#
+
 def LoadForApp(app):
+    """ Loads preferences for the application """
+    logger.log("Loading application preferences...")
     try:
         # Directory is preferences.Directory
         json_path = join_path(app.preferences_directory, "preferences.json")
@@ -767,16 +775,20 @@ def LoadForApp(app):
             with open(json_path) as prefs_file:
                 root_obj = json.load(prefs_file)
         except Exception:
-            notification.log_exception("Failed to load preferences file")
+            logger.log_error("Failed to load preferences file")
+            logger.log_exception()
         else:
             app.settings.set_all_data(root_obj)
             app.settings.load_everything()
             
     except Exception:
-        notification.log_exception("Couldn't load mouse handler preferences")
-        
-        
+        logger.log_error("Couldn't load mouse handler preferences")
+        logger.log_exception()
+
+
 def SaveFromApp(app):
+    """ Saves preferences from the application """
+    logger.log("Saving application preferences...")
     try:
         os.makedirs(app.preferences_directory, exist_ok=True)
         
@@ -796,9 +808,13 @@ def SaveFromApp(app):
             )
             
     except Exception:
-        notification.log_exception("Couldn't save mouse handler preferences")
+        logger.log_error("Couldn't save mouse handler preferences")
+        logger.log_exception()
+
 
 def LoadForWindow(window):
+    """ Loads preferences for an Window object """
+    logger.debug("Loading window preferences...")
     settings_data = window.app.settings["window"].data
     utility.SetPropertiesFromDict(
         window, settings_data,
@@ -816,12 +832,16 @@ def LoadForWindow(window):
         layout_codename = settings_data["layout-codename"]
         layout_option = window.app.components["layout-option", layout_codename]
     except Exception:
-        pass
+        logger.log_error('Could not load layout codename "{codename}"'.format(
+            codename=layout_codename
+        ))
     else:
         window.layout_option = layout_option
 
 
 def SaveFromWindow(window):
+    """ Saves preferences from an Window object """
+    logger.debug("Saving window preferences...")
     settings_data = window.app.settings["window"].data
     utility.SetDictFromProperties(window, settings_data,
         "autozoom-mode",
@@ -839,10 +859,12 @@ def SaveFromWindow(window):
     try:
         settings_data["layout-codename"] = window.layout_option.codename
     except Exception:
-        pass
+        logger.log_error("Could not save preferred layout codename")
 
 
 def LoadForAlbum(album, app_settings=None, album_settings=None):
+    """ Loads preferences for an Album object """
+    logger.debug("Loading album preferences...")
     if not album_settings:
         album_settings = album_settings or app_settings["album"]
     
@@ -855,12 +877,16 @@ def LoadForAlbum(album, app_settings=None, album_settings=None):
         sort_mode = settings_data.get("sort-mode", 0)
         album.comparer = organization.SortingKeys.Enum[sort_mode]
     except KeyError:
-        pass
+        logger.log_error("Could not load album comparer mode {mode}".format(
+            mode=sort_mode
+        ))
     finally:
         album.thaw_notify()
 
-    
+
 def SaveFromAlbum(album, app_settings=None, album_settings=None):
+    """ Saves preferences from an Album object """
+    logger.debug("Saving album preferences...")
     if not album_settings:
         album_settings = app_settings["album"]
     
@@ -873,6 +899,8 @@ def SaveFromAlbum(album, app_settings=None, album_settings=None):
 
 
 def LoadForView(view, app_settings=None, view_settings=None):
+    """ Loads preferences for an ImageView object """
+    logger.debug("Loading view preferences...")
     if not view_settings:
         view_settings = app_settings["view"]
     
@@ -882,9 +910,11 @@ def LoadForView(view, app_settings=None, view_settings=None):
         minify_filter="interpolation-minify",
         magnify_filter="interpolation-magnify"
     )
-    
-    
+
+
 def SaveFromView(view, app_settings=None, view_settings=None):
+    """ Saves preferences from an ImageView object """
+    logger.debug("Saving view preferences...")
     if not view_settings:
         view_settings = app_settings["view"]
     
@@ -960,7 +990,8 @@ def GetMouseMechanismsSettings(meta_mouse_handler):
                 a_mechanism_obj["settings"] = some_settings
             
         except Exception:
-            notification.log_exception("Couldn't save mouse mechanism")
+            logger.log_error("Couldn't save mouse mechanism")
+            logger.log_exception()
         
         else:
             try:
