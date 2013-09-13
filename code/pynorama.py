@@ -22,11 +22,16 @@ import gc, math, random, os, sys
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
 import cairo
 from gettext import gettext as _
-import extending, utility
-import organization, mousing, loading, preferences, viewing, notification
+import utility, notification, extending, mousing, preferences
+import opening, loading, organization, viewing
 from viewing import ZoomMode
-from loading import DirectoryLoader
 DND_URI_LIST, DND_IMAGE = range(2)
+
+
+uilogger = notification.Logger("interface")
+applogger = notification.Logger("app")
+
+sys.excepthook = applogger.log_exception_info
 
 class ImageViewer(Gtk.Application):
     Version = "v0.2.3"
@@ -63,7 +68,8 @@ class ImageViewer(Gtk.Application):
         self.settings.connect("load", self._load_settings)
         mouse_settings.connect("save", self._save_mouse_settings)
         mouse_settings.connect("load", self._load_mouse_settings)
-        
+    
+    
     # --- Gtk.Application interface down this line --- #
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -79,7 +85,10 @@ class ImageViewer(Gtk.Application):
         self.memory.connect("thing-requested", self.queue_memory_check)
         self.memory.connect("thing-unused", self.queue_memory_check)
         self.memory.connect("thing-unlisted", self.queue_memory_check)
-            
+        
+        
+        self.opener = opening.OpeningHandler(self)
+        
         Gtk.Window.set_default_icon_name("pynorama")
     
     
@@ -90,11 +99,15 @@ class ImageViewer(Gtk.Application):
     
     def do_open(self, files, file_count, hint):
         some_window = self.get_window()
+        some_window.wait_and_go_to_uri = files[0].get_uri()
         
-        some_window.go_new = True
-        self.open_files_for_album(some_window.album, files=files,
-                                  search=file_count == 1)
-        some_window.go_new = False
+        all_openers = self.components["file-opener"]
+        context = opening.OpeningContext()
+        
+        self.opener.handle(context, album=some_window.album)
+        newest_session = context.get_new_session()
+        newest_session.search_siblings = len(files) == 1
+        newest_session.add(files=files, openers=all_openers)
         
         some_window.present()
     
@@ -108,53 +121,124 @@ class ImageViewer(Gtk.Application):
     zoom_effect = GObject.Property(type=float, default=1.25)
     spin_effect = GObject.Property(type=float, default=90)
     
-    def open_image_dialog(self, album, window=None):
-        ''' Creates an "open image..." dialog for
-            adding images into an album. '''
-            
-        image_chooser = Gtk.FileChooserDialog(_("Open Image..."), window,
-                                              Gtk.FileChooserAction.OPEN,
-                                              (Gtk.STOCK_CANCEL,
-                                               Gtk.ResponseType.CANCEL,
-                                               Gtk.STOCK_ADD,
-                                               1,
-                                               Gtk.STOCK_OPEN,
-                                               Gtk.ResponseType.OK))
-            
+    def show_open_image_dialog(self,
+            open_cb,
+            add_cb=None,
+            cancel_cb=None,
+            window=None,
+            data=None):
+        """
+        Creates an "Open Image..." dialog for opening images.
+        
+        Its behaviour can be controlled with callbacks. The open and add
+        callbacks are called when the user activates either open or add
+        buttons. The add button will not be displayed if the add_cb
+        is set to None.
+        
+        A list of URIs and a list of FileOpeners selected is passed to both
+        open and add callback. Nothing is passed to the cancel callback.
+        
+        If a callback returns True the dialog will not be closed and that
+        same callback might be called again.
+        
+        """
+        
+        # The dialog has two "open" buttons: "Open" and "Add"
+        # The purpose is to let the user decide between replacing the
+        # images being viewed and adding more images to view
+        # Also, the "open" button can't "open" directories, only explore them.
+        # That is kind of important!
+        ADD_RESPONSE = 1
+        OPEN_RESPONSE = Gtk.ResponseType.OK # <-- explores directories
+        CANCEL_RESPONSE = Gtk.ResponseType.CANCEL
+        
+        buttons = (Gtk.STOCK_CLOSE, CANCEL_RESPONSE)
+        if add_cb:
+            buttons += (Gtk.STOCK_ADD, ADD_RESPONSE)
+        buttons += (Gtk.STOCK_OPEN, OPEN_RESPONSE)
+        
+        image_chooser = Gtk.FileChooserDialog(
+            _("Open Image..."),
+            window,
+            Gtk.FileChooserAction.OPEN,
+            buttons
+        )
+        
+        # The default response must have the "OK" value so that the dialog
+        # goes inside directories instead of returning them
+        image_chooser.set_modal(False)
+        image_chooser.set_destroy_with_parent(True)
         image_chooser.set_default_response(Gtk.ResponseType.OK)
         image_chooser.set_select_multiple(True)
         image_chooser.set_local_only(False)
         
-        # Add dialog options from "loading" module
-        for a_dialog_option in loading.CombinedDialogOption.List:
-            a_dialog_filter = a_dialog_option.create_filter()
-            image_chooser.add_filter(a_dialog_filter)            
-            
-        for a_dialog_option in loading.DialogOption.List:
-            a_dialog_filter = a_dialog_option.create_filter()
-            image_chooser.add_filter(a_dialog_filter)
-            
-        clear_album = False
-        search_siblings = False
-        choosen_uris = None
+        #~ Create and add the file filters to the file chooser dialog ~#
+        # Add the Supported Files filter
+        file_openers = self.components["file-opener"]
+        supported_files_group = opening.FileOpenerGroup(
+            _("Supported Files"),
+            file_openers
+        )
+        supported_files_filter = supported_files_group.create_file_filter()
+        image_chooser.add_filter(supported_files_filter)
         
-        response = image_chooser.run()
+        # Add the File Openers filters that opted to be visible
+        file_openers_filters = {}
+        for a_file_opener in file_openers:
+            if a_file_opener.show_on_dialog:
+                a_file_filter = a_file_opener.get_file_filter()
+                image_chooser.add_filter(a_file_filter)
+                file_openers_filters[a_file_filter] = a_file_opener
         
-        choosen_option = image_chooser.get_filter().dialog_option
-        if response in [Gtk.ResponseType.OK, 1]:
-            choosen_uris = image_chooser.get_uris()
         
-        if response == Gtk.ResponseType.OK:
-            clear_album = True
-            if len(choosen_uris) == 1:
-                search_siblings = True
-                
-        image_chooser.destroy()
+        # Handles the dialog being destroyed after exiting .run
+        def dialog_response_cb(image_chooser, response):
+            if image_chooser.__destroyed:
+                return
             
-        if choosen_uris:
-            self.open_files_for_album(album, choosen_option.loader,
-                                      uris=choosen_uris, search=search_siblings,
-                                      replace=clear_album)
+            uri_list = image_chooser.get_uris()
+            # Get chosen openers list
+            chosen_filter = image_chooser.get_filter()
+            try:
+                chosen_openers = [file_openers_filters[chosen_filter]]
+            except KeyError:
+                chosen_openers = supported_files_group.file_openers
+            
+            try:
+                # Figure out what callback to call
+                keep_dialog = False
+                if response == OPEN_RESPONSE:
+                    if open_cb:
+                        keep_dialog = open_cb(uri_list, chosen_openers, data)
+                        
+                elif response == ADD_RESPONSE:
+                    if add_cb:
+                        keep_dialog = add_cb(uri_list, chosen_openers, data)
+                    
+                elif cancel_cb:
+                    keep_dialog = cancel_cb(data)
+            
+            except:
+                # In case something goes wrong when calling the callbacks
+                # we don't want the to just hang there forever
+                image_chooser.destroy()
+                raise
+            
+            if not keep_dialog:
+                image_chooser.destroy()
+        
+        image_chooser.connect("response", dialog_response_cb)
+        
+        # This avoids an error if the dialog is destroyed because its
+        # parent has been destroyed
+        image_chooser.__destroyed = False
+        def dialog_destroy_cb(dialog, *etc):
+            dialog.__destroyed = True
+            
+        image_chooser.connect("destroy", dialog_destroy_cb)
+        
+        image_chooser.present()
+        return image_chooser
     
     
     def show_preferences_dialog(self, target_window=None):
@@ -238,7 +322,7 @@ class ImageViewer(Gtk.Application):
                 # constructor comes before any errors it gets added to the
                 # application windows list, and the application will not quit
                 # while the list is not empty.</programmerrage>
-                notification.log("\nCould not create the first window\n")
+                applogger.log_error("Could not create the first window")
                 windows = self.get_windows()
                 if len(windows) > 0:
                     self.remove_window(windows[0])
@@ -266,6 +350,8 @@ class ImageViewer(Gtk.Application):
             
             
     def memory_check(self):
+        logger = notification.Logger("loading")
+        
         self.memory_check_queued = False
         
         while self.memory.enlisted_stuff:
@@ -277,7 +363,7 @@ class ImageViewer(Gtk.Application):
                 unlisted_thing = self.memory.unlisted_stuff.pop()
                 if unlisted_thing.is_loading or unlisted_thing.on_memory:
                     unlisted_thing.unload()
-                    notification.log(notification.Lines.Unloaded(unlisted_thing))
+                    logger.debug(notification.Lines.Unloaded(unlisted_thing))
                     
             while self.memory.unused_stuff:
                 unused_thing = self.memory.unused_stuff.pop()
@@ -285,7 +371,7 @@ class ImageViewer(Gtk.Application):
                 if unused_thing.on_disk:
                     if unused_thing.is_loading or unused_thing.on_memory:
                         unused_thing.unload()
-                        notification.log(notification.Lines.Unloaded(unused_thing))
+                        logger.debug(notification.Lines.Unloaded(unused_thing))
                         
             gc.collect()
             
@@ -293,117 +379,20 @@ class ImageViewer(Gtk.Application):
             requested_thing = self.memory.requested_stuff.pop()
             if not (requested_thing.is_loading or requested_thing.on_memory):
                 requested_thing.load()
-                notification.log(notification.Lines.Loading(requested_thing))
+                logger.debug(notification.Lines.Loading(requested_thing))
                 
         return False
         
         
     def log_loading_finish(self, thing, error):
+        logger = notification.Logger("loading")
+        
         if error:
-            notification.log(notification.Lines.Error(error))
+            logger.log_error(notification.Lines.Error(error))
             
         elif thing.on_memory:
-            notification.log(notification.Lines.Loaded(thing))
+            logger.log(notification.Lines.Loaded(thing))
     
-    
-    def open_files_for_album(
-        self, album, loader=None, files=None, uris=None,
-        replace=False, search=False, silent=False,
-        manage=True
-    ):
-        ''' Open files or uris for an album '''
-        album_context = loading.Context(files=files, uris=uris)
-        context_sorting = lambda ctx: album.sort_list(ctx.images)
-        
-        self.open_files(
-            album_context, context_sorting=context_sorting,
-            loader=loader, search=search, silent=silent
-        )
-        
-        if album_context.images:
-            if replace:
-                del album[:]
-            
-            if manage:
-                for image in album_context.images:
-                    self.memory.observe(image)
-                    
-            album.extend(album_context.images)
-        
-        
-    def open_files(
-        self, context, loader=None, search=False,
-        context_sorting=None, silent=False
-    ):
-        ''' Open files using loading.LoadersLoader '''
-        if loader is None:
-            loader = loading.LoadersLoader.LoaderListLoader
-        
-        context.uris_to_files()
-        context.load_files_info()
-        for a_file, a_problem in context.problems.items():
-            context.files.remove(a_file)
-        
-        directories = []
-        removed_files = 0
-        for i in range(len(context.files)):
-            index = i - removed_files
-            a_file = context.files[index]
-            try:
-                if DirectoryLoader.should_open(a_file):
-                    removed_files += 1
-                    directories.append(a_file)
-                    del context.files[index]
-            except Exception:
-                raise
-        
-        if search and context.files:
-            # Sibling file loading is not sorted
-            context.add_sibling_files(loader)
-            files = list(context.files)
-            del context.files[:]
-            self.open_context_images(context, files, loader)
-            
-        if directories:
-            self.open_context_images(
-                context, directories, DirectoryLoader,
-                sort_method=context_sorting
-            )
-            
-        if context.files:
-            self.open_context_images(
-                context, context.files, loader,
-                sort_method=context_sorting
-            )
-        
-        if context.problems and not silent:
-            problem_list = []
-            for a_file, a_problem in context.problems.items():
-                problem_list.append((a_file.get_parse_name(), str(a_problem)))
-            
-            message = _("There were problems opening the following files:")
-            columns = [_("File"), _("Error")]
-            
-            notification.alert_list(message, problem_list, columns)
-            
-            
-    def open_context_images(self, context, files, loader, sort_method=None):
-        ''' Opens files in a loader, sort the result with sort_method and
-            append it to context. '''
-        loader_context = loading.Context()
-        for a_file in files:
-            loader.open_file(loader_context, a_file)
-        
-        if sort_method:
-            sort_method(loader_context)
-        
-        context.images.extend(loader_context.images)
-        context.files.extend(loader_context.files)
-        context.uris.extend(loader_context.uris)
-        
-    def load_pixels(self, pixels):
-        pixelated_image = loading.PixbufDataImageSource(pixels, "Pixels")
-        return [pixelated_image]
     
     def _save_settings(self, app_settings):
         utility.SetDictFromProperties(
@@ -424,11 +413,13 @@ class ImageViewer(Gtk.Application):
         )
         mouse_settings.data["mechanisms"] = mechanisms_data
     
+    
     def _load_mouse_settings(self, mouse_settings):
         
         preferences.LoadMouseMechanismsSettings(
             self, self.meta_mouse_handler, mouse_settings.data["mechanisms"]
         )
+
 
 class ViewerWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
@@ -445,17 +436,13 @@ class ViewerWindow(Gtk.ApplicationWindow):
         # If the user changes the zoom set by .autozoom, 
         # then .autozoom isn't called after rotating or resizing the imageview
         self._autozoom_zoom_modified = False
-        
         self._focus_loaded_handler_id = None
         self._old_focused_image = None
-        self.go_new = False
+        self.opening_context = None
         self.album = organization.Album()
-        self.album.connect("image-added", self._image_added)
-        self.album.connect("image-removed", self._image_removed)
-        self.album.connect("order-changed", self._album_order_changed)
-        
-        # Set clipboard
-        self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        self.album.connect("image-added", self._album_image_added_cb)
+        self.album.connect("image-removed", self._album_image_removed_cb)
+        self.album.connect("order-changed", self._album_order_changed_cb)
         
         # Create layout
         vlayout = Gtk.VBox()
@@ -560,7 +547,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         target_list.add_uri_targets(DND_URI_LIST)
         
         self.view.drag_dest_set_target_list(target_list)
-        self.view.connect("drag-data-received", self.dragged_data)
+        self.view.connect("drag-data-received", self._dnd_received_cb)
         
         
         # Setup layout stuff
@@ -810,8 +797,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
         ]
         
         signaling_params = {
-            "open" : (self.file_open,),
-            "paste" : (self.pasted_data,),
+            "open" : (lambda w: self.show_open_image_dialog(),),
+            "paste" : (lambda w: self.paste(),),
             "copy": (self.copy_image,),
             "sort" : (lambda data: self.album.sort(),),
             "sort-reverse" : (self._toggled_reverse_sort,),
@@ -1057,7 +1044,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             try:
                 source_option.add_ui(layout, self.uimanager, merge_id)
             except Exception:
-                notification.log_exception("Error adding layout UI")
+                uilogger.log_error("Error adding layout UI")
+                uilogger.log_exception()
                 self._layout_action_group = None
                 self.uimanager.remove_ui(merge_id)
             else:
@@ -1434,48 +1422,103 @@ class ViewerWindow(Gtk.ApplicationWindow):
         if focus:
             focus.copy_to_clipboard(self.clipboard)
     
-    def pasted_data(self, data=None):
-        self.go_new = True
-        some_uris = self.clipboard.wait_for_uris()
+    
+    def open_uris(self,
+                  uris,
+                  openers=None,
+                  replace=False,
+                  search_siblings=False,
+                  go_to_first=True):
+        """ Opens a set of URIs and adds its results to this window album """
         
-        if some_uris:
-            self.app.open_files_for_album(self.album, uris=some_uris)
+        uri_list = list(uris)
+        if uri_list:
+            # Logging just because
+            uilogger.log("Opening %d URI(s)" % len(uri_list))
+            uilogger.debug_list(uri_list)
+            uilogger.debug("Parameters")
+            uilogger.debug_dict({
+                "Replace": replace,
+                "Sibling Search": search_siblings,
+                "Go to First": go_to_first
+            })
+            
+            if openers is None:
+                uilogger.debug("All openers included")
+                openers = self.app.components["file-opener"]
+            else:
+                uilogger.debug("Selected openers")
+                uilogger.debug_list(openers)
+            
+            if replace:
+                del self.album[:]
+            
+            opening_context = self.get_opening_context()
+            if not opening_context.__added_already:
+                self.app.opener.handle(opening_context, album=self.album)
+                opening_context.__added_already = True
+            
+            newest_session = opening_context.get_new_session()
+            newest_session.search_siblings = search_siblings
+            newest_session.add(openers=openers, uris=uri_list)
+            opening_context.__go_to_uri = uris[0] if go_to_first else None
+    
+    
+    def paste(self, clipboard=None):
+        """ Pastes something from a clipboard """
+        uilogger.log("Pasting...")
+        if clipboard is None:
+            # Get default clipboard
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+            
+        results = self.app.opener.open_clipboard(clipboard)
+        if results.completed:
+            self._completed_paste_results_cb(results)
+        else:
+            results.connect("completed", self._completed_paste_results_cb)
+    
+    
+    def show_open_image_dialog(self):
+        """ Shows the open image dialog for this window """
+        opening_context = self.get_opening_context()
         
-        some_text = self.clipboard.wait_for_text()
-        if some_text:
-            self.app.open_files_for_album(
-                self.album, uris=[some_text], silent=True
+        try:
+            dialog = opening_context.__open_dialog
+        except AttributeError:
+            # Show an open dialog
+            opening_context.hold_open()
+            
+            dialog = self.app.show_open_image_dialog(
+                self._open_dialog_open_cb,
+                self._open_dialog_add_cb,
+                None,
+                self,
+                opening_context
             )
+            opening_context.__open_dialog = dialog
+            
+            dialog.connect("destroy", self._open_dialog_destroy_cb)
+        else:
+            dialog.present()
+    
+    
+    def get_opening_context(self):
+        """
+        Returns this window OpeningContext creating one
+        if it doesn't already exists.
         
-        some_pixels = self.clipboard.wait_for_image()
-        if some_pixels:
-            new_images = self.app.load_pixels(some_pixels)
-            if new_images:
-                self.album.extend(new_images)
-                
-        self.go_new = False
-        
-    def dragged_data(self, widget, context, x, y, selection, info, timestamp):
-        self.go_new = True
-        if info == DND_URI_LIST:
-            some_uris = selection.get_uris()
-            if some_uris:
-                self.app.open_files_for_album(self.album, uris=some_uris,
-                                                   search=len(some_uris) == 1,
-                                                   replace=True)
-                                                   
-        elif info == DND_IMAGE:
-            some_pixels = selection.get_pixbuf()
-            if some_pixels:
-                new_images = self.app.load_pixels(some_pixels)
-                if new_images:
-                    self.album.extend(new_images)
-                    
-        self.go_new = False
-                                
-    def file_open(self, widget, data=None):
-        self.app.open_image_dialog(self.album, self)
-        
+        """
+        if not self.opening_context:
+            uilogger.debug("Creating new opening context")
+            new_context = opening.OpeningContext()
+            new_context.__added_already = False
+            new_context.__go_to_uri = None
+            new_context.connect("finished", self._opening_context_finished_cb)
+            self.opening_context = new_context
+            
+        return self.opening_context
+    
+    
     def show_layout_dialog(self, *data):
         ''' Shows a dialog with the layout settings widget '''
         
@@ -1494,13 +1537,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 
             except Exception:
                 message = _("Could not create layout settings dialog!")
+                uilogger.log_error(message)
+                uilogger.log_exception()
+                
                 dialog = Gtk.MessageDialog(
                     self, flags.MODAL | flags.DESTROY_WITH_PARENT,
                     Gtk.MessageType.ERROR, Gtk.ButtonsType.CLOSE,
                     message
                 )
-                
-                notification.log_exception(message)
                 dialog.run()
                 dialog.destroy()
             
@@ -1541,42 +1585,52 @@ class ViewerWindow(Gtk.ApplicationWindow):
         preferences.SaveFromWindow(self)
         preferences.SaveFromAlbum(self.album, self.app.settings)
         preferences.SaveFromView(self.view, self.app.settings)
+        layout = self.avl.layout
         try:
             # Tries to save the layout preferences
-            self.avl.layout.save_preferences()
-            
+            source_option = layout.source_option
+            source_option.save_preferences(layout)
         except Exception:
-            pass
+            uilogger.log_error("Error destroying window")
+            uilogger.log_exception()
         
         # Clean up the avl
         self.avl.clean()
         return Gtk.Window.do_destroy(self)
     
     
+    #~ Album/view/layout stuff down this line ~#
+    
     def _layout_widget_destroyed(self, widget, layout):
         layout.source_option.save_preferences(layout)
+    
     
     def _layout_dialog_response(self, *data):
         self.layout_dialog.destroy()
         self.layout_dialog = None
     
     
-    def _image_added(self, album, image, index):
+    def _album_image_added_cb(self, album, image, index):
         image.lists += 1
         self._refresh_index.queue()
         
-        if self.go_new:
-            self.go_new = False
-            self.avl.go_image(image)
+        if self.opening_context and self.opening_context.__go_to_uri:
+            if image.matches_uri(self.opening_context.__go_to_uri):
+                uilogger.debug("Going to image matching opening context URI")
+                self.opening_context.__go_to_uri = None
+                self.avl.go_image(image)
             
         elif self.avl.focus_image is None:
+            uilogger.debug("No focus image, going to newly added image.")
             self.avl.go_image(image)
         
-    def _image_removed(self, album, image, index):
+        
+    def _album_image_removed_cb(self, album, image, index):
         image.lists -= 1
         self._refresh_index.queue()
         
-    def _album_order_changed(self, album):
+        
+    def _album_order_changed_cb(self, album):
         self._refresh_index.queue()
 
 
@@ -1651,6 +1705,132 @@ class ViewerWindow(Gtk.ApplicationWindow):
             self._focus_hint = True
             
         self._refresh_transform.queue()
+    
+    
+    #~ UI related callbacks down this line ~#
+    
+    def _dnd_received_cb(self, widget, ctx, x, y, selection, info, time):
+        """ Callback for drag'n'drop "received" event """
+        uilogger.log("Drag'n'dropping...")
+        results = self.app.opener.open_selection(selection)
+        if results.completed:
+            self._completed_drop_results_cb(results)
+        else:
+            results.connect("completed", self._completed_drop_results_cb)
+    
+    
+    def _completed_drop_results_cb(self, results, *etc):
+        """
+        Callback for the opening results of a drag'n'drop "complete" signal
+        
+        """
+        if results.uris:
+            uilogger.log("Found URIs in drop")
+            is_single_uri = len(results.uris) == 1
+            is_trigger = not self.get_opening_context().__added_already
+            self.open_uris(
+                results.uris, 
+                replace=is_trigger,
+                search_siblings=is_single_uri
+            )
+        
+        if results.images:
+            uilogger.log("Found images in drop")
+            # TODO: Implement something so that ImageSources
+            # don't have to be "manually" added to the memory thingy...
+            # actually reimplement the entire memory management thingy.
+            self.app.memory.observe_stuff(results.images)
+            self.album.extend(results.images)
+        
+        if results.errors:
+            uilogger.log_error("There were errors opening the drop")
+            for e in results.errors:
+                uilogger.log_exception(e)
+        
+        if results.empty:
+            uilogger.log_error("Found nothing in drop")
+    
+    
+    def _completed_paste_results_cb(self, results, *etc):
+        """
+        Callback for the opening results of a paste "complete" signal
+        
+        """
+        if results.uris:
+            uilogger.log("Found URIs in paste")
+            self.open_uris(results.uris)
+        
+        if results.images:
+            uilogger.log("Found images in paste")
+            # TODO: Implement something so that ImageSources
+            # don't have to be "manually" added to the memory thingy...
+            # actually reimplement the entire memory management thingy.
+            self.app.memory.observe_stuff(results.images)
+            self.album.extend(results.images)
+        
+        if results.errors:
+            uilogger.log_error("There were errors opening the paste")
+            for e in results.errors:
+                uilogger.log_exception(e)
+        
+        if results.empty:
+            uilogger.log_error("Found nothing in paste")
+    
+    
+    def _opening_context_finished_cb(self, context):
+        assert self.opening_context is context, (self.opening_context, context)
+        # If the center image is none for some reason, then it changes the
+        # center image to the first image in the sorted album
+        
+        uilogger.log("Opening context finished")
+        avl = self.avl
+        if avl.focus_image is None:
+            avl.album.sort()
+            try:
+                first_image = avl.album[0]
+            except IndexError:
+                pass
+            else:
+                uilogger.debug("No focus image, going to first image.")
+                avl.go_image(first_image)
+        
+        self.opening_context = None
+    
+    
+    def _open_dialog_open_cb(self, uris, openers, *etc):
+        opening_context = self.get_opening_context()
+        replace = not opening_context.__added_already
+        search_siblings = replace and len(uris) == 1
+        self.open_uris(
+            uris,
+            openers=openers,
+            replace=replace,
+            search_siblings=search_siblings
+         )
+    
+    
+    def _open_dialog_add_cb(self, uris, openers, *etc):
+        opening_context = self.get_opening_context()
+        self.open_uris(uris, openers=openers)
+        return True
+    
+    
+    def _open_dialog_destroy_cb(self, open_dialog):
+        """
+        Let the opening context emit the "finished" signal after the open
+        dialog is destroyed.
+        
+        """
+        context = self.get_opening_context()
+        try:
+            ctx_dialog = context.__open_dialog
+        except AttributeError:
+            pass
+        else:
+            if open_dialog is ctx_dialog:
+                del context.__open_dialog
+                context.let_close()
+    
     
     #--- Properties down this line ---#
     

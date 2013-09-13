@@ -191,6 +191,7 @@ class AlbumViewLayout(GObject.Object):
         "focus-changed" : (GObject.SIGNAL_RUN_FIRST, None, [object, bool])
     }
     
+    
     def __init__(self, album=None, view=None, layout=None):
         GObject.Object.__init__(self)
         self.__is_clean = True
@@ -202,30 +203,38 @@ class AlbumViewLayout(GObject.Object):
         self.album = album
         self.view = view
     
-    @property    
+    
+    @property
     def focus_image(self):
         return self.__old_layout.get_focus_image(self)
+    
     
     @property
     def focus_frame(self):
         return self.__old_layout.get_focus_frame(self)
     
+    
     def go_index(self, index):
         self.__old_layout.go_image(self, self.album[index])
-        
+    
+    
     def go_image(self, image):
         self.__old_layout.go_image(self, image)
+    
     
     def go_next(self):
         self.__old_layout.go_next(self)
     
+    
     def go_previous(self):
         self.__old_layout.go_previous(self)
+    
     
     def clean(self):
         if not self.__is_clean:
             self.__old_layout.clean(self)
             self.__is_clean = True
+    
     
     def _layout_changed(self, *data):
         focus_image = None
@@ -240,11 +249,13 @@ class AlbumViewLayout(GObject.Object):
             self.layout.start(self)
             self.layout.subscribe(self)
             self.go_image(focus_image)
-        
+    
+    
     album = GObject.property(type=object, default=None)
     view = GObject.property(type=object, default=None)
     layout = GObject.property(type=object, default=None)
-    
+
+
 class AlbumLayout:
     ''' Places images from an album into a view '''
     def __init__(self):
@@ -323,7 +334,8 @@ class SingleImageLayout(AlbumLayout):
     
     def __init__(self):
         AlbumLayout.__init__(self)
-        
+    
+    
     def start(self, avl):
         avl.current_image = None
         avl.current_frame = None
@@ -333,7 +345,8 @@ class SingleImageLayout(AlbumLayout):
         avl.album_notify_id = avl.connect(
                                   "notify::album", self._album_changed, avl)
         self._album_changed(avl)
-        
+    
+    
     def clean(self, avl):
         if avl.load_handle:
             avl.current_image.disconnect(avl.load_handle)
@@ -355,16 +368,19 @@ class SingleImageLayout(AlbumLayout):
             
         del avl.old_album
         del avl.removed_signal_id
-            
+    
+    
     def get_focus_image(self, avl):
         return avl.current_image
+    
     
     def get_focus_frame(self, avl):
         return avl.current_frame
     
+    
     def go_image(self, avl, target_image):
         if avl.current_image == target_image:
-            pass
+            return
             
         previous_image = avl.current_image
         avl.current_image = target_image
@@ -386,10 +402,13 @@ class SingleImageLayout(AlbumLayout):
                 
             else:
                 avl.load_handle = avl.current_image.connect(
-                                  "finished-loading", self._image_loaded, avl)
+                    "finished-loading",
+                    self._image_loaded, avl
+                )
         
         avl.emit("focus-changed", avl.current_image, False)
-        
+    
+    
     def _refresh_frame(self, avl):
         if avl.current_frame:
             avl.view.remove_frame(avl.current_frame)
@@ -400,6 +419,7 @@ class SingleImageLayout(AlbumLayout):
             avl.view.add_frame(new_frame)
             avl.view.align_to_frame(new_frame)
     
+    
     def _album_changed(self, avl, *data):
         if not avl.old_album is None:
             avl.old_album.disconnect(avl.removed_signal_id)
@@ -408,8 +428,11 @@ class SingleImageLayout(AlbumLayout):
         avl.old_album = avl.album
         if not avl.album is None:
             avl.removed_signal_id = avl.album.connect(
-                                    "image-removed", self._image_removed, avl)
-                                    
+                "image-removed",
+                self._image_removed, avl
+            )
+    
+    
     def _image_removed(self, album, image, index, avl):
         if image == avl.current_image:
             count = len(album)
@@ -421,6 +444,7 @@ class SingleImageLayout(AlbumLayout):
                     new_image = None
                     
                 self.go_image(avl, new_image)
+    
     
     def _image_loaded(self, image, error, avl):
         self._refresh_frame(avl)
@@ -469,11 +493,13 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
             self._place_before, self._place_after
         ) = ImageStripLayout.DirectionMethods[self.direction]
         
-        
+    
+    
     def update(self, avl):
         self._update_sides(avl)
         self._reposition_frames(avl)
-        
+    
+    
     def start(self, avl):
         avl.center_index = avl.center_frame = avl.center_image = None
         avl.shown_images, avl.shown_frames = [], []
@@ -496,7 +522,8 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
         ]
         self._view_changed(avl)
         self._album_changed(avl)
-        
+    
+    
     def clean(self, avl):
         for an_image in avl.shown_images:
             an_image.uses -= 1
@@ -530,13 +557,16 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
         del avl.old_album, avl.old_view
         del avl.notify_signals
         del avl.album_signals, avl.view_signals
-            
+    
+    
     def get_focus_image(self, avl):
         return avl.center_image
     
+    
     def get_focus_frame(self, avl):
         return avl.center_frame
-        
+    
+    
     def go_next(self, avl):
         if avl.center_frame:
             new_index = avl.center_index + 1
@@ -563,7 +593,8 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
                 self._insert_image(avl, new_index, new_image)
                 
             avl.update_sides.queue()
-        
+    
+    
     def go_previous(self, avl):
         if avl.center_frame:
             new_index = avl.center_index - 1
@@ -587,7 +618,8 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
                 self._insert_image(avl, 0, new_image)
                 
             avl.update_sides.queue()
-            
+    
+    
     def go_image(self, avl, image):
         if avl.center_image is image:
             return
@@ -808,15 +840,20 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
                     if avl.album:
                         new_image = avl.album.next(avl.album[index - 1])
                         self._insert_image(avl, new_index, new_image)
+                    else:
+                        avl.emit("focus-changed", avl.center_image, True)
             
             avl.update_sides.queue()
             self._reposition_frames(avl)
+    
     
     def _order_changed(self, album, avl):
         self._clear_images(avl)
         old_center_image = avl.center_image
         avl.center_index = avl.center_image = avl.center_frame = None
-        self._insert_image(avl, 0, old_center_image)
+        if old_center_image is not None:
+            self._insert_image(avl, 0, old_center_image)
+    
     
     def _insert_image(self, avl, index, image):
         ''' Handles a image inserted in an album '''

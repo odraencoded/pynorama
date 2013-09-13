@@ -886,7 +886,7 @@ class AnimatedPixbufSourceFrame(ImageFrame):
         animation = self.source.pixbuf_animation
         
         if animation.is_static_image():
-            pixbuf = self.animation.get_static_image()
+            pixbuf = animation.get_static_image()
             self._current_frame_surface = SurfaceFromPixbuf(pixbuf)
             
         else:
