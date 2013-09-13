@@ -802,9 +802,12 @@ def LoadForWindow(window):
     settings_data = window.app.settings["window"].data
     utility.SetPropertiesFromDict(
         window, settings_data,
-        "autozoom-enabled", "autozoom-can-minify", "autozoom-can-magnify",
+        "autozoom-mode",
+        "autozoom-enabled",
+        "autozoom-can-minify",
+        "autozoom-can-magnify",
         statusbar_visible="interface-statusbar",
-        toolbar_visible= "interface-toolbar",
+        toolbar_visible="interface-toolbar",
         hscrollbar_placement= "scrollbar-horizontal-placement",
         vscrollbar_placement= "scrollbar-vertical-placement"
     )
@@ -817,10 +820,14 @@ def LoadForWindow(window):
     else:
         window.layout_option = layout_option
 
+
 def SaveFromWindow(window):
     settings_data = window.app.settings["window"].data
     utility.SetDictFromProperties(window, settings_data,
-        "autozoom-enabled", "autozoom-can-minify", "autozoom-can-magnify",
+        "autozoom-mode",
+        "autozoom-enabled",
+        "autozoom-can-minify",
+        "autozoom-can-magnify",
         statusbar_visible="interface-statusbar",
         toolbar_visible="interface-toolbar",
         hscrollbar_placement="scrollbar-horizontal-placement",
@@ -833,7 +840,7 @@ def SaveFromWindow(window):
         settings_data["layout-codename"] = window.layout_option.codename
     except Exception:
         pass
-    
+
 
 def LoadForAlbum(album, app_settings=None, album_settings=None):
     if not album_settings:
