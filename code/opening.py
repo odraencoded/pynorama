@@ -1229,11 +1229,14 @@ class TextSelectionOpener(SelectionOpener):
         if parse_result.scheme and parse_result.path \
                 and (parse_result.netloc or parse_result.scheme == "file"):
             results.uris.append(text)
-        elif os_path.isabs(text):
-            # Wildly assuming this is a valid filename
-            # just because it starts with a slash
-            text = "file://" + os_path.normcase(os_path.normcase(text))
-            results.uris.append(text)
+        else:
+            # Expanding "~"
+            text = os_path.expanduser(text)
+            if os_path.isabs(text):
+                # Wildly assuming this is a valid filename
+                # just because it starts with a slash
+                text = "file://" + os_path.normcase(os_path.normcase(text))
+                results.uris.append(text)
             
         results.complete()
 
