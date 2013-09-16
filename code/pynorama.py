@@ -99,16 +99,8 @@ class ImageViewer(Gtk.Application):
     
     def do_open(self, files, file_count, hint):
         some_window = self.get_window()
-        some_window.wait_and_go_to_uri = files[0].get_uri()
-        
-        all_openers = self.components["file-opener"]
-        context = opening.OpeningContext()
-        
-        self.opener.handle(context, album=some_window.album)
-        newest_session = context.get_new_session()
-        newest_session.search_siblings = len(files) == 1
-        newest_session.add(files=files, openers=all_openers)
-        
+        single_file = file_count == 1
+        some_window.open_files(files, search_siblings=single_file)
         some_window.present()
     
     
@@ -1429,7 +1421,10 @@ class ViewerWindow(Gtk.ApplicationWindow):
                   replace=False,
                   search_siblings=False,
                   go_to_first=True):
-        """ Opens a set of URIs and adds its results to this window album """
+        """
+        Opens a set of URIs and adds their results to this window album
+        
+        """
         
         uri_list = list(uris)
         if uri_list:
@@ -1461,8 +1456,54 @@ class ViewerWindow(Gtk.ApplicationWindow):
             newest_session = opening_context.get_new_session()
             newest_session.search_siblings = search_siblings
             newest_session.add(openers=openers, uris=uri_list)
-            opening_context.__go_to_uri = uris[0] if go_to_first else None
+            opening_context.__go_to_uri = uri_list[0] if go_to_first else None
     
+    
+    def open_files(self,
+                  files,
+                  openers=None,
+                  replace=False,
+                  search_siblings=False,
+                  go_to_first=True):
+        """
+        Opens a set of GFiles and adds their results to this window album
+        
+        """
+        
+        file_list = list(files)
+        if file_list:
+            # Logging just because
+            uilogger.log("Opening %d GFile(s)" % len(file_list))
+            uilogger.debug_list(a_file.get_uri() for a_file in file_list)
+            uilogger.debug("Parameters")
+            uilogger.debug_dict({
+                "Replace": replace,
+                "Sibling Search": search_siblings,
+                "Go to First": go_to_first
+            })
+            
+            if openers is None:
+                uilogger.debug("All openers included")
+                openers = self.app.components["file-opener"]
+            else:
+                uilogger.debug("Selected openers")
+                uilogger.debug_list(openers)
+            
+            if replace:
+                del self.album[:]
+            
+            opening_context = self.get_opening_context()
+            if not opening_context.__added_already:
+                self.app.opener.handle(opening_context, album=self.album)
+                opening_context.__added_already = True
+            
+            newest_session = opening_context.get_new_session()
+            newest_session.search_siblings = search_siblings
+            newest_session.add(openers=openers, files=file_list)
+            if go_to_first:
+                opening_context.__go_to_uri = file_list[0].get_uri()
+            else:
+                opening_context.__go_to_uri = None
     
     def paste(self, clipboard=None):
         """ Pastes something from a clipboard """
