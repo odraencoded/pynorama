@@ -1,0 +1,91 @@
+---
+layout: post
+author: Leonardo Augusto Pereira
+title: Pynorama Version 0.2.6
+description: Pynorama version 0.2.6 release notes and change log
+---
+<p>According to this website, a
+<a href="https://github.com/odraencoded/pynorama/releases/tag/v0.2.6"
+title="Namely the 0.2.6 version">new version of Pynorama</a> has been released.
+
+<p>This new version focused primarily on opening images.
+Not much has been done, it was mostly refactoring. A bunch of bugs have been
+fixed and the text printed to the console is now coloured. I think that is
+pretty neat.
+
+<article id="v0-2-6-changelog" class="change-log">
+	<h3 class="change-version">Version 0.2.6 Changelog</h2>
+	
+	<ul class="change-list">
+	<li>
+		<h6 class="summary">
+			Bug fixed: Certain preferences were not being saved
+		</h6>
+		<div class="details">
+			<p>In the last version release, somehow, the auto zoom mode 
+			preference was not added to the preference saving list. It's now
+			been added and is saved normally, I hope.
+			<p>When exiting the aplication after changing the layout
+			preferences using menu items, those preferences weren't saved.
+			That has been fixed too.
+		</div>
+	<li>
+		<h6 class="summary">
+			Bug fixed: Filenames pasted that start with an user code are
+			now correctly identified as filenames.
+		</h6>
+		<div class="details">
+			<p>Before, if you pasted a filename such as
+			<code>~/Pictures/cake.jpg</code> it wouldn't be opened because it
+			isn't an absolute path. Now the tilde is automatically expanded,
+			and the file is correctly opened.
+		</div>
+	<li>
+		<h6 class="summary">
+			When opening a directory without images, subdirectories are
+			automatically opened too.
+		</h6>
+		<div class="details">
+			<p>If you try to open a directory that doesn't have any images but
+			has subdirectories, those subdirectories will be being opened.
+			If those directories don't have images but have subdirectories,
+			the same thing happens, recursively, until it stops happening.
+		</div>
+	<li>
+		<h6 class="summary">
+			Clicking on the <q>Add</q> button in the <q>open image</q> dialog
+			doesn't close the dialog anymore.
+		</h6>
+		<div class="details">
+			<p>If you click the <q>Add</q> button an image or directory will be
+			added to the image viewer but the dialog will be kept open so
+			you can add more images and/or directories.
+			<p>Clicking on the <q>Open</q> button after clicking in the
+			<q>Add</q> button will not remove all images from the image viewer,
+			but it will close the dialog.
+			<p>Incidentally clicking on the <s><q>Cancel</q></s> <q>Close</q>
+			button always closes the dialog.
+		</div>
+	<li>
+		<h6 class="summary">
+			The entire image opening API has been redesigned.
+		</h6>
+		<div class="details">
+			<p>This means nothing to the end user, but to developers it means
+			there is a new <em>flawed</em> way to tell the program to do
+			its thing.
+		</div>
+	<li>
+		<h6 class="summary">
+			The text printed to the console is now coloured.
+		</h6>
+		<div class="details">
+			<p>I think that is pretty neat!
+		</div>
+	</ul>
+</article>
+
+<p>You should check the
+<a href="https://github.com/odraencoded/pynorama/compare/v0.2.5...v0.2.6">
+0.2.5 to 0.2.6 commit log</a> for more information about the changes made
+in this version.
