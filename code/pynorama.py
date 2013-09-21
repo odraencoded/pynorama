@@ -19,7 +19,7 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
 import gc, math, random, os, sys
-from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, GObject
+from gi.repository import Gtk, Gdk, Gio, GObject
 import cairo
 from gettext import gettext as _
 import utility, notification, extending, mousing, preferences
@@ -27,14 +27,15 @@ import opening, loading, organization, viewing
 from viewing import ZoomMode
 DND_URI_LIST, DND_IMAGE = range(2)
 
-
+# Log stuff
 uilogger = notification.Logger("interface")
 applogger = notification.Logger("app")
 
+# Prints exceptions using the applogger logger printing
 sys.excepthook = applogger.log_exception_info
 
 class ImageViewer(Gtk.Application):
-    Version = "v0.2.3"
+    Version = "v0.2.6"
     
     DataDirectory = "resources"
     PreferencesDirectory = "preferences"
@@ -530,7 +531,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.statusbarboxbox.show_all()
         self.loading_spinner.hide()
         
-        # DnD setup    
+        # DnD setup
+        # TODO: Allow this to be extensible
         self.view.drag_dest_set(
             Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY
         )
