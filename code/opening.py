@@ -28,6 +28,7 @@
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk
 from gettext import gettext as _
 import notification, extending, utility, loading
+from extending import FileOpener, SelectionOpener
 from collections import deque
 from urllib.parse import urlparse
 from os import path as os_path
@@ -902,87 +903,6 @@ class OpeningResults(GObject.Object):
         if not self.completed:
             self.completed = True
             self.emit("completed")
-            
-
-class SelectionOpener(GObject.Object, extending.Component):
-    """ An interface to open images from Gtk.SelectionData """
-    
-    CATEGORY = "selection-opener"
-    
-    def __init__(self, codename, targets=None):
-        GObject.Object.__init__(self)
-        extending.Component.__init__(self, codename)
-        
-        # A set of targets from a selection that 
-        # this opener should be able to open
-        
-        if targets:
-            self.set_targets_from_strings(targets)
-        else:
-            self.atom_targets = set()
-    
-    
-    def set_targets_from_strings(self, targets):
-        self.atom_targets = set(Gdk.Atom.intern(t, False) for t in targets)
-    
-    
-    def open_selection(self, selection, results):
-        """ Opens a Gdk.Selection """
-        raise NotImplementedError
-    
-
-class FileOpener(GObject.Object, extending.Component):
-    """ An interface to open files for the image viewer.
-    
-    File openers yield image sources or other files which are then
-    opened by other file openers.
-    
-    """
-    
-    CATEGORY = "file-opener"
-    
-    def __init__(self, codename, extensions=None, mime_types=None):
-        """ Initializes a file opener for certain extensions and mime_types """
-        
-        GObject.Object.__init__(self)
-        extending.Component.__init__(self, codename)
-        
-        # These two variables are used to guess which 
-        # file opener should open which file
-        self.extensions = extensions if extensions is not None else set()
-        """ A set of common extensions for this file opener supported files """
-        
-        self.mime_types = mime_types if mime_types is not None else set()
-        """ A set of mime_types for this file opener supported files """
-        
-        self.show_on_dialog = True
-        """ Whether to show this file opener in the "Open image" dialog """
-        
-        self._file_filter = None
-    
-    @GObject.Property
-    def label(self):
-        """ A label to be displayed in the GUI """
-        raise NotImplementedError
-    
-    
-    def open_file(self, context, results, gfile):
-        """ Opens a GFile from context and adds its contents to the results """
-        raise NotImplementedError
-    
-    
-    def get_file_filter(self):
-        """ Returns a file filter for this file opener """
-        if not self._file_filter:
-            self._file_filter = file_filter = Gtk.FileFilter()
-            file_filter.set_name(self.label)
-            
-            for an_extension in self.extensions:
-                file_filter.add_pattern("*." + an_extension)
-            for a_mime_type in self.mime_types:
-                file_filter.add_mime_type(a_mime_type)
-                
-        return self._file_filter
 
 
 class FileOpenerGroup:

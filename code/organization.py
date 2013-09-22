@@ -343,7 +343,8 @@ class SingleImageLayout(AlbumLayout):
         avl.old_album = None
         avl.removed_signal_id = None
         avl.album_notify_id = avl.connect(
-                                  "notify::album", self._album_changed, avl)
+            "notify::album", self._album_changed, avl
+        )
         self._album_changed(avl)
     
     
@@ -1228,8 +1229,9 @@ from gi.repository import Gtk
 from gettext import gettext as _
 
 class SingleImageLayoutOption(extending.LayoutOption):
+    CODENAME = "single-image"
     def __init__(self):
-        extending.LayoutOption.__init__(self, "single-image")
+        extending.LayoutOption.__init__(self, SingleImageLayoutOption.CODENAME)
     
     
     @GObject.Property
@@ -1246,8 +1248,10 @@ class SingleImageLayoutOption(extending.LayoutOption):
 
 
 class ImageStripLayoutOption(extending.LayoutOption):
+    CODENAME = "image-strip"
+    
     def __init__(self):
-        extending.LayoutOption.__init__(self, "image-strip")
+        extending.LayoutOption.__init__(self, ImageStripLayoutOption.CODENAME)
         self.has_settings_widget = True
         self.has_menu_items = True
     
@@ -1647,15 +1651,19 @@ class BuiltInLayouts(extending.ComponentPackage):
     @staticmethod
     def add_on(app):
         components = app.components
-        components.add_category("layout-option", "Layout Option")
         
-        # Create and add the single image layout option
-        single_image_option = SingleImageLayoutOption()
-        components.add("layout-option", single_image_option)
         
-        # Create and add the image strip layout option
+        # Add settings
         app.settings.get_groups("layout", "image-strip", create=True)
-        image_strip_option = ImageStripLayoutOption()
-        components.add("layout-option", image_strip_option)
+        
+        layout_options = [
+            SingleImageLayoutOption(),
+            ImageStripLayoutOption()
+        ]
+        
+        LAYOUT_OPTION_CATEGORY = extending.LayoutOption.CATEGORY
+        components.add_category(LAYOUT_OPTION_CATEGORY, "Layout Option")
+        for a_layout_option in layout_options:
+            components.add(LAYOUT_OPTION_CATEGORY, a_layout_option)
 
 extending.LoadedComponentPackages.add(BuiltInLayouts)

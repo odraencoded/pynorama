@@ -1,7 +1,7 @@
-''' preferences.py contains the settings dialog
-    and preferences loading methods. '''
+""" preferences.py contains the settings dialog
+    and preferences loading methods. """
 
-''' ...and this file is part of Pynorama.
+""" ...and this file is part of Pynorama.
     
     Pynorama is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
     GNU General Public License for more details.
     
     You should have received a copy of the GNU General Public License
-    along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
+    along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
 from gi.repository import Gtk, GObject
 from gettext import gettext as _
@@ -49,8 +49,8 @@ class Dialog(Gtk.Dialog):
         #=== Setup view tab down this line ===#
         
         alignment_label = Gtk.Label(_("Image alignment"))
-        alignment_tooltip = _('''This alignment setting is \
-used for various alignment related things in the program''')
+        alignment_tooltip = _("""This alignment setting is \
+used for various alignment related things in the program""")
         
         hadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
         vadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
@@ -99,13 +99,13 @@ used for various alignment related things in the program''')
         mouse_label_notebook.set_show_border(False)                
         
         # Add handler list label and widget container
-        text = _('''Mouse mechanisms currently in use by the image viewer''')
+        text = _("""Mouse mechanisms currently in use by the image viewer""")
         view_handlers_description = utility.LoneLabel(text)
         mouse_label_notebook.append_page(view_handlers_description, None)
         
         # Add handler factory list label and widget container
-        text = _('''Types of mouse mechanisms currently avaiable \
-for the image viewer''')
+        text = _("""Types of mouse mechanisms currently avaiable \
+for the image viewer""")
         brands_description = utility.LoneLabel(text)
         mouse_label_notebook.append_page(brands_description, None)
         
@@ -286,7 +286,7 @@ for the image viewer''')
 
     
     def _refresh_default(self, *data):
-        ''' Resets the default widget of the window '''
+        """ Resets the default widget of the window """
         tab = self.tabs.get_current_page()
         if tab == 1:
             pseudo_tab = self._mouse_pseudo_notebook.get_current_page()
@@ -304,7 +304,7 @@ for the image viewer''')
         
         
     def _handler_nick_data_func(self, column, renderer, model, treeiter, *data):
-        ''' Gets the nickname of a handler for the textrenderer '''
+        """ Gets the nickname of a handler for the textrenderer """
         handler = model[treeiter][0]
         renderer.props.text = GetMouseHandlerLabel(handler, default=_("???"))
     
@@ -317,12 +317,12 @@ for the image viewer''')
     
     
     def _clicked_new_handler(self, *data):
-        ''' Handles a click on the new mouse handler button in the mouse tab '''
+        """ Handles a click on the new mouse handler button in the mouse tab """
         self._mouse_pseudo_notebook.set_current_page(1)
     
     
     def _clicked_remove_handler(self, *data):
-        ''' Handles a click on the remove button in the mouse tab '''
+        """ Handles a click on the remove button in the mouse tab """
         selection = self._handlers_listview.get_selection()
         model, row_paths = selection.get_selected_rows()
         
@@ -334,8 +334,8 @@ for the image viewer''')
         
         
     def _removed_mouse_handler(self, meta, handler):
-        ''' Handles a handler actually being removed from
-            the meta mouse handler '''
+        """ Handles a handler actually being removed from
+            the meta mouse handler """
         handler_iter = self._mouse_handler_iters.pop(handler, None)
         handler_signals = self._mouse_handler_signals.pop(handler, [])
         
@@ -347,7 +347,7 @@ for the image viewer''')
         
     
     def _clicked_configure_handler(self, *data):
-        ''' Pops up the configure dialog of a mouse handler '''
+        """ Pops up the configure dialog of a mouse handler """
         selection = self._handlers_listview.get_selection()
         model, row_paths = selection.get_selected_rows()
         
@@ -363,8 +363,8 @@ for the image viewer''')
     
     def _changed_handler_list_selection(self, selection, 
                                         remove_button, configure_button):
-        ''' Update sensitivity of some buttons based on whether anything is
-            selected in the handlers list view '''
+        """ Update sensitivity of some buttons based on whether anything is
+            selected in the handlers list view """
         
         model, row_paths = selection.get_selected_rows()
         
@@ -374,26 +374,26 @@ for the image viewer''')
     
     
     def _button_pressed_handlers(self, listview, event):
-        ''' Opens the configure dialog on double click '''
+        """ Opens the configure dialog on double click """
         if event.type == Gdk.EventType._2BUTTON_PRESS:
             self._clicked_configure_handler()
     
     
     def _key_pressed_mice_book(self, widget, event):
-        ''' Handles delete key on handlers listview '''
+        """ Handles delete key on handlers listview """
         if event.keyval == Gdk.KEY_Delete and \
            self._mouse_pseudo_notebook.get_current_page() == 0:
             self._clicked_remove_handler()
             
             
     def _clicked_cancel_add_handler(self, *data):
-        ''' Go back to the handlers list when the user doesn't actually
-            want to create a new mouse handler '''
+        """ Go back to the handlers list when the user doesn't actually
+            want to create a new mouse handler """
         self._mouse_pseudo_notebook.set_current_page(0)
     
     
     def _clicked_add_handler(self, *data):
-        ''' Creates and adds a new mouse handler to the meta mouse handler '''
+        """ Creates and adds a new mouse handler to the meta mouse handler """
         selection = self._brand_listview.get_selection()
         model, treeiter = selection.get_selected()
         if treeiter is not None:
@@ -415,12 +415,12 @@ for the image viewer''')
             
     
     def _added_mouse_handler(self, meta, new_handler):
-        ''' Handles a mouse handler being added to the meta mouse handler '''
+        """ Handles a mouse handler being added to the meta mouse handler """
         self._add_mouse_handler(new_handler)
     
     
     def _add_mouse_handler(self, new_handler, *data):
-        ''' Actually and finally adds the mouse handler to the liststore '''
+        """ Actually and finally adds the mouse handler to the liststore """
         # TODO: Change this to a meta mouse handler "added" signal handler
         new_treeiter = self._handlers_liststore.append([new_handler])
         
@@ -434,26 +434,26 @@ for the image viewer''')
                             
     
     def _button_pressed_brands(self, listview, event):
-        ''' Creates a new handler on double click '''
+        """ Creates a new handler on double click """
         if event.type == Gdk.EventType._2BUTTON_PRESS:
             self._clicked_add_handler()
             
     
     def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
-        ''' Gets the label of a factory for a text cellrenderer '''
+        """ Gets the label of a factory for a text cellrenderer """
         factory = model[treeiter][0]
         renderer.props.text = factory.label
         
         
     def _refresh_handler_nickname(self, handler, spec, treeiter):
-        ''' Refresh the list view when a handler nickname changes '''
+        """ Refresh the list view when a handler nickname changes """
         model = self._handlers_liststore
         treepath = model.get_path(treeiter)
         model.row_changed(treepath, treeiter)
     
     
     def create_widget_group(self, *widgets):
-        ''' I don't even remember what this does '''
+        """ I don't even remember what this does """
         alignment = Gtk.Alignment()
         alignment.set_padding(0, 0, 20, 0)
         
@@ -502,7 +502,7 @@ for the image viewer''')
     target_album = GObject.Property(type=object)
     
     def _do_destroy(self, *data):
-        ''' Disconnect any connected signals '''
+        """ Disconnect any connected signals """
         for a_signal_id in self._mm_handler_signals:
             self.mm_handler.disconnect(a_signal_id)
         
@@ -626,7 +626,7 @@ the chosen mouse button")
 
 
 def GetMouseHandlerLabel(handler, default=""):
-    ''' Utility to return either nickname or factory label '''
+    """ Utility to return either nickname or factory label """
     if handler.nickname:
         return handler.nickname
         
@@ -830,6 +830,11 @@ def LoadForWindow(window):
     
     try:
         layout_codename = settings_data["layout-codename"]
+    except KeyError:
+        logger.log("Preferred layout not found in preferences, using default")
+        layout_codename = organization.SingleImageLayoutOption.CODENAME
+    
+    try:
         layout_option = window.app.components["layout-option", layout_codename]
     except Exception:
         logger.log_error('Could not load layout codename "{codename}"'.format(
@@ -928,7 +933,7 @@ def SaveFromView(view, app_settings=None, view_settings=None):
 
 
 def LoadMouseMechanismsSettings(app, meta_mouse_handler, mechanisms_settings):
-    ''' Loads mouse settings from a dictionary '''
+    """ Loads mouse settings from a dictionary """
     
     mouse_factories = app.components["mouse-mechanism-brand"]
     add_mouse_mechanism = meta_mouse_handler.add
@@ -963,7 +968,7 @@ def LoadMouseMechanismsSettings(app, meta_mouse_handler, mechanisms_settings):
 
 
 def GetMouseMechanismsSettings(meta_mouse_handler):
-    ''' Returns a dictionary with all mouse settings to be stored as JSON '''
+    """ Returns a dictionary with all mouse settings to be stored as JSON """
     mechanism_objs = {}
     
     get_mechanisms = meta_mouse_handler.get_handlers
@@ -1007,7 +1012,7 @@ from gi.repository import Gdk
 import math
 
 class PointScale(Gtk.DrawingArea):
-    ''' A widget like a Gtk.HScale and Gtk.VScale together. '''
+    """ A widget like a Gtk.HScale and Gtk.VScale together. """
     def __init__(self, hrange, vrange, square=False):
         Gtk.DrawingArea.__init__(self)
         self.set_size_request(50, 50)

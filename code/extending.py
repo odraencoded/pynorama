@@ -32,8 +32,9 @@ class Component:
     def __init__(self, codename):
         self.codename = codename
     
-    def __str__(self):
+    def __repr__(self):
         return "<" + self.codename + " component>"
+
 
 class ComponentMap:
     """ A map of component categories specified by a codename
@@ -113,9 +114,11 @@ class ComponentMap:
             self._components[component.codename] = component
 
 
-from gi.repository import GObject
+from gi.repository import Gdk, GObject, Gtk
 class LayoutOption(Component, GObject.Object):
     ''' Represents a layout choice. '''
+    
+    CATEGORY = "layout-option"
     
     def __init__(self, codename=""):
         ''' codename must be a string identifier for this option
@@ -219,3 +222,84 @@ class MouseHandlerFactory(Component, GObject.Object):
         ''' Creates a mouse handler with the settings input '''
         
         raise NotImplementedError
+
+
+class SelectionOpener(GObject.Object, Component):
+    """ An interface to open images from Gtk.SelectionData """
+    
+    CATEGORY = "selection-opener"
+    
+    def __init__(self, codename, targets=None):
+        GObject.Object.__init__(self)
+        Component.__init__(self, codename)
+        
+        # A set of targets from a selection that 
+        # this opener should be able to open
+        
+        if targets:
+            self.set_targets_from_strings(targets)
+        else:
+            self.atom_targets = set()
+    
+    
+    def set_targets_from_strings(self, targets):
+        self.atom_targets = set(Gdk.Atom.intern(t, False) for t in targets)
+    
+    
+    def open_selection(self, selection, results):
+        """ Opens a Gdk.Selection """
+        raise NotImplementedError
+
+
+class FileOpener(GObject.Object, Component):
+    """ An interface to open files for the image viewer.
+    
+    File openers yield image sources or other files which are then
+    opened by other file openers.
+    
+    """
+    
+    CATEGORY = "file-opener"
+    
+    def __init__(self, codename, extensions=None, mime_types=None):
+        """ Initializes a file opener for certain extensions and mime_types """
+        
+        GObject.Object.__init__(self)
+        Component.__init__(self, codename)
+        
+        # These two variables are used to guess which 
+        # file opener should open which file
+        self.extensions = extensions if extensions is not None else set()
+        """ A set of common extensions for this file opener supported files """
+        
+        self.mime_types = mime_types if mime_types is not None else set()
+        """ A set of mime_types for this file opener supported files """
+        
+        self.show_on_dialog = True
+        """ Whether to show this file opener in the "Open image" dialog """
+        
+        self._file_filter = None
+    
+    @GObject.Property
+    def label(self):
+        """ A label to be displayed in the GUI """
+        raise NotImplementedError
+    
+    
+    def open_file(self, context, results, gfile):
+        """ Opens a GFile from context and adds its contents to the results """
+        raise NotImplementedError
+    
+    
+    def get_file_filter(self):
+        """ Returns a file filter for this file opener """
+        if not self._file_filter:
+            self._file_filter = file_filter = Gtk.FileFilter()
+            file_filter.set_name(self.label)
+            
+            for an_extension in self.extensions:
+                file_filter.add_pattern("*." + an_extension)
+            for a_mime_type in self.mime_types:
+                file_filter.add_mime_type(a_mime_type)
+                
+        return self._file_filter
