@@ -33,7 +33,155 @@ class Dialog(Gtk.Dialog):
         
         self.set_default_size(400, 400)
         self.app = app
-        self.mm_handler = self.app.meta_mouse_handler
+        
+        # Create tabs
+        self.tabs = tabs = Gtk.Notebook()
+        for a_tab in self.app.components[extending.PreferencesTab.CATEGORY]:
+            a_tab_label = a_tab.create_label(self)
+            a_proxy = a_tab.create_proxy(self, a_tab_label)
+            a_tab_pad = utility.PadNotebookContent(a_proxy)
+            tabs.append_page(a_tab_pad, a_tab_label)
+            
+        # Pack tabs into dialog
+        padded_tabs = utility.PadDialogContent(tabs)
+        padded_tabs.show_all()
+        self.get_content_area().pack_start(padded_tabs, True, True, 0)
+        
+        # Bindings and events
+        self.connect("notify::target-window", self._changed_target_window_cb)
+    
+    
+    def _changed_target_window_cb(self, *data):
+        self.set_transient_for(self.target_window)
+        
+        view, album = self.target_window.view, self.target_window.album
+        
+        if self.target_view != view:
+            self.target_view = view
+            
+        if self.target_album != album:
+            self.target_album = album
+        
+    target_window = GObject.Property(type=object)
+    target_view = GObject.Property(type=object)
+    target_album = GObject.Property(type=object)
+
+
+#~ Built in preferences tabs implementation ~#
+
+import extending
+from extending import PreferencesTab
+
+class ViewPreferencesTabProxy(Gtk.Box):
+    def __init__(self, dialog, label):
+        Gtk.Box.__init__(self)
+        # View alignment
+        alignment_label = Gtk.Label(_("Image alignment"))
+        xadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
+        yadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
+        point_scale = PointScale(xadjust, yadjust, square=True)
+        grid, xspin, yspin = utility.PointScaleGrid(
+            point_scale, _("Horizontal"), _("Vertical"),
+            corner=alignment_label, align=True
+        )
+        
+        # Setting tooltip
+        alignment_tooltip = _(
+            "This alignment setting is used for various alignment" +
+            " related things in the program"
+        )
+        utility.SetProperties(
+            point_scale, xspin, yspin,
+            tooltip_text=alignment_tooltip
+        )
+        
+        # Spin effect
+        label = _("Spin effect")
+        spin_tooltip = _("???")
+        spin_effect_label = Gtk.Label(label)
+        spin_effect_entry, spin_effect_adjust = utility.SpinAdjustment(
+            0, -180, 180, 10, 60, align=True, digits=2, wrap=True
+        )
+        # Seting spin tooltip
+        utility.SetProperties(
+            spin_effect_label, spin_effect_entry,
+            tooltip_text=spin_tooltip
+        )
+        
+        # Zoom effect
+        label = _("Zoom in/out effect")
+        zoom_tooltip = _("???")
+        zoom_effect_label = Gtk.Label(label)
+        zoom_effect_entry, zoom_effect_adjust = utility.SpinAdjustment(
+            2, 1, 4, 0.1, 0.25, align=True, digits=2
+        )
+        # Setting zoom tooltipip
+        utility.SetProperties(
+            zoom_effect_label, zoom_effect_entry,
+            tooltip_text=zoom_tooltip
+        )
+        
+        # packing widgets
+        utility.WidgetGrid(
+            (spin_effect_label, spin_effect_entry),
+            (zoom_effect_label, zoom_effect_entry),
+            align_first=True, expand_first=True,
+            grid=grid, start_row=1
+        )
+        utility.Bind(dialog.app,
+            ("spin-effect", spin_effect_adjust, "value"),
+            ("zoom-effect", zoom_effect_adjust, "value"),
+            bidirectional=True, synchronize=True
+        )
+        
+        # View binding variables
+        self.__alignment_xadjust = xadjust
+        self.__alignment_yadjust = yadjust
+        self.__view_bindings = None
+        
+        dialog.connect(
+            "notify::target-view", self._changed_target_view_cb
+        )
+        # Bind the current view
+        self._changed_target_view_cb(dialog)
+        
+        self.add(grid)
+        self.show_all()
+    
+    
+    def _changed_target_view_cb(self, dialog, *etc):
+        """ Reconnects view alignment bindings """
+        if self.__view_bindings:
+            for a_binding in self.__view_bindings:
+                a_binding.unbind()
+            self.__view_bindings = None
+        
+        view = dialog.target_view
+        if view:
+            self.__view_bindings = utility.Bind(view,
+                ("alignment-x", self.__alignment_xadjust, "value"),
+                ("alignment-y", self.__alignment_yadjust, "value"),
+                bidirectional=True, synchronize=True
+            )
+
+
+class ViewPreferencesTab(PreferencesTab):
+    CODENAME = "view-tab"
+    def __init__(self):
+        PreferencesTab.__init__(self, ViewPreferencesTab.CODENAME)
+    
+    
+    @GObject.Property
+    def label(self):
+        return _("View")
+    
+    create_proxy = ViewPreferencesTabProxy
+
+
+class MousePreferencesTabProxy(Gtk.Box):
+    def __init__(self, dialog, label):
+        self._app = dialog.app
+        self._mm_handler = dialog.app.meta_mouse_handler
         
         # Variables to remember what to remove or disconnect later.
         # Treeiters for mouse handlers, signal ids from mm_handler and
@@ -42,53 +190,6 @@ class Dialog(Gtk.Dialog):
         self._mm_handler_signals = list()
         self._mouse_handler_signals = dict()
         
-        # TODO: Check if do_destroy can be used instead
-        self.connect("destroy", self._do_destroy)
-        
-        
-        #=== Setup view tab down this line ===#
-        
-        alignment_label = Gtk.Label(_("Image alignment"))
-        alignment_tooltip = _("""This alignment setting is \
-used for various alignment related things in the program""")
-        
-        hadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
-        vadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
-        self.alignment_x_adjust = hadjust
-        self.alignment_y_adjust = vadjust
-        
-        point_scale = PointScale(hadjust, vadjust, square=True)
-        view_tab_grid, xspin, yspin = utility.PointScaleGrid(
-            point_scale, _("Horizontal"), _("Vertical"),
-            corner=alignment_label, align=True
-        )
-        for a_widget in (point_scale, xspin, yspin):
-            a_widget.set_tooltip_text(alignment_tooltip)
-        
-        label = _("Spin effect")
-        spin_effect_label = Gtk.Label(label)
-        spin_effect_entry, spin_effect_adjust = utility.SpinAdjustment(
-            0, -180, 180, 10, 60, align=True, digits=2, wrap=True
-        )
-        label = _("Zoom in/out effect")
-        zoom_effect_label = Gtk.Label(label)
-        zoom_effect_entry, zoom_effect_adjust = utility.SpinAdjustment(
-            2, 1, 4, 0.1, 0.25, align=True, digits=2
-        )
-        
-        utility.WidgetGrid(
-            (spin_effect_label, spin_effect_entry),
-            (zoom_effect_label, zoom_effect_entry),
-            align_first=True, expand_first=True,
-            grid=view_tab_grid, start_row=1
-        )
-        
-        bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
-        sync_flag = GObject.BindingFlags.SYNC_CREATE
-        
-        
-        #=== Setup mouse tab down this line ===#
-        
         self._mouse_pseudo_notebook = very_mice_book = Gtk.Notebook()
         very_mice_book.set_show_tabs(False)
         very_mice_book.set_show_border(False)
@@ -96,7 +197,7 @@ used for various alignment related things in the program""")
         # This one is used for the labels on top of the pseudo notebook
         mouse_label_notebook = Gtk.Notebook()
         mouse_label_notebook.set_show_tabs(False)
-        mouse_label_notebook.set_show_border(False)                
+        mouse_label_notebook.set_show_border(False)
         
         # Add handler list label and widget container
         text = _("""Mouse mechanisms currently in use by the image viewer""")
@@ -109,8 +210,8 @@ for the image viewer""")
         brands_description = utility.LoneLabel(text)
         mouse_label_notebook.append_page(brands_description, None)
         
-        # Pack both notebooks in the mouse tab
-        mouse_tab_stack = utility.WidgetStack(
+        # Init the proxy
+        utility.InitWidgetStack(self,
             mouse_label_notebook, very_mice_book,
             expand=very_mice_book
         )
@@ -118,7 +219,7 @@ for the image viewer""")
         # Setup handler list tab
         # Create and sync mouse handler list store
         self._handlers_liststore = handlers_liststore = Gtk.ListStore(object)
-        for a_handler in self.mm_handler.get_handlers():
+        for a_handler in self._mm_handler.get_handlers():
             self._add_mouse_handler(a_handler)
         
         # Setup sorting
@@ -175,7 +276,7 @@ for the image viewer""")
         # Setup add handlers grid (it is used to add handlers)
         brand_liststore = Gtk.ListStore(object)
         
-        for a_brand in app.components["mouse-mechanism-brand"]:
+        for a_brand in self._app.components["mouse-mechanism-brand"]:
             brand_liststore.append([a_brand])
         
         # Setup listview and selection
@@ -218,140 +319,74 @@ for the image viewer""")
         )
         very_mice_book.append_page(add_handler_box, None)
         
-        # Create tabs
-        self.tabs = tabs = Gtk.Notebook()
-        tab_specs = [
-            (_("View"), view_tab_grid),
-            (_("Mouse"), mouse_tab_stack),
-        ]
-        for a_label, a_stack in tab_specs:
-            a_tab_pad = utility.PadNotebookContent(a_stack)
-            a_tab_label = Gtk.Label(a_label)
-            tabs.append_page(a_tab_pad, a_tab_label)
-            
-        # Pack tabs into dialog
-        padded_tabs = utility.PadDialogContent(tabs)
-        padded_tabs.show_all()
-        self.get_content_area().pack_start(padded_tabs, True, True, 0)
-        
-        # Bindings and events
-        self._window_bindings, self._view_bindings = [], []
-        self.connect("notify::target-window", self._changed_target_window)
-        self.connect("notify::target-view", self._changed_target_view)
-        
-        utility.Bind(self.app,
-            ("spin-effect", spin_effect_adjust, "value"),
-            ("zoom-effect", zoom_effect_adjust, "value"),
-            bidirectional=True, synchronize=True
-        )
-        
         # This is a bind for syncing pages betwen the label and widget books
-        very_mice_book.bind_property(
-            "page", mouse_label_notebook, "page", sync_flag
-        )
+        self.connect("destroy", self._do_destroy_cb)
         
-        
-        new_handler_button.connect("clicked", self._clicked_new_handler)
-        remove_handler_button.connect("clicked", self._clicked_remove_handler)
-        configure_handler_button.connect(
-            "clicked", self._clicked_configure_handler
+        utility.Bind(very_mice_book,
+            ("page", mouse_label_notebook, "page"),
+            synchronize=True
         )
-        handlers_listview_selection.connect(
-            "changed", self._changed_handler_list_selection,
-            remove_handler_button, configure_handler_button
-        )
-        
-        cancel_add_button.connect("clicked", self._clicked_cancel_add_handler)
-        add_button.connect("clicked", self._clicked_add_handler)
-        very_mice_book.connect("key-press-event", self._key_pressed_mice_book)
         self._handlers_listview.connect(
-            "button-press-event", self._button_pressed_handlers
+            "button-press-event", self._button_pressed_handlers_cb
         )
         self._brand_listview.connect(
-            "button-press-event", self._button_pressed_brands
+            "button-press-event", self._button_pressed_brands_cb
+        )
+        new_handler_button.connect(
+            "clicked", self._clicked_new_handler_cb
+        )
+        remove_handler_button.connect(
+            "clicked", self._clicked_remove_handler_cb
+        )
+        configure_handler_button.connect(
+            "clicked", self._clicked_configure_handler_cb
+        )
+        handlers_listview_selection.connect(
+            "changed", self._changed_handler_list_selection_cb,
+            remove_handler_button, configure_handler_button
+        )
+        cancel_add_button.connect(
+            "clicked", self._clicked_cancel_add_handler_cb
+        )
+        add_button.connect(
+            "clicked", self._clicked_add_handler_cb
+        )
+        very_mice_book.connect(
+            "key-press-event", self._key_pressed_mice_book_cb
         )
         
-        tabs.connect("notify::page", self._refresh_default)
-        very_mice_book.connect("notify::page", self._refresh_default)
-        self._refresh_default()
-        
         self._mm_handler_signals = [
-            self.mm_handler.connect(
-                "handler-added", self._added_mouse_handler
+            self._mm_handler.connect(
+                "handler-added", self._added_mouse_handler_cb
             ),
-            self.mm_handler.connect(
-                "handler-removed", self._removed_mouse_handler
+            self._mm_handler.connect(
+                "handler-removed", self._removed_mouse_handler_cb
             )
         ]
-
-    
-    def _refresh_default(self, *data):
-        """ Resets the default widget of the window """
-        tab = self.tabs.get_current_page()
-        if tab == 1:
-            pseudo_tab = self._mouse_pseudo_notebook.get_current_page()
-            if pseudo_tab == 0:
-                new_default = self._configure_handler_button
-            
-            else:
-                new_default = self._add_handler_button
-                
-        else:
-            new_default = None
-            
-        if self.get_default_widget() != new_default:
-            self.set_default(new_default)
-        
-        
-    def _handler_nick_data_func(self, column, renderer, model, treeiter, *data):
-        """ Gets the nickname of a handler for the textrenderer """
-        handler = model[treeiter][0]
-        renderer.props.text = GetMouseHandlerLabel(handler, default=_("???"))
     
     
-    def _handler_nick_compare_func(self, model, a_iter, b_iter, *data):
-        a = GetMouseHandlerLabel(model[a_iter][0], default=_("???"))
-        b = GetMouseHandlerLabel(model[b_iter][0], default=_("???"))
+    def _add_mouse_handler(self, new_handler, *etc):
+        """ Actually and finally adds the mouse handler to the liststore """
+        new_treeiter = self._handlers_liststore.append([new_handler])
         
-        return 0 if a == b else 1 if a > b else -1
-    
-    
-    def _clicked_new_handler(self, *data):
-        """ Handles a click on the new mouse handler button in the mouse tab """
-        self._mouse_pseudo_notebook.set_current_page(1)
-    
-    
-    def _clicked_remove_handler(self, *data):
-        """ Handles a click on the remove button in the mouse tab """
-        selection = self._handlers_listview.get_selection()
-        model, row_paths = selection.get_selected_rows()
-        
-        remove_handler = self.app.meta_mouse_handler.remove
-        treeiters = [model.get_iter(a_path) for a_path in row_paths]
-        for a_treeiter in treeiters:
-            a_handler = model[a_treeiter][0]
-            remove_handler(a_handler)
-        
-        
-    def _removed_mouse_handler(self, meta, handler):
-        """ Handles a handler actually being removed from
-            the meta mouse handler """
-        handler_iter = self._mouse_handler_iters.pop(handler, None)
-        handler_signals = self._mouse_handler_signals.pop(handler, [])
-        
-        if handler_iter:
-            del self._handlers_liststore[handler_iter]
-        
-        for a_signal_id in handler_signals:
-            handler.disconnect(a_signal_id)
+        self._mouse_handler_iters[new_handler] = new_treeiter
+        # Connect things
+        self._mouse_handler_signals[new_handler] = [
+            new_handler.connect(
+                "notify::nickname",
+                self._changed_handler_nickname_cb,
+                new_treeiter
+            )
+        ]
         
     
-    def _clicked_configure_handler(self, *data):
+    #~~ "Currently in use" handlers list part ~#
+    def _show_configure_dialog(self):
         """ Pops up the configure dialog of a mouse handler """
         selection = self._handlers_listview.get_selection()
         model, row_paths = selection.get_selected_rows()
         
-        get_dialog = self.app.get_mouse_handler_dialog
+        get_dialog = self._app.get_mouse_handler_dialog
         
         treeiters = [model.get_iter(a_path) for a_path in row_paths]
         for a_treeiter in treeiters:
@@ -359,10 +394,48 @@ for the image viewer""")
             
             dialog = get_dialog(a_handler)
             dialog.present()
-            
     
-    def _changed_handler_list_selection(self, selection, 
-                                        remove_button, configure_button):
+    
+    def _remove_selected_handler(self):
+        selection = self._handlers_listview.get_selection()
+        model, row_paths = selection.get_selected_rows()
+        
+        remove_handler = self._mm_handler.remove
+        treeiters = [model.get_iter(a_path) for a_path in row_paths]
+        for a_treeiter in treeiters:
+            a_handler = model.get_value(a_treeiter, 0)
+            remove_handler(a_handler)
+    
+    
+    def _clicked_new_handler_cb(self, *whatever):
+        """ Handles a click on the "new" in the mouse tab """
+        self._mouse_pseudo_notebook.set_current_page(1)
+    
+    
+    def _clicked_remove_handler_cb(self, *whatever):
+        """ Handles a click on the "remove" button in the mouse tab """
+        self._remove_selected_handler()
+    
+    
+    def _clicked_configure_handler_cb(self, *whatever):
+        self._show_configure_dialog()
+    
+    
+    def _button_pressed_handlers_cb(self, listview, event):
+        """ Opens the configure dialog on double click """
+        if event.type == Gdk.EventType._2BUTTON_PRESS:
+            self._show_configure_dialog()
+    
+    
+    def _key_pressed_mice_book_cb(self, widget, event):
+        """ Handles delete key on handlers listview """
+        if event.keyval == Gdk.KEY_Delete and \
+           self._mouse_pseudo_notebook.get_current_page() == 0:
+            self._remove_selected_handler()
+    
+    
+    def _changed_handler_list_selection_cb(
+                self, selection, remove_button, configure_button):
         """ Update sensitivity of some buttons based on whether anything is
             selected in the handlers list view """
         
@@ -373,27 +446,9 @@ for the image viewer""")
         configure_button.set_sensitive(selected_anything)
     
     
-    def _button_pressed_handlers(self, listview, event):
-        """ Opens the configure dialog on double click """
-        if event.type == Gdk.EventType._2BUTTON_PRESS:
-            self._clicked_configure_handler()
-    
-    
-    def _key_pressed_mice_book(self, widget, event):
-        """ Handles delete key on handlers listview """
-        if event.keyval == Gdk.KEY_Delete and \
-           self._mouse_pseudo_notebook.get_current_page() == 0:
-            self._clicked_remove_handler()
-            
-            
-    def _clicked_cancel_add_handler(self, *data):
-        """ Go back to the handlers list when the user doesn't actually
-            want to create a new mouse handler """
-        self._mouse_pseudo_notebook.set_current_page(0)
-    
-    
-    def _clicked_add_handler(self, *data):
-        """ Creates and adds a new mouse handler to the meta mouse handler """
+    #~~ Create new mouse handler part ~~#
+    def _create_and_add_new_handler(self):
+        """ Creates a new mouse handler based on the selected brand """
         selection = self._brand_listview.get_selection()
         model, treeiter = selection.get_selected()
         if treeiter is not None:
@@ -402,7 +457,7 @@ for the image viewer""")
             new_handler = factory.produce()
             
             handler_button = 1 if new_handler.needs_button else None
-            self.mm_handler.add(new_handler, button=handler_button)
+            self._mm_handler.add(new_handler, button=handler_button)
             
             # Go back to the handler list
             self._mouse_pseudo_notebook.set_current_page(0)
@@ -412,105 +467,110 @@ for the image viewer""")
             new_treeiter = self._mouse_handler_iters[new_handler]
             new_treepath = listview.get_model().get_path(new_treeiter)
             listview.scroll_to_cell(new_treepath, None, False, 0, 0)
-            
     
-    def _added_mouse_handler(self, meta, new_handler):
+    
+    def _button_pressed_brands_cb(self, listview, event):
+        """ Creates a new handler on double click """
+        if event.type == Gdk.EventType._2BUTTON_PRESS:
+            self._create_and_add_new_handler()
+    
+    
+    def _clicked_add_handler_cb(self, *whatever):
+        """ Handles clicking on the add button in the new handler "page" """
+        self._create_and_add_new_handler()
+    
+    
+    def _clicked_cancel_add_handler_cb(self, *whatever):
+        """ Go back to the handlers list when the user doesn't actually
+            want to create a new mouse handler """
+        self._mouse_pseudo_notebook.set_current_page(0)
+    
+    
+    #~ TreeView customization ~#
+    def _handler_nick_data_func(self, column, renderer, model, treeiter, *etc):
+        """ Gets the nickname of a handler for the TextRenderer """
+        handler = model[treeiter][0]
+        renderer.props.text = GetMouseHandlerLabel(handler, default=_("???"))
+    
+    
+    def _handler_nick_compare_func(self, model, a_iter, b_iter, *etc):
+        """ Compares two mouse handlers nicknames """
+        a = GetMouseHandlerLabel(model[a_iter][0], default=_("???"))
+        b = GetMouseHandlerLabel(model[b_iter][0], default=_("???"))
+        
+        return 0 if a == b else 1 if a > b else -1
+    
+    
+    def _brand_label_data_func(self, column, renderer, model, treeiter, *etc):
+        """ Gets the label of a factory for a text cellrenderer """
+        factory = model[treeiter][0]
+        renderer.props.text = factory.label
+    
+    
+    #~ Model synchronization ~#
+    def _added_mouse_handler_cb(self, meta, new_handler):
         """ Handles a mouse handler being added to the meta mouse handler """
         self._add_mouse_handler(new_handler)
     
     
-    def _add_mouse_handler(self, new_handler, *data):
-        """ Actually and finally adds the mouse handler to the liststore """
-        # TODO: Change this to a meta mouse handler "added" signal handler
-        new_treeiter = self._handlers_liststore.append([new_handler])
+    def _removed_mouse_handler_cb(self, meta, handler):
+        """ Handles a handler actually being removed from
+            the meta mouse handler """
+        handler_iter = self._mouse_handler_iters.pop(handler, None)
+        handler_signals = self._mouse_handler_signals.pop(handler, [])
         
-        self._mouse_handler_iters[new_handler] = new_treeiter
-        # Connect things
-        self._mouse_handler_signals[new_handler] = [
-            new_handler.connect("notify::nickname",
-                                self._refresh_handler_nickname,
-                                new_treeiter)
-        ]
-                            
+        if handler_iter:
+            del self._handlers_liststore[handler_iter]
+        
+        for a_signal_id in handler_signals:
+            handler.disconnect(a_signal_id)
     
-    def _button_pressed_brands(self, listview, event):
-        """ Creates a new handler on double click """
-        if event.type == Gdk.EventType._2BUTTON_PRESS:
-            self._clicked_add_handler()
-            
     
-    def _brand_label_data_func(self, column, renderer, model, treeiter, *data):
-        """ Gets the label of a factory for a text cellrenderer """
-        factory = model[treeiter][0]
-        renderer.props.text = factory.label
-        
-        
-    def _refresh_handler_nickname(self, handler, spec, treeiter):
+    def _changed_handler_nickname_cb(self, handler, spec, treeiter):
         """ Refresh the list view when a handler nickname changes """
         model = self._handlers_liststore
         treepath = model.get_path(treeiter)
         model.row_changed(treepath, treeiter)
     
     
-    def create_widget_group(self, *widgets):
-        """ I don't even remember what this does """
-        alignment = Gtk.Alignment()
-        alignment.set_padding(0, 0, 20, 0)
-        
-        box = Gtk.VBox()
-        alignment.add(box)
-        
-        for a_widget in widgets:
-            box.pack_start(a_widget, False, False, 3)
-            
-        return alignment
-        
-    
-    def _changed_target_window(self, *data):
-        self.set_transient_for(self.target_window)
-        
-        view, album = self.target_window.view, self.target_window.album
-        
-        if self.target_view != view:
-            self.target_view = view
-            
-        if self.target_album != album:
-            self.target_album = album
-        
-        
-    def _changed_target_view(self, *data):
-        bidi_flag = GObject.BindingFlags.BIDIRECTIONAL
-        sync_flag = GObject.BindingFlags.SYNC_CREATE
-        
-        for a_binding in self._view_bindings:
-            a_binding.unbind()
-        
-        view = self.target_view
-        if view:
-            self._view_bindings = [
-                view.bind_property("alignment-x", self.alignment_x_adjust,
-                                   "value", bidi_flag | sync_flag),
-            
-                view.bind_property("alignment-y", self.alignment_y_adjust,
-                                   "value", bidi_flag | sync_flag)
-            ]
-        else:
-            self._view_bindings = []
-        
-    target_window = GObject.Property(type=object)
-    target_view = GObject.Property(type=object)
-    target_album = GObject.Property(type=object)
-    
-    def _do_destroy(self, *data):
+    def _do_destroy_cb(self, *whatever):
         """ Disconnect any connected signals """
         for a_signal_id in self._mm_handler_signals:
-            self.mm_handler.disconnect(a_signal_id)
+            self._mm_handler.disconnect(a_signal_id)
         
         for a_handler, some_signals in self._mouse_handler_signals.items():
             for a_signal in some_signals:
                 a_handler.disconnect(a_signal)
+
+
+class MousePreferencesTab(PreferencesTab):
+    CODENAME = "mouse-tab"
+    def __init__(self):
+        PreferencesTab.__init__(self, MousePreferencesTab.CODENAME)
     
     
+    @GObject.Property
+    def label(self):
+        return _("Mouse")
+    
+    create_proxy = MousePreferencesTabProxy
+
+
+class BuiltinPreferencesTabPackage(extending.ComponentPackage):
+    @staticmethod
+    def add_on(app):
+        components = app.components
+        components.add_category(PreferencesTab.CATEGORY, "Preferences Tab")
+        preferences_tabs = (
+            ViewPreferencesTab(),
+            MousePreferencesTab()
+        )
+        for a_preferences_tab in preferences_tabs:
+            components.add(PreferencesTab.CATEGORY, a_preferences_tab)
+
+extending.LoadedComponentPackages.add(BuiltinPreferencesTabPackage)
+
+
 class MouseHandlerSettingDialog(Gtk.Dialog):
     def __init__(self, handler, handler_data):
         Gtk.Dialog.__init__(self, _("Mouse Mechanism Settings"), None,
@@ -1241,6 +1301,6 @@ class PointScale(Gtk.DrawingArea):
                 "value-changed", self.adjustment_changed
             )
         self.queue_draw()
-                                                     
+    
     hrange = GObject.property(get_hrange, set_hrange, type=Gtk.Adjustment)
     vrange = GObject.property(get_vrange, set_vrange, type=Gtk.Adjustment)

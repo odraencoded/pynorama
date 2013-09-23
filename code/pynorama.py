@@ -240,10 +240,9 @@ class ImageViewer(Gtk.Application):
         target_window = target_window or self.get_window()
         
         if not self._preferences_dialog:
-            dialog = self._preferences_dialog = preferences.Dialog(self)
+            self._preferences_dialog = dialog = preferences.Dialog(self)
             
             dialog.connect("response", self._preferences_dialog_responded)
-            dialog.present()
             
         self._preferences_dialog.target_window = target_window
         self._preferences_dialog.present()

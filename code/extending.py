@@ -116,14 +116,14 @@ class ComponentMap:
 
 from gi.repository import Gdk, GObject, Gtk
 class LayoutOption(Component, GObject.Object):
-    ''' Represents a layout choice. '''
+    """ Represents a layout choice """
     
     CATEGORY = "layout-option"
     
     def __init__(self, codename=""):
-        ''' codename must be a string identifier for this option
+        """ codename must be a string identifier for this option
             name is a localized label for the layout
-            description is a description, duh '''
+            description is a description, duh """
         
         Component.__init__(self, codename)
         GObject.Object.__init__(self)
@@ -135,32 +135,32 @@ class LayoutOption(Component, GObject.Object):
     
     @GObject.Property
     def label(self):
-        """A label for the UI"""
+        """ A label for the UI """
         raise NotImplementedError
     
     @GObject.Property
     def description(self):
-        """A description for the UI"""
+        """ A description for the UI """
         raise NotImplementedError
     
     
     def create_layout(self, app):
-        """Creates a layout that this option represents"""
+        """ Creates a layout that this option represents """
         raise NotImplementedError
     
     
     def save_preferences(self, layout):
-        """Save the preferences for this layout option based on a layout"""
+        """ Save the preferences for this layout option based on a layout """
         pass
         
         
     def create_settings_widget(self, layout):
-        """Creates a settings widget for a layout instance"""
+        """ Creates a settings widget for a layout instance """
         raise NotImplementedError
     
     
     def get_action_group(self, layout):
-        """Returns a Gtk.ActionGroup for a layout
+        """ Returns a Gtk.ActionGroup for a layout
         
         This is only called if .has_menu_items is set to True
         
@@ -178,7 +178,7 @@ class LayoutOption(Component, GObject.Object):
 
 
 class MouseHandlerFactory(Component, GObject.Object):
-    """Manufacturates a certain kind of mousing.MouseHandler"""
+    """ Manufacturates a certain kind of mousing.MouseHandler """
     
     def __init__(self, codename=""):
         Component.__init__(self, codename)
@@ -197,29 +197,29 @@ class MouseHandlerFactory(Component, GObject.Object):
     
     @GObject.Property
     def label(self):
-        """A label for the UI"""
+        """ A label for the UI """
         raise NotImplementedError
     
     
     def create_default(self):
-        ''' This should create a mouse handler with default attributes '''
+        """ This should create a mouse handler with default attributes """
         
         raise NotImplementedError
         
         
     def create_settings_widget(self, handler):
-        ''' Creates a widget for configuring a mouse handler '''
+        """ Creates a widget for configuring a mouse handler """
         
         raise NotImplementedError
     
     
     def get_settings(handler):
-        ''' Returns an object representing a handler configuration '''
+        """ Returns an object representing a handler configuration """
         
         return None
     
     def load_settings(settings):
-        ''' Creates a mouse handler with the settings input '''
+        """ Creates a mouse handler with the settings input """
         
         raise NotImplementedError
 
@@ -243,6 +243,7 @@ class SelectionOpener(GObject.Object, Component):
     
     
     def set_targets_from_strings(self, targets):
+        """ Sets this SelectionOpener targets from a list of strings """
         self.atom_targets = set(Gdk.Atom.intern(t, False) for t in targets)
     
     
@@ -303,3 +304,31 @@ class FileOpener(GObject.Object, Component):
                 file_filter.add_mime_type(a_mime_type)
                 
         return self._file_filter
+
+
+class PreferencesTab(GObject.Object, Component):
+    """ Represents a tab in the application preferences dialog
+    
+    
+    """
+    
+    CATEGORY = "preferences-tab"
+    
+    def __init__(self, codename):
+        GObject.Object.__init__(self)
+        Component.__init__(self, codename)
+    
+    @GObject.Property
+    def label(self):
+        """ A string label for this tab """
+        raise NotImplementedError
+    
+    
+    def create_label(self, dialog):
+        """ A Gtk.Widget to used as label for this tab """
+        return Gtk.Label(self.label)
+    
+    
+    def create_proxy(self, dialog, label):
+        """ A Gtk.Widget used as the contents of this tab """
+        raise NotImplementedError
