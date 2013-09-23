@@ -16,7 +16,7 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
-from gi.repository import Gtk, GObject
+from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
 import os
 import organization, notification, mousing, utility
@@ -553,7 +553,88 @@ class MousePreferencesTab(PreferencesTab):
     def label(self):
         return _("Mouse")
     
+    
     create_proxy = MousePreferencesTabProxy
+
+
+class BackgroundPreferencesTabProxy(Gtk.Box):
+    def __init__(self, tab, dialog, label):
+        enable_check = Gtk.CheckButton(_("Custom background color"))
+        color_chooser = Gtk.ColorButton(
+            title=_("Background Color"), use_alpha=True
+        )
+        bg_line = utility.WidgetLine(
+            color_chooser, enable_check, expand=color_chooser
+        )
+        color_chooser.set_tooltip_text(_(
+            "The color used as the window background"
+        ))
+        enable_check.set_tooltip_text(_(
+            "Whether to use a custom color as the window background"
+        ))
+        
+        utility.Bind(tab,
+            ("enabled", enable_check, "active"),
+            ("enabled", color_chooser, "sensitive"),
+            ("color", color_chooser, "rgba"),
+            bidirectional=True, synchronize=True
+        )
+        
+        utility.InitWidgetStack(self,
+            bg_line
+        )
+
+
+class BackgroundPreferencesTab(extending.PreferencesTab):
+    """ Allows for customizing the background of the image viewer window """
+    CODENAME = "background-tab"
+    def __init__(self, app):
+        extending.PreferencesTab.__init__(
+            self, BackgroundPreferencesTab.CODENAME
+        )
+        self.view_signals = {}
+        self.color = Gdk.RGBA(255, 255, 255, 255)
+        app.connect("new-window", self._new_window_cb)
+        self.connect("notify::enabled", self._changed_color_cb)
+        self.connect("notify::color", self._changed_color_cb)
+    
+    
+    @GObject.Property
+    def label(self):
+        return _("Background")
+    
+    
+    enabled = GObject.Property(type=bool, default=False)
+    color = GObject.Property(type=Gdk.RGBA)
+    
+    
+    def create_proxy(self, dialog, label):
+        return BackgroundPreferencesTabProxy(self, dialog, label)
+    
+    
+    def _new_window_cb(self, app, window):
+        view = window.view
+        self.view_signals[view] = [
+            view.connect("destroy", self._destroy_view_cb),
+            view.connect("draw-bg", self._draw_bg_cb)
+        ]
+    
+    
+    def _changed_color_cb(self, *whatever):
+        for a_view in self.view_signals:
+            a_view.queue_draw()
+    
+    
+    def _draw_bg_cb(self, view, cr, drawstate):
+        if self.enabled:
+            Gdk.cairo_set_source_rgba(cr, self.color)
+            cr.paint()
+    
+    
+    def _destroy_view_cb(self, view):
+        signals = self.view_signals.pop(view)
+        for a_signal in signals:
+            view.disconnect(a_signal)
 
 
 class BuiltinPreferencesTabPackage(extending.ComponentPackage):
@@ -563,7 +644,8 @@ class BuiltinPreferencesTabPackage(extending.ComponentPackage):
         components.add_category(PreferencesTab.CATEGORY, "Preferences Tab")
         preferences_tabs = (
             ViewPreferencesTab(),
-            MousePreferencesTab()
+            MousePreferencesTab(),
+            BackgroundPreferencesTab(app)
         )
         for a_preferences_tab in preferences_tabs:
             components.add(PreferencesTab.CATEGORY, a_preferences_tab)
