@@ -472,6 +472,8 @@ class OpeningContext(GObject.Object):
         self.incomplete_results = set()
         self.files_being_queried = set()
         self.open_next = utility.IdlyMethod(self.open_next)
+        
+        self.connect("notify::keep-open", self._notify_keep_open_cb)
     
     
     # Whether to keep the context "unfinished" even if the criteria to
