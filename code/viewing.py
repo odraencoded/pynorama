@@ -37,8 +37,10 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
     """
     
     __gsignals__ = {
-        "transform-change" : (GObject.SIGNAL_RUN_FIRST, None, []),
-        "offset-change" : (GObject.SIGNAL_RUN_FIRST, None, [])
+        "transform-change": (GObject.SIGNAL_RUN_FIRST, None, []),
+        "offset-change": (GObject.SIGNAL_RUN_FIRST, None, []),
+        "draw-bg": (GObject.SIGNAL_RUN_FIRST, None, [object, object]),
+        "draw-fg": (GObject.SIGNAL_RUN_LAST, None, [object, object])
     }
     
     def __init__(self):
@@ -782,15 +784,37 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
                 
             self.offset = ox, oy
             self.translation = -ox, -oy
-            
-            
+            self.style = view.get_style_context()
+        
+        
         def get_filter_for_magnification(self, zoom):
+            """ Returns the appropriate cairo interpolation filter for a zoom.
+            
+            Returns None if zoom is 1.
+            
+            """
             if zoom > 1:
                 return self.magnify_filter
             elif zoom < 1:
                 return self.minify_filter
             else:
                 return None
+        
+        
+        def transform(self, cr):
+            """ Applies the stored scaling, translation, rotation and flipping
+            values to a cairo context.
+            
+            """
+            cr.scale(self.magnification, self.magnification)
+            cr.translate(*self.translation)
+            cr.rotate(self.rad_rotation)
+            if self.is_flipped:
+                cr.scale(
+                    -1 if self.hflip else 1,
+                    -1 if self.vflip else 1
+                )
+    
     
     def do_draw(self, cr):
         """ Draws everything! """
@@ -798,25 +822,27 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
             self._compute_offset()
         
         drawstate = ImageView.DrawState(self)
+        self.emit("draw-bg", cr, drawstate)
         
-        # Renders the BG. Not sure if it works
-        style = self.get_style_context()
+        cr.save()
+        drawstate.transform(cr)
+        self.draw_frames(cr, drawstate)
+        cr.restore()
+        
+        self.emit("draw-fg", cr, drawstate)
+    
+    
+    def do_draw_bg(self, cr, drawstate):
+        """ Renders the Gtk theme background """
+        style = drawstate.style
         style.save()
         style.add_class(Gtk.STYLE_CLASS_CELL)
         Gtk.render_background(style, cr, 0, 0, *drawstate.size)
-        
-        cr.save()
-        
-        # Transform the world!
-        cr.scale(drawstate.magnification, drawstate.magnification)
-        cr.translate(*drawstate.translation)
-        cr.rotate(drawstate.rad_rotation)
-        if drawstate.is_flipped:
-            cr.scale(
-                -1 if drawstate.hflip else 1, -1 if drawstate.vflip else 1
-            )
-        
-        # Yes, this supports multiple frames!
+        style.restore()
+    
+    
+    def draw_frames(self, cr, drawstate):
+        """ Renders this ImageView frames to a cairo context """
         for a_frame in self._frames:
             cr.save()
             try:
@@ -827,11 +853,17 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
                 raise
                 
             cr.restore()
-        
-        cr.restore()
+    
+    
+    def do_draw_fg(self, cr, drawstate):
+        """ Renders the Gtk theme frame """
+        style = drawstate.style
+        style.save()
+        style.add_class(Gtk.STYLE_CLASS_CELL)
         Gtk.render_frame(style, cr, 0, 0, *drawstate.size)
         style.restore()
-        
+
+
 # --- Image frames related code down this line --- #
 
 class BaseFrame(GObject.Object):
