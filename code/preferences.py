@@ -97,7 +97,7 @@ class ViewPreferencesTabProxy(Gtk.Box):
         
         # Spin effect
         label = _("Spin effect")
-        spin_tooltip = _("???")
+        spin_tooltip = _("Rotate clockwise/anti-clockwise effect in degrees")
         spin_effect_label = Gtk.Label(label)
         spin_effect_entry, spin_effect_adjust = utility.SpinAdjustment(
             0, -180, 180, 10, 60, align=True, digits=2, wrap=True
@@ -110,7 +110,7 @@ class ViewPreferencesTabProxy(Gtk.Box):
         
         # Zoom effect
         label = _("Zoom in/out effect")
-        zoom_tooltip = _("???")
+        zoom_tooltip = _("Zoom in/out effect as a multiplier/dividend")
         zoom_effect_label = Gtk.Label(label)
         zoom_effect_entry, zoom_effect_adjust = utility.SpinAdjustment(
             2, 1, 4, 0.1, 0.25, align=True, digits=2
