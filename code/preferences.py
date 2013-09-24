@@ -16,10 +16,11 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
-from gi.repository import Gtk, GObject
+from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
 import os
 import organization, notification, mousing, utility
+import cairo
 
 logger = notification.Logger("preferences")
 
@@ -553,9 +554,289 @@ class MousePreferencesTab(PreferencesTab):
     def label(self):
         return _("Mouse")
     
+    
     create_proxy = MousePreferencesTabProxy
 
 
+class BackgroundPreferencesTabProxy(Gtk.Box):
+    def __init__(self, tab, dialog, label):
+        # Enabled checkbutton at the top
+        enabled_check = Gtk.CheckButton(
+            _("Use a custom background"),
+            tooltip_text=_(
+                "Use something else as the image viewer window background"
+            )
+        )
+        
+        # Custom background color line
+        custom_color_option = Gtk.RadioButton(
+            _("Custom background color"),
+            tooltip_text=_(
+                "Whether to use a custom color as the window background"
+            )
+        )
+        color_chooser = Gtk.ColorButton(
+            title=_("Background Color"),
+            tooltip_text=_("The color used as the window background"),
+            use_alpha=True
+        )
+        bg_line = utility.WidgetLine(custom_color_option, color_chooser)
+        
+        # Checkered checkbutton... hehe
+        checkered_option = Gtk.RadioButton(
+            _("Checkered background"), group=custom_color_option
+        )
+        
+        # Checks size
+        size_label = Gtk.Label(_("Checks size"))
+        size_entry, size_adjust = utility.SpinAdjustment(
+            16, 4, 1280, 4, 32, align=True, digits=0,
+        )
+        
+        # Checks colors
+        colors_label = Gtk.Label(_("Colors"))
+        primary_color_button = Gtk.ColorButton(
+            title=_("Checkered Pattern Primary Color"), use_alpha=False
+        )
+        secondary_color_button = Gtk.ColorButton(
+            title=_("Checkered Pattern Primary Color"), use_alpha=False
+        )
+        colors_box = Gtk.ButtonBox()
+        colors_box.get_style_context().add_class(Gtk.STYLE_CLASS_LINKED)
+        colors_box.add(primary_color_button)
+        colors_box.add(secondary_color_button)
+        
+        checks_appearance_widgets = utility.WidgetGrid(
+            (size_label, size_entry),
+            (colors_label, colors_box),
+            align_first=True
+        )
+        
+        # A box with the customizing widgets
+        customizing_widgets = utility.WidgetStack(
+            bg_line, checkered_option, checks_appearance_widgets
+        )
+        
+        # Bind properties
+        utility.Bind(tab,
+            ("enabled", enabled_check, "active"),
+            ("use-custom-color", custom_color_option, "active"),
+            ("color", color_chooser, "rgba"),
+            ("checkered", checkered_option, "active"),
+            ("checks-size", size_adjust, "value"),
+            ("checks-primary-color", primary_color_button, "rgba"),
+            ("checks-secondary-color", secondary_color_button, "rgba"),
+            bidirectional=True, synchronize=True
+        )
+        # Sensitivity binds
+        utility.Bind(tab,
+            ("enabled", customizing_widgets, "sensitive"),
+            ("use-custom-color", color_chooser, "sensitive"),
+            ("checkered", checks_appearance_widgets, "sensitive"),
+            synchronize=True
+        )
+        
+        utility.InitWidgetStack(self,
+            enabled_check, customizing_widgets
+        )
+
+
+class BackgroundPreferencesTab(extending.PreferencesTab):
+    """ Allows for customizing the background of the image viewer window """
+    CODENAME = "background-tab"
+    def __init__(self, app):
+        extending.PreferencesTab.__init__(
+            self, BackgroundPreferencesTab.CODENAME
+        )
+        # Set default colors
+        self.color = Gdk.RGBA(0, 0, 0 ,1)
+        self.checks_primary_color = Gdk.RGBA(.93, .93, .93 ,1)
+        self.checks_secondary_color = Gdk.RGBA(.82, .82, .82 ,1)
+        self._enabled = False
+        self._view_signals = {}
+        self._checkered_pattern = None
+        
+        # Flag for creating a checkered pattern
+        self._obsolete_checkered_pattern = True
+        
+        # Connect signals
+        app.connect("new-window", self._new_window_cb)
+        self.connect("notify::enabled", self._changed_effect_cb)
+        self.connect("notify::use-custom-color", self._changed_effect_cb)
+        self.connect("notify::color", self._changed_effect_cb)
+        self.connect("notify::checkered", self._changed_effect_cb)
+        self.connect("notify::checks-size", self._changed_checks_cb)
+        self.connect("notify::checks-primary-color", self._changed_checks_cb)
+        self.connect("notify::checks-secondary-color", self._changed_checks_cb)
+        
+        # Create settings
+        settings = app.settings.get_groups(
+            "view", "background", create=True
+        )[-1]
+        settings.connect("save", self._save_settings_cb)
+        settings.connect("load", self._load_settings_cb)
+    
+    
+    @GObject.Property
+    def label(self):
+        return _("Background")
+    
+    
+    def get_enabled(self):
+        return self._enabled
+    
+    
+    def set_enabled(self, is_enabled):
+        """ Sets whether to enable a custom background
+        
+        Setting this to false disconnects all signals handlers connected to
+        the application image views.
+        """
+        if is_enabled != self._enabled:
+            self._enabled = is_enabled
+            if is_enabled:
+                for a_view in self._view_signals:
+                    self._connect_view(a_view)
+            else:
+                for a_view, some_signals in self._view_signals.items():
+                    for a_signal in some_signals:
+                        a_view.disconnect(a_signal)
+                    
+                    self._view_signals[a_view] = None
+            
+            
+    enabled = GObject.Property(
+        get_enabled, set_enabled, type=bool, default=False
+    )
+    color = GObject.Property(type=Gdk.RGBA)
+    use_custom_color = GObject.Property(type=bool, default=False) 
+    checkered = GObject.Property(type=bool, default=False)
+    checks_size = GObject.Property(type=int, default=16)
+    checks_primary_color = GObject.Property(type=Gdk.RGBA)
+    checks_secondary_color = GObject.Property(type=Gdk.RGBA)
+    
+    
+    def create_proxy(self, dialog, label):
+        return BackgroundPreferencesTabProxy(self, dialog, label)
+    
+    
+    def _connect_view(self, view):
+        """ Connects to a view signals and stores the handler ids """
+        self._view_signals[view] = [
+            view.connect("destroy", self._destroy_view_cb),
+            view.connect("draw-bg", self._draw_bg_cb)
+        ]
+    
+    
+    def _create_checkered_pattern(self):
+        """ Creates the checkered background pattern """
+        checks_size = self.checks_size
+        checkered_surface = cairo.ImageSurface(
+            cairo.FORMAT_RGB24, checks_size * 2, checks_size * 2
+        )
+        cr = cairo.Context(checkered_surface)
+        
+        Gdk.cairo_set_source_rgba(cr, self.checks_primary_color)
+        cr.rectangle(0, 0, checks_size, checks_size)
+        cr.rectangle(checks_size, checks_size, checks_size, checks_size)
+        cr.fill()
+        
+        Gdk.cairo_set_source_rgba(cr, self.checks_secondary_color)
+        cr.rectangle(checks_size, 0, checks_size, checks_size)
+        cr.rectangle(0, checks_size, checks_size, checks_size)
+        cr.fill()
+        
+        self._checkered_pattern = cairo.SurfacePattern(checkered_surface)
+        self._checkered_pattern.set_extend(cairo.EXTEND_REPEAT)
+    
+    
+    def _new_window_cb(self, app, window):
+        """ Connects its background changing ability to a window view """
+        if self.enabled:
+            view = window.view
+            self._connect_view(view)
+            view.queue_draw()
+        else:
+            self._view_signals[window.view] = None
+    
+    
+    def _changed_effect_cb(self, *whatever):
+        """ Redraws views when its effect has been changed """
+        for a_view in self._view_signals:
+            a_view.queue_draw()
+    
+    
+    def _changed_checks_cb(self, *whatever):
+        """ Redraws views when its checks have been changed
+        and its set as checkered
+        
+        """
+        self._obsolete_checkered_pattern = True
+        if self.checkered:
+            self._changed_effect_cb()
+    
+    
+    def _draw_bg_cb(self, view, cr, drawstate):
+        """ Renders a background in a ImageView """
+        use_custom_color, color, checkered, = self.get_properties(
+            "use-custom-color", "color", "checkered"
+        )
+        if use_custom_color:
+            Gdk.cairo_set_source_rgba(cr, color)
+            cr.paint()
+            
+        if checkered:
+            if self._obsolete_checkered_pattern:
+                self._create_checkered_pattern()
+            
+            cr.set_source(self._checkered_pattern)
+            cr.paint()
+    
+    
+    def _destroy_view_cb(self, view):
+        """ Disconnect signals and drop references to a ImageView """
+        signals = self._view_signals.pop(view)
+        for a_signal in signals:
+            view.disconnect(a_signal)
+    
+    
+    def _save_settings_cb(self, settings):
+        """ Saves its settings """
+        logger.debug("Saving background preferences...")
+        utility.SetDictFromProperties(
+            self, settings.data,
+            "enabled", "use-custom-color",
+            "checkered", "checks-size"
+        )
+        colors = "color", "checks-primary-color", "checks-secondary-color"
+        for a_color_name in colors:
+            a_color = self.get_property(a_color_name)
+            settings.data[a_color_name] = a_color.to_string()
+    
+    
+    def _load_settings_cb(self, settings):
+        """ Loads its settings """
+        logger.debug("Loading background preferences...")
+        utility.SetPropertiesFromDict(
+            self, settings.data,
+            "enabled", "use-custom-color",
+            "checkered", "checks-size"
+        )
+        
+        colors = "color", "checks-primary-color", "checks-secondary-color"
+        for a_color_name in colors:
+            try:
+                a_color_string = settings.data[a_color_name]
+            except KeyError:
+                pass
+            else:
+                # I don't get it either
+                a_color = self.get_property(a_color_name)
+                a_color.parse(a_color_string)
+                self.set_property(a_color_name, a_color)
+    
+    
+#rgb(78,154,6)
 class BuiltinPreferencesTabPackage(extending.ComponentPackage):
     @staticmethod
     def add_on(app):
@@ -563,7 +844,8 @@ class BuiltinPreferencesTabPackage(extending.ComponentPackage):
         components.add_category(PreferencesTab.CATEGORY, "Preferences Tab")
         preferences_tabs = (
             ViewPreferencesTab(),
-            MousePreferencesTab()
+            MousePreferencesTab(),
+            BackgroundPreferencesTab(app)
         )
         for a_preferences_tab in preferences_tabs:
             components.add(PreferencesTab.CATEGORY, a_preferences_tab)
@@ -733,14 +1015,15 @@ class SettingsGroup(GObject.Object):
     
     
     def __getitem__(self, codename):
-        """Returns a subgroup under codename"""
+        """ Returns a subgroup under codename """
         if isinstance(codename, tuple):
             return self.get_groups(*codename)[-1]
         else:
             return self._subgroups[codename]
     
+    
     def get_groups(self, *some_codenames, create=False):
-        """Returns a list of settings groups children of this group"""
+        """ Returns a list of settings groups children of this group """
         result = []
         a_group = self
         for a_codename in some_codenames:
@@ -757,9 +1040,10 @@ class SettingsGroup(GObject.Object):
             result.append(a_group)
             
         return result
-        
+    
+    
     def create_group(self, codename):
-        """Creates and returns a subgroup using codename as key.
+        """ Creates and returns a subgroup using codename as key
         
         KeyError is raised if a subgroup already exists under the same codename
         
@@ -775,7 +1059,7 @@ class SettingsGroup(GObject.Object):
     
     #~ A bunch of recursive methods down this line ~#
     def set_all_data(self, data):
-        """Sets its .data and its subgroups .data from a dictionary
+        """ Sets its .data and its subgroups .data from a dictionary
         
         If a key in the dictionary is a subgroup codename, then the key will
         be removed from the dictionary and the value of that key is used to
@@ -790,8 +1074,9 @@ class SettingsGroup(GObject.Object):
             
         self.data = data
     
+    
     def get_all_data(self):
-        """Returns a dict combining its .data with all its subgroups .data
+        """ Returns a dict combining its .data with all its subgroups .data
         
         If a key in .data is also a subgroup codename, the subgroup.data
         will replace that key value.
@@ -806,13 +1091,13 @@ class SettingsGroup(GObject.Object):
     
     
     def save_everything(self):
-        """Emits a "save" signal to it self and its subgroups"""
+        """ Emits a "save" signal to it self and its subgroups """
         self.emit("save")
         for a_subgroup in self._subgroups.values():
             a_subgroup.save_everything()
     
     def load_everything(self):
-        """Emits a "load" signal to it self and its subgroups"""
+        """ Emits a "load" signal to it self and its subgroups """
         self.emit("load")
         for a_subgroup in self._subgroups.values():
             a_subgroup.load_everything()

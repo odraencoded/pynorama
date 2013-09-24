@@ -40,6 +40,10 @@ class ImageViewer(Gtk.Application):
     DataDirectory = "resources"
     PreferencesDirectory = "preferences"
     
+    __gsignals__ = {
+        "new-window": (GObject.SIGNAL_RUN_FIRST, None, [object]),
+    }
+    
     def __init__(self):
         Gtk.Application.__init__(self)
         self.set_flags(Gio.ApplicationFlags.HANDLES_OPEN)
@@ -304,7 +308,7 @@ class ImageViewer(Gtk.Application):
         else:
             # Create a window and return it
             try:
-                a_window = ViewerWindow(self)
+                a_window = self.create_new_window()
             
             except Exception:
                 # Doing this because I'm tired of ending up with a
@@ -333,8 +337,13 @@ class ImageViewer(Gtk.Application):
                 pass
                 
             return a_window
-            
-            
+    
+    def create_new_window(self):
+        result = ViewerWindow(self)
+        self.emit("new-window", result)
+        return result
+    
+    
     def queue_memory_check(self, *data):
         if not self.memory_check_queued:
             self.memory_check_queued = True
