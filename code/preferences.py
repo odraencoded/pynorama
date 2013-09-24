@@ -592,8 +592,9 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         extending.PreferencesTab.__init__(
             self, BackgroundPreferencesTab.CODENAME
         )
-        self.view_signals = {}
         self.color = Gdk.RGBA(0, 0, 0 ,1)
+        self._enabled = False
+        self._view_signals = {}
         
         # Connect signals
         app.connect("new-window", self._new_window_cb)
@@ -604,8 +605,8 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         settings = app.settings.get_groups(
             "view", "background", create=True
         )[-1]
-        settings.connect("save", self._save_settings)
-        settings.connect("load", self._load_settings)
+        settings.connect("save", self._save_settings_cb)
+        settings.connect("load", self._load_settings_cb)
     
     
     @GObject.Property
@@ -613,7 +614,33 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         return _("Background")
     
     
-    enabled = GObject.Property(type=bool, default=False)
+    def get_enabled(self):
+        return self._enabled
+    
+    
+    def set_enabled(self, is_enabled):
+        """ Sets whether to enable a custom background
+        
+        Setting this to false disconnects all signals handlers connected to
+        the application image views.
+        """
+        if is_enabled != self._enabled:
+            self._enabled = is_enabled
+            if is_enabled:
+                for a_view in self._view_signals:
+                    self._connect_view(a_view)
+            else:
+                for a_view, some_signals in self._view_signals.items():
+                    for a_signal in some_signals:
+                        print(a_signal)
+                        a_view.disconnect(a_signal)
+                    
+                    self._view_signals[a_view] = None
+            
+            
+    enabled = GObject.Property(
+        get_enabled, set_enabled, type=bool, default=False
+    )
     color = GObject.Property(type=Gdk.RGBA)
     
     
@@ -621,42 +648,50 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         return BackgroundPreferencesTabProxy(self, dialog, label)
     
     
-    def _new_window_cb(self, app, window):
-        """ Connects its background changing ability to a window view """
-        view = window.view
-        self.view_signals[view] = [
+    def _connect_view(self, view):
+        """ Connects to a view signals and stores the handler ids """
+        self._view_signals[view] = [
             view.connect("destroy", self._destroy_view_cb),
             view.connect("draw-bg", self._draw_bg_cb)
         ]
     
     
+    def _new_window_cb(self, app, window):
+        """ Connects its background changing ability to a window view """
+        if self.enabled:
+            view = window.view
+            self._connect_view(view)
+            view.queue_draw()
+        else:
+            self._view_signals[window.view] = None
+    
+    
     def _changed_effect_cb(self, *whatever):
         """ Redraws views when its effect has been changed """
-        for a_view in self.view_signals:
+        for a_view in self._view_signals:
             a_view.queue_draw()
     
     
     def _draw_bg_cb(self, view, cr, drawstate):
         """ Renders a background in a ImageView """
-        if self.enabled:
-            Gdk.cairo_set_source_rgba(cr, self.color)
-            cr.paint()
+        Gdk.cairo_set_source_rgba(cr, self.color)
+        cr.paint()
     
     
     def _destroy_view_cb(self, view):
         """ Disconnect signals and drop references to a ImageView """
-        signals = self.view_signals.pop(view)
+        signals = self._view_signals.pop(view)
         for a_signal in signals:
             view.disconnect(a_signal)
     
     
-    def _save_settings(self, settings):
+    def _save_settings_cb(self, settings):
         """ Saves its settings """
         settings.data["enabled"] = self.enabled
         settings.data["color"] = self.color.to_string()
     
     
-    def _load_settings(self, settings):
+    def _load_settings_cb(self, settings):
         """ Loads its settings """
         utility.SetPropertiesFromDict(self, settings.data, "enabled")
         
@@ -668,7 +703,8 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
             color = self.color
             color.parse(color_string)
             self.color = color
-
+    
+    
 #rgb(78,154,6)
 class BuiltinPreferencesTabPackage(extending.ComponentPackage):
     @staticmethod
