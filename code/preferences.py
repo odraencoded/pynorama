@@ -20,6 +20,7 @@ from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
 import os
 import organization, notification, mousing, utility
+import cairo
 
 logger = notification.Logger("preferences")
 
@@ -559,29 +560,84 @@ class MousePreferencesTab(PreferencesTab):
 
 class BackgroundPreferencesTabProxy(Gtk.Box):
     def __init__(self, tab, dialog, label):
-        enable_check = Gtk.CheckButton(_("Custom background color"))
-        color_chooser = Gtk.ColorButton(
-            title=_("Background Color"), use_alpha=True
+        # Enabled checkbutton at the top
+        enabled_check = Gtk.CheckButton(
+            _("Use a custom background"),
+            tooltip_text=_(
+                "Use something else as the image viewer window background"
+            )
         )
-        bg_line = utility.WidgetLine(
-            color_chooser, enable_check, expand=color_chooser
-        )
-        color_chooser.set_tooltip_text(_(
-            "The color used as the window background"
-        ))
-        enable_check.set_tooltip_text(_(
-            "Whether to use a custom color as the window background"
-        ))
         
+        # Custom background color line
+        custom_color_option = Gtk.RadioButton(
+            _("Custom background color"),
+            tooltip_text=_(
+                "Whether to use a custom color as the window background"
+            )
+        )
+        color_chooser = Gtk.ColorButton(
+            title=_("Background Color"),
+            tooltip_text=_("The color used as the window background"),
+            use_alpha=True
+        )
+        bg_line = utility.WidgetLine(custom_color_option, color_chooser)
+        
+        # Checkered checkbutton... hehe
+        checkered_option = Gtk.RadioButton(
+            _("Checkered background"), group=custom_color_option
+        )
+        
+        # Checks size
+        size_label = Gtk.Label(_("Checks size"))
+        size_entry, size_adjust = utility.SpinAdjustment(
+            16, 4, 1280, 4, 32, align=True, digits=0,
+        )
+        
+        # Checks colors
+        colors_label = Gtk.Label(_("Colors"))
+        primary_color_button = Gtk.ColorButton(
+            title=_("Checkered Pattern Primary Color"), use_alpha=False
+        )
+        secondary_color_button = Gtk.ColorButton(
+            title=_("Checkered Pattern Primary Color"), use_alpha=False
+        )
+        colors_box = Gtk.ButtonBox()
+        colors_box.get_style_context().add_class(Gtk.STYLE_CLASS_LINKED)
+        colors_box.add(primary_color_button)
+        colors_box.add(secondary_color_button)
+        
+        checks_appearance_widgets = utility.WidgetGrid(
+            (size_label, size_entry),
+            (colors_label, colors_box),
+            align_first=True
+        )
+        
+        # A box with the customizing widgets
+        customizing_widgets = utility.WidgetStack(
+            bg_line, checkered_option, checks_appearance_widgets
+        )
+        
+        # Bind properties
         utility.Bind(tab,
-            ("enabled", enable_check, "active"),
-            ("enabled", color_chooser, "sensitive"),
+            ("enabled", enabled_check, "active"),
+            ("use-custom-color", custom_color_option, "active"),
             ("color", color_chooser, "rgba"),
+            ("checkered", checkered_option, "active"),
+            ("checks-size", size_adjust, "value"),
+            ("checks-primary-color", primary_color_button, "rgba"),
+            ("checks-secondary-color", secondary_color_button, "rgba"),
             bidirectional=True, synchronize=True
+        )
+        # Sensitivity binds
+        utility.Bind(tab,
+            ("enabled", customizing_widgets, "sensitive"),
+            ("use-custom-color", color_chooser, "sensitive"),
+            ("checkered", checks_appearance_widgets, "sensitive"),
+            synchronize=True
         )
         
         utility.InitWidgetStack(self,
-            bg_line
+            enabled_check, customizing_widgets
         )
 
 
@@ -592,14 +648,26 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         extending.PreferencesTab.__init__(
             self, BackgroundPreferencesTab.CODENAME
         )
+        # Set default colors
         self.color = Gdk.RGBA(0, 0, 0 ,1)
+        self.checks_primary_color = Gdk.RGBA(.93, .93, .93 ,1)
+        self.checks_secondary_color = Gdk.RGBA(.82, .82, .82 ,1)
         self._enabled = False
         self._view_signals = {}
+        self._checkered_pattern = None
+        
+        # Flag for creating a checkered pattern
+        self._obsolete_checkered_pattern = True
         
         # Connect signals
         app.connect("new-window", self._new_window_cb)
         self.connect("notify::enabled", self._changed_effect_cb)
+        self.connect("notify::use-custom-color", self._changed_effect_cb)
         self.connect("notify::color", self._changed_effect_cb)
+        self.connect("notify::checkered", self._changed_effect_cb)
+        self.connect("notify::checks-size", self._changed_checks_cb)
+        self.connect("notify::checks-primary-color", self._changed_checks_cb)
+        self.connect("notify::checks-secondary-color", self._changed_checks_cb)
         
         # Create settings
         settings = app.settings.get_groups(
@@ -632,7 +700,6 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
             else:
                 for a_view, some_signals in self._view_signals.items():
                     for a_signal in some_signals:
-                        print(a_signal)
                         a_view.disconnect(a_signal)
                     
                     self._view_signals[a_view] = None
@@ -642,6 +709,11 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         get_enabled, set_enabled, type=bool, default=False
     )
     color = GObject.Property(type=Gdk.RGBA)
+    use_custom_color = GObject.Property(type=bool, default=False) 
+    checkered = GObject.Property(type=bool, default=False)
+    checks_size = GObject.Property(type=int, default=16)
+    checks_primary_color = GObject.Property(type=Gdk.RGBA)
+    checks_secondary_color = GObject.Property(type=Gdk.RGBA)
     
     
     def create_proxy(self, dialog, label):
@@ -654,6 +726,28 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
             view.connect("destroy", self._destroy_view_cb),
             view.connect("draw-bg", self._draw_bg_cb)
         ]
+    
+    
+    def _create_checkered_pattern(self):
+        """ Creates the checkered background pattern """
+        checks_size = self.checks_size
+        checkered_surface = cairo.ImageSurface(
+            cairo.FORMAT_RGB24, checks_size * 2, checks_size * 2
+        )
+        cr = cairo.Context(checkered_surface)
+        
+        Gdk.cairo_set_source_rgba(cr, self.checks_primary_color)
+        cr.rectangle(0, 0, checks_size, checks_size)
+        cr.rectangle(checks_size, checks_size, checks_size, checks_size)
+        cr.fill()
+        
+        Gdk.cairo_set_source_rgba(cr, self.checks_secondary_color)
+        cr.rectangle(checks_size, 0, checks_size, checks_size)
+        cr.rectangle(0, checks_size, checks_size, checks_size)
+        cr.fill()
+        
+        self._checkered_pattern = cairo.SurfacePattern(checkered_surface)
+        self._checkered_pattern.set_extend(cairo.EXTEND_REPEAT)
     
     
     def _new_window_cb(self, app, window):
@@ -672,10 +766,31 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
             a_view.queue_draw()
     
     
+    def _changed_checks_cb(self, *whatever):
+        """ Redraws views when its checks have been changed
+        and its set as checkered
+        
+        """
+        self._obsolete_checkered_pattern = True
+        if self.checkered:
+            self._changed_effect_cb()
+    
+    
     def _draw_bg_cb(self, view, cr, drawstate):
         """ Renders a background in a ImageView """
-        Gdk.cairo_set_source_rgba(cr, self.color)
-        cr.paint()
+        use_custom_color, color, checkered, = self.get_properties(
+            "use-custom-color", "color", "checkered"
+        )
+        if use_custom_color:
+            Gdk.cairo_set_source_rgba(cr, color)
+            cr.paint()
+            
+        if checkered:
+            if self._obsolete_checkered_pattern:
+                self._create_checkered_pattern()
+            
+            cr.set_source(self._checkered_pattern)
+            cr.paint()
     
     
     def _destroy_view_cb(self, view):
@@ -687,22 +802,36 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
     
     def _save_settings_cb(self, settings):
         """ Saves its settings """
-        settings.data["enabled"] = self.enabled
-        settings.data["color"] = self.color.to_string()
+        utility.SetDictFromProperties(
+            self, settings.data,
+            "enabled", "use-custom-color",
+            "checkered", "checks-size"
+        )
+        colors = "color", "checks-primary-color", "checks-secondary-color"
+        for a_color_name in colors:
+            a_color = self.get_property(a_color_name)
+            settings.data[a_color_name] = a_color.to_string()
     
     
     def _load_settings_cb(self, settings):
         """ Loads its settings """
-        utility.SetPropertiesFromDict(self, settings.data, "enabled")
+        utility.SetPropertiesFromDict(
+            self, settings.data,
+            "enabled", "use-custom-color",
+            "checkered", "checks-size"
+        )
         
-        try:
-            color_string = settings.data["color"]
-        except KeyError:
-            pass
-        else:
-            color = self.color
-            color.parse(color_string)
-            self.color = color
+        colors = "color", "checks-primary-color", "checks-secondary-color"
+        for a_color_name in colors:
+            try:
+                a_color_string = settings.data[a_color_name]
+            except KeyError:
+                pass
+            else:
+                # I don't get it either
+                a_color = self.get_property(a_color_name)
+                a_color.parse(a_color_string)
+                self.set_property(a_color_name, a_color)
     
     
 #rgb(78,154,6)
