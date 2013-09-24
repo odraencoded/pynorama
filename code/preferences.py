@@ -593,10 +593,19 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
             self, BackgroundPreferencesTab.CODENAME
         )
         self.view_signals = {}
-        self.color = Gdk.RGBA(255, 255, 255, 255)
+        self.color = Gdk.RGBA(0, 0, 0 ,1)
+        
+        # Connect signals
         app.connect("new-window", self._new_window_cb)
-        self.connect("notify::enabled", self._changed_color_cb)
-        self.connect("notify::color", self._changed_color_cb)
+        self.connect("notify::enabled", self._changed_effect_cb)
+        self.connect("notify::color", self._changed_effect_cb)
+        
+        # Create settings
+        settings = app.settings.get_groups(
+            "view", "background", create=True
+        )[-1]
+        settings.connect("save", self._save_settings)
+        settings.connect("load", self._load_settings)
     
     
     @GObject.Property
@@ -613,6 +622,7 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
     
     
     def _new_window_cb(self, app, window):
+        """ Connects its background changing ability to a window view """
         view = window.view
         self.view_signals[view] = [
             view.connect("destroy", self._destroy_view_cb),
@@ -620,23 +630,46 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         ]
     
     
-    def _changed_color_cb(self, *whatever):
+    def _changed_effect_cb(self, *whatever):
+        """ Redraws views when its effect has been changed """
         for a_view in self.view_signals:
             a_view.queue_draw()
     
     
     def _draw_bg_cb(self, view, cr, drawstate):
+        """ Renders a background in a ImageView """
         if self.enabled:
             Gdk.cairo_set_source_rgba(cr, self.color)
             cr.paint()
     
     
     def _destroy_view_cb(self, view):
+        """ Disconnect signals and drop references to a ImageView """
         signals = self.view_signals.pop(view)
         for a_signal in signals:
             view.disconnect(a_signal)
+    
+    
+    def _save_settings(self, settings):
+        """ Saves its settings """
+        settings.data["enabled"] = self.enabled
+        settings.data["color"] = self.color.to_string()
+    
+    
+    def _load_settings(self, settings):
+        """ Loads its settings """
+        utility.SetPropertiesFromDict(self, settings.data, "enabled")
+        
+        try:
+            color_string = settings.data["color"]
+        except KeyError:
+            pass
+        else:
+            color = self.color
+            color.parse(color_string)
+            self.color = color
 
-
+#rgb(78,154,6)
 class BuiltinPreferencesTabPackage(extending.ComponentPackage):
     @staticmethod
     def add_on(app):
@@ -815,14 +848,15 @@ class SettingsGroup(GObject.Object):
     
     
     def __getitem__(self, codename):
-        """Returns a subgroup under codename"""
+        """ Returns a subgroup under codename """
         if isinstance(codename, tuple):
             return self.get_groups(*codename)[-1]
         else:
             return self._subgroups[codename]
     
+    
     def get_groups(self, *some_codenames, create=False):
-        """Returns a list of settings groups children of this group"""
+        """ Returns a list of settings groups children of this group """
         result = []
         a_group = self
         for a_codename in some_codenames:
@@ -839,9 +873,10 @@ class SettingsGroup(GObject.Object):
             result.append(a_group)
             
         return result
-        
+    
+    
     def create_group(self, codename):
-        """Creates and returns a subgroup using codename as key.
+        """ Creates and returns a subgroup using codename as key
         
         KeyError is raised if a subgroup already exists under the same codename
         
@@ -857,7 +892,7 @@ class SettingsGroup(GObject.Object):
     
     #~ A bunch of recursive methods down this line ~#
     def set_all_data(self, data):
-        """Sets its .data and its subgroups .data from a dictionary
+        """ Sets its .data and its subgroups .data from a dictionary
         
         If a key in the dictionary is a subgroup codename, then the key will
         be removed from the dictionary and the value of that key is used to
@@ -872,8 +907,9 @@ class SettingsGroup(GObject.Object):
             
         self.data = data
     
+    
     def get_all_data(self):
-        """Returns a dict combining its .data with all its subgroups .data
+        """ Returns a dict combining its .data with all its subgroups .data
         
         If a key in .data is also a subgroup codename, the subgroup.data
         will replace that key value.
@@ -888,13 +924,13 @@ class SettingsGroup(GObject.Object):
     
     
     def save_everything(self):
-        """Emits a "save" signal to it self and its subgroups"""
+        """ Emits a "save" signal to it self and its subgroups """
         self.emit("save")
         for a_subgroup in self._subgroups.values():
             a_subgroup.save_everything()
     
     def load_everything(self):
-        """Emits a "load" signal to it self and its subgroups"""
+        """ Emits a "load" signal to it self and its subgroups """
         self.emit("load")
         for a_subgroup in self._subgroups.values():
             a_subgroup.load_everything()
