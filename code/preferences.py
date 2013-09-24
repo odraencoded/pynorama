@@ -561,19 +561,16 @@ class MousePreferencesTab(PreferencesTab):
 class BackgroundPreferencesTabProxy(Gtk.Box):
     def __init__(self, tab, dialog, label):
         # Enabled checkbutton at the top
-        enabled_check = Gtk.CheckButton(
-            _("Use a custom background"),
-            tooltip_text=_(
-                "Use something else as the image viewer window background"
-            )
+        theme_option = Gtk.RadioButton(
+            _("Theme background"),
+            tooltip_text=_("Use the background set by the Gtk theme")
         )
         
         # Custom background color line
         custom_color_option = Gtk.RadioButton(
-            _("Custom background color"),
-            tooltip_text=_(
-                "Whether to use a custom color as the window background"
-            )
+            _("Solid background color"),
+            tooltip_text=_("Use one custom color as the window background"),
+            group=theme_option
         )
         color_chooser = Gtk.ColorButton(
             title=_("Background Color"),
@@ -582,9 +579,10 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         )
         bg_line = utility.WidgetLine(custom_color_option, color_chooser)
         
-        # Checkered checkbutton... hehe
         checkered_option = Gtk.RadioButton(
-            _("Checkered background"), group=custom_color_option
+            _("Checkered background"),
+            tooltip_text=_("Use a checkered pattern as the window background"),
+            group=custom_color_option
         )
         
         # Checks size
@@ -592,7 +590,9 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         size_entry, size_adjust = utility.SpinAdjustment(
             16, 4, 1280, 4, 32, align=True, digits=0,
         )
-        
+        size_entry.set_tooltip_text(_(
+            "The size of the checks of the checkered pattern"
+        ))
         # Checks colors
         colors_label = Gtk.Label(_("Colors"))
         primary_color_button = Gtk.ColorButton(
@@ -601,7 +601,9 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         secondary_color_button = Gtk.ColorButton(
             title=_("Checkered Pattern Primary Color"), use_alpha=False
         )
-        colors_box = Gtk.ButtonBox()
+        colors_box = Gtk.ButtonBox(
+            tooltip_text=_("The checkered pattern colors")
+        )
         colors_box.get_style_context().add_class(Gtk.STYLE_CLASS_LINKED)
         colors_box.add(primary_color_button)
         colors_box.add(secondary_color_button)
@@ -613,13 +615,17 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         )
         
         # A box with the customizing widgets
-        customizing_widgets = utility.WidgetStack(
-            bg_line, checkered_option, checks_appearance_widgets
+        utility.InitWidgetStack(self,
+            theme_option, bg_line, checkered_option, checks_appearance_widgets
         )
         
         # Bind properties
+        flags = GObject.BindingFlags
+        tab.bind_property(
+            "enabled", theme_option, "active",
+            flags.BIDIRECTIONAL | flags.SYNC_CREATE | flags.INVERT_BOOLEAN
+        )
         utility.Bind(tab,
-            ("enabled", enabled_check, "active"),
             ("use-custom-color", custom_color_option, "active"),
             ("color", color_chooser, "rgba"),
             ("checkered", checkered_option, "active"),
@@ -630,14 +636,9 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         )
         # Sensitivity binds
         utility.Bind(tab,
-            ("enabled", customizing_widgets, "sensitive"),
             ("use-custom-color", color_chooser, "sensitive"),
             ("checkered", checks_appearance_widgets, "sensitive"),
             synchronize=True
-        )
-        
-        utility.InitWidgetStack(self,
-            enabled_check, customizing_widgets
         )
 
 
