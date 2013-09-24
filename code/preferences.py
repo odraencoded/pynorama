@@ -802,6 +802,7 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
     
     def _save_settings_cb(self, settings):
         """ Saves its settings """
+        logger.debug("Saving background preferences...")
         utility.SetDictFromProperties(
             self, settings.data,
             "enabled", "use-custom-color",
@@ -815,6 +816,7 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
     
     def _load_settings_cb(self, settings):
         """ Loads its settings """
+        logger.debug("Loading background preferences...")
         utility.SetPropertiesFromDict(
             self, settings.data,
             "enabled", "use-custom-color",
