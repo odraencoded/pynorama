@@ -662,10 +662,10 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         
         # Connect signals
         app.connect("new-window", self._new_window_cb)
-        self.connect("notify::enabled", self._changed_effect_cb)
+        self.connect("notify::enabled", self._changed_enabled_cb)
         self.connect("notify::use-custom-color", self._changed_effect_cb)
         self.connect("notify::color", self._changed_effect_cb)
-        self.connect("notify::checkered", self._changed_effect_cb)
+        self.connect("notify::checkered", self._changed_checkered_cb)
         self.connect("notify::checks-size", self._changed_checks_cb)
         self.connect("notify::checks-primary-color", self._changed_checks_cb)
         self.connect("notify::checks-secondary-color", self._changed_checks_cb)
@@ -729,6 +729,12 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         ]
     
     
+    def _redraw_views(self):
+        """ Redraws every view in the app """
+        for a_view in self._view_signals:
+            a_view.queue_draw()
+    
+    
     def _create_checkered_pattern(self):
         """ Creates the checkered background pattern """
         checks_size = self.checks_size
@@ -761,20 +767,37 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
             self._view_signals[window.view] = None
     
     
-    def _changed_effect_cb(self, *whatever):
-        """ Redraws views when its effect has been changed """
-        for a_view in self._view_signals:
-            a_view.queue_draw()
+    def _changed_enabled_cb(self, *whatever):
+        """ Redraw views when it's toggled on/off """
+        self._redraw_views()
     
+    
+    def _changed_effect_cb(self, *whatever):
+        """ Redraws views if it's enabled """
+        if self.enabled:
+            self._redraw_views()
+    
+    
+    def _changed_checkered_cb(self, *whatever):
+        """ Redraws views if the checkered property was turned on """
+        
+        if self.checkered:
+            self._obsolete_checkered_pattern = True
+        else:
+            # Remove useless pattern
+            self._checkered_pattern = None
+        
+        if self.enabled:
+            self._redraw_views()
     
     def _changed_checks_cb(self, *whatever):
-        """ Redraws views when its checks have been changed
-        and its set as checkered
+        """ Redraws views when its checks have been changed and they affect
+        the views' background
         
         """
         self._obsolete_checkered_pattern = True
-        if self.checkered:
-            self._changed_effect_cb()
+        if self.checkered and self.enabled:
+            self._redraw_views()
     
     
     def _draw_bg_cb(self, view, cr, drawstate):
