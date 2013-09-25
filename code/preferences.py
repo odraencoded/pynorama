@@ -38,10 +38,39 @@ class Dialog(Gtk.Dialog):
         # Create tabs
         self.tabs = tabs = Gtk.Notebook()
         for a_tab in self.app.components[extending.PreferencesTab.CATEGORY]:
-            a_tab_label = a_tab.create_label(self)
-            a_proxy = a_tab.create_proxy(self, a_tab_label)
-            a_tab_pad = utility.PadNotebookContent(a_proxy)
-            tabs.append_page(a_tab_pad, a_tab_label)
+            try:
+                a_tab_label = a_tab.create_label(self)
+                a_proxy = a_tab.create_proxy(self, a_tab_label)
+                a_tab_pad = utility.PadNotebookContent(a_proxy)
+                tabs.append_page(a_tab_pad, a_tab_label)
+            except Exception:
+                name = None
+                try:
+                    name = str(a_tab.label)
+                except Exception:
+                    try:
+                        codename = str(a_tab.codename)
+                    except Exception:
+                        # Treatment of exception of exception of exception
+                        # What an exceptional treatment!
+                        logger.log_error("Couldn't get some tab's codename")
+                        logger.log_exception()
+                    else:
+                        logger.log_error((
+                                "Couldn't get the '{codename}'" +
+                                " preferences tab label"
+                            ).format(codename=codename)
+                        )
+                        name = codename
+                
+                if name:
+                    logger.log_error(
+                        "Failed to create tab '{name}'".format(name=name)
+                    )
+                else:
+                    logger.log_error("Failed to create some tab")
+                    
+                logger.log_exception()
             
         # Pack tabs into dialog
         padded_tabs = utility.PadDialogContent(tabs)
@@ -790,6 +819,7 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         if self.enabled:
             self._redraw_views()
     
+    
     def _changed_checks_cb(self, *whatever):
         """ Redraws views when its checks have been changed and they affect
         the views' background
@@ -860,7 +890,6 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
                 self.set_property(a_color_name, a_color)
     
     
-#rgb(78,154,6)
 class BuiltinPreferencesTabPackage(extending.ComponentPackage):
     @staticmethod
     def add_on(app):
