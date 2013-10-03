@@ -1280,19 +1280,22 @@ class ViewerWindow(Gtk.ApplicationWindow):
             self.zoom_label.hide()
             self.angle_label.hide()
             self.flip_label.hide()
-            
+    
+    
     def set_view_rotation(self, angle):
         anchor = self.view.get_widget_point()
         pin = self.view.get_pin(anchor)
         self.view.rotation = angle % 360
         self.view.adjust_to_pin(pin)
     
+    
     def set_view_zoom(self, magnification):
         anchor = self.view.get_widget_point()
         pin = self.view.get_pin(anchor)
         self.view.magnification = magnification
         self.view.adjust_to_pin(pin)
-        
+    
+    
     def set_view_flip(self, horizontal, vertical):
         hflip, vflip = self.view.flipping
         
@@ -1314,7 +1317,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
             self.view.flipping = (horizontal, vertical)
             self.view.adjust_to_pin(pin)
-        
+    
+    
     def zoom_view(self, power):
         ''' Zooms the viewport '''        
         zoom_effect = self.app.zoom_effect
@@ -1322,7 +1326,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             old_zoom = self.view.magnification
             new_zoom = self.app.zoom_effect ** power * old_zoom
             self.set_view_zoom(new_zoom)
-            
+    
+    
     def flip_view(self, vertically):
         ''' Flips the viewport '''
         # Horizontal mirroring depends on the rotation of the image
@@ -1333,7 +1338,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             hflip = not hflip
         
         self.set_view_flip(hflip, vflip)
-        
+    
+    
     def rotate_view(self, effect):
         ''' Rotates the viewport '''
         change = self.app.spin_effect * effect
@@ -1343,9 +1349,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
         if change:
             self.set_view_rotation(self.view.rotation + change)
     
+    
     def reset_view_transform(self):
         self.set_view_flip(False, False)
         self.set_view_rotation(0)
+    
     
     def autozoom(self):
         ''' Zooms automatically! '''
@@ -1375,7 +1383,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             keep_below.set_active(False)
             
         self.set_keep_above(keep_above.get_active())
-                
+    
+    
     def toggle_keep_below(self, *data):
         keep_above = self.actions.get_action("ui-keep-above")
         keep_below = self.actions.get_action("ui-keep-below")
@@ -1383,8 +1392,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             keep_above.set_active(False)
             
         self.set_keep_below(keep_below.get_active())
-        
-            
+    
+    
     def toggle_fullscreen(self, data=None):
         # This simply tries to fullscreen / unfullscreen
         fullscreenaction = self.actions.get_action("fullscreen")
@@ -1397,16 +1406,20 @@ class ViewerWindow(Gtk.ApplicationWindow):
     # --- Go go go!!! --- #
     def go_next(self, *data):
         self.avl.go_next()
-        
+    
+    
     def go_previous(self, *data):
         self.avl.go_previous()
-            
+    
+    
     def go_first(self, *data):
         self.avl.go_index(0)
-        
+    
+    
     def go_last(self, *data):
         self.avl.go_index(-1)
-        
+    
+    
     def go_random(self, *data):
         image_count = len(self.album)
         if image_count > 1:
@@ -1417,14 +1430,17 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 random_int += 1
             
             self.avl.go_index(random_int)
-            
+    
+    
     def handle_clear(self, *data):
         del self.album[:]
-        
+    
+    
     def handle_remove(self, *data):
         focus = self.avl.focus_image
         if focus:
             self.album.remove(focus)
+    
     
     def copy_image(self, *stuff):
         focus = self.avl.focus_image

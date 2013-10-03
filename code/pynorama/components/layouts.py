@@ -17,7 +17,7 @@
     
 
 from gi.repository import GLib, GObject, Gtk
-from pynorama import utility, widgets, point, extending
+from pynorama import utility, widgets, extending
 from pynorama.organizing import AlbumLayout, LayoutDirection
 from gettext import gettext as _
 
@@ -415,11 +415,11 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
             
         if avl.center_frame and not view.frames_fit:
             w, h = avl.view.get_widget_size()
-            tl = avl.view.get_absolute_point((0, 0))
-            tr = avl.view.get_absolute_point((w, 0))
-            bl = avl.view.get_absolute_point((0, h))
-            br = avl.view.get_absolute_point((w, h))
-            absolute_view_rect = point.Rectangle.FromPoints(tl, tr, bl, br)
+            get_absolute_point = avl.view.get_absolute_point
+            corners = utility.Rectangle(0, 0, w, h).corners()
+            absolute_view_rect = utility.Rectangle.FromPoints(
+                *(get_absolute_point(a_corner) for a_corner in corners)
+            )
             
             current_index = avl.center_index
             current_distance = None

@@ -19,6 +19,7 @@ from gi.repository import Gtk, GLib, GObject
 from gi.repository.Gdk import EventMask, ModifierType
 from gettext import gettext as _
 from . import utility, widgets
+from .utility import Point
 
 MOUSE_EVENT_MASK = (
     EventMask.KEY_PRESS_MASK |
@@ -161,7 +162,7 @@ class MouseAdapter(GObject.GObject):
         self._pressure.setdefault(data.button, 1)
         self._update_keys(data.state)
         if not self.is_frozen:
-            point = data.x, data.y
+            point = Point(data.x, data.y)
             self.emit("pression", point, data.button)
     
     
@@ -171,7 +172,7 @@ class MouseAdapter(GObject.GObject):
             if not self.is_frozen:
                 button_pressure = self._pressure.get(data.button, 0)
                 if button_pressure:
-                    point = data.x, data.y
+                    point = Point(data.x, data.y)
                     if button_pressure == 2:
                         self.emit("stop-dragging", point, data.button)
                     
@@ -183,7 +184,7 @@ class MouseAdapter(GObject.GObject):
     def _mouse_scroll_cb(self, widget, data):
         self._update_keys(data.state)
         if not self.is_frozen:
-            point = data.x, data.y
+            point = Point(data.x, data.y)
             # I don't have one of those cool mice with smooth scrolling
             got_delta, xd, yd = data.get_scroll_deltas()
             if not got_delta:
@@ -197,7 +198,7 @@ class MouseAdapter(GObject.GObject):
                     got_delta = True
             
             if got_delta:
-                self.emit("scroll", point, (xd, yd))
+                self.emit("scroll", point, Point(xd, yd))
     
     
     def _mouse_enter_cb(self, *data):
@@ -209,7 +210,7 @@ class MouseAdapter(GObject.GObject):
     def _mouse_motion_cb(self, widget, data):
         self._update_keys(data.state)
         # Motion events are handled idly
-        self._current_point = data.x, data.y
+        self._current_point = Point(data.x, data.y)
         
         if not self._delayed_motion.is_queued:
             if not self._from_point:
@@ -731,13 +732,13 @@ class MouseHandlerPivot(GObject.Object):
         self.connect("notify::fixed-x", notify_fixed_point)
         self.connect("notify::fixed-y", notify_fixed_point)
     
+    
     def get_fixed_point(self):
-        return self.fixed_x, self.fixed_y
+        return Point(self.fixed_x, self.fixed_y)
     
     
     def set_fixed_point(self, value):
-        x, y = value
-        self.set_properties(fixed_x=x, fixed_y=y)
+        self.set_properties(fixed_x=value[0], fixed_y=value[1])
     
     
     mode = GObject.Property(type=int, default=PivotMode.Mouse)
@@ -752,18 +753,19 @@ class MouseHandlerPivot(GObject.Object):
     def convert_point(self, view, pointer):
         """ Returns a pivot point based on a view widget and
             the mouse pointer coordinates """
-        if self.mode == PivotMode.Mouse:
-            result = pointer
+        mode = self.mode
+        if mode == PivotMode.Mouse:
+            return pointer
+            
         else:
             w, h = view.get_allocated_width(), view.get_allocated_height()
             
-            if self.mode == PivotMode.Alignment:
-                sx, sy = view.alignment_point
+            if mode == PivotMode.Alignment:
+                scale = view.alignment_point
             else:
-                sx, sy = self.fixed_point
+                scale = self.fixed_point
                 
-            result = sx * w, sy * h
-        return result
+            return Point(w, h) * scale
     
     
     def get_settings(self):

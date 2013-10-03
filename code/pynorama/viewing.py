@@ -18,8 +18,7 @@
 import math
 from gi.repository import Gdk, GdkPixbuf, GLib, GObject, Gtk
 import cairo
-from . import point
-from .utility import SurfaceFromPixbuf, IdlyMethod
+from .utility import Point, Rectangle, SurfaceFromPixbuf, IdlyMethod
 
 class ZoomMode:
     FillView = 0
@@ -56,14 +55,14 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
         self.refresh_outline = IdlyMethod(self.refresh_outline)
         self.refresh_outline.priority = GLib.PRIORITY_HIGH
         
-        self.outline = point.Rectangle(width=1, height=1)
+        self.outline = Rectangle(0, 0, 1, 1)
         
         # Does this even do anything?
         style = self.get_style_context().add_class(Gtk.STYLE_CLASS_VIEW)
         
         # offset is usually the same as horizontal/vertical adjustments values
         # unless the outline fits inside the widget
-        self.offset = 0, 0
+        self.offset = Point.Zero
         self._obsolete_offset = False
         
         self._hadjustment = self._vadjustment = None
@@ -142,9 +141,10 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
             a_frame.rectangle.shift(a_frame.origin) for a_frame in self._frames
         ]
         
-        new_outline = point.Rectangle.Union(rectangles)
-        new_outline.width = max(new_outline.width, 1)
-        new_outline.height = max(new_outline.height, 1)
+        union = Rectangle.Union(rectangles)
+        # Ensures at least 1 width and height
+        width, height = max(union.width, 1), max(union.height, 1)
+        new_outline = Rectangle(union.left, union.top, width, height)
         
         if self.outline != new_outline:
             self.outline = new_outline
@@ -160,7 +160,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
     
     # --- view manipulation down this line --- #
     def pan(self, direction):
-        self.adjust_to(*point.add(self.get_adjustment(), direction))
+        self.adjust_to(*(self.get_adjustment() + direction))
     
     
     def rotate(self, degrees):
@@ -223,23 +223,18 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
     def adjust_to_pin(self, pin):
         """ Adjusts the view so that the same widget point in the pin can be
             converted to the same absolute point in the pin """
-        (x, y), (px, py) = pin
+        abs_point, scalar_point = pin
         
-        hflip, vflip = self.flipping
-        if hflip:
-            x *= -1
-        if vflip:
-            y *= -1
+        magnification, rotation, hflip, vflip = self.get_properties(
+            "magnification", "rotation", "horizontal-flip", "vertical-flip"
+        )
+        magw = self.get_allocated_width() / magnification
+        magh = self.get_allocated_height() / magnification
+        rad_rotation = rotation / 180 * math.pi
+        inv_zoom = 1 / magnification
         
-        rotation = self.rotation
-        if rotation:
-            x, y = point.spin((x, y), rotation / 180 * math.pi)
-        
-        magw = self.get_magnified_width()
-        magh = self.get_magnified_height()
-        
-        x -= px * magw
-        y -= py * magh
+        transformed_point = abs_point.flip(*self.flipping).spin(rad_rotation)
+        x, y = transformed_point - scalar_point * (magw, magh)
         
         self.adjust_to(x, y)
     
@@ -252,10 +247,11 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
             "hadjustment", "vadjustment", "rotation"
         )
         vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
-        x, y = frame.rectangle.shift(frame.origin).unbox_point((rx, ry))
-        x, y = point.spin((x, y), rotation / 180 * math.pi)
+        relative_point = Point(rx, ry)
+        rect = frame.rectangle.shift(frame.origin)
+        point = rect.unbox_point(relative_point).spin(rotation / 180 * math.pi)
         
-        self.adjust_to(x - vw * rx, y - vh * ry)
+        self.adjust_to(*(point - relative_point * (vw, vh)))
 
 
     def align_to_frame(self, frame):
@@ -322,11 +318,13 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
         
         size = self.get_widget_size()
         if not widget_point:
-            # XXX: Should this be point.center?
-            widget_point = point.multiply(point.center, size)
+            # XXX: Should this be Point.Center and not the view alignment?
+            scalar_point = Point.Center
+            widget_point = scalar_point.product(size)
+        else:
+            scalar_point = widget_point.quotient(size)
         
         absolute_point = self.get_absolute_point(widget_point)
-        scalar_point = point.divide(widget_point, size)
         
         return absolute_point, scalar_point
     
@@ -342,10 +340,10 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
         x, y = self.get_pointer()
         w, h = self.get_widget_size()
         if 0 <= x < w and 0 <= y < h:
-            return x, y
+            return Point(x, y)
         else:
             # XXX: Should this really be the center?
-            return w / 2, h / 2
+            return Point(w / 2, h / 2)
     
     
     def get_absolute_point(self, widget_point):
@@ -357,19 +355,11 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
         magnification, rotation, hflip, vflip = self.get_properties(
             "magnification", "rotation", "horizontal-flip", "vertical-flip"
         )
-        
+        rad_rotation = rotation / 180 * math.pi * -1
         inv_zoom = 1 / magnification
-        x, y = point.add(self.offset, point.scale(widget_point, inv_zoom))
+        abs_point = self.offset + widget_point.scale(inv_zoom)
         
-        if rotation:
-            x, y = point.spin((x, y), rotation / 180 * math.pi * -1)
-        
-        if hflip:
-            x *= -1
-        if vflip:
-            y *= -1
-            
-        return (x, y)
+        return abs_point.spin(rad_rotation).flip(hflip, vflip)
     
     
     def get_view(self):
@@ -415,7 +405,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
     
     
     def get_frames_outline(self):
-        return self.outline.to_tuple()
+        return self.outline
     
     
     def get_widget_size(self):
@@ -424,7 +414,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
     
     def get_adjustment(self):
         hadjust, vadjust = self.get_properties("hadjustment", "vadjustment")
-        return (
+        return Point(
             hadjust.get_value() if hadjust else 0,
             vadjust.get_value() if vadjust else 0
         )
@@ -667,7 +657,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
                 y = lower + diff * self.alignment_y
         
         self._obsolete_offset = False
-        self.offset = x, y
+        self.offset = Point(x, y)
         GLib.idle_add(self.emit, "offset-change", priority=GLib.PRIORITY_HIGH)
     
     
@@ -772,19 +762,21 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
             alloc = view.get_allocation()
             self.size = self.width, self.height = alloc.width, alloc.height
             
-            ox, oy = view.offset
+            offset = view.offset
             if(zoom > 1 and round_full_pixel_offset):
                 # Round pixel offset, removing pixel fractions from it
-                ox, oy = round(ox), round(oy)
+                offset = round(offset)
                 
             if(zoom != 1 and round_sub_pixel_offset):
                 # Round offset to match pixels shown on display using
                 # inverse magnification
-                invzoom = 1 / zoom
-                ox, oy = ox // invzoom * invzoom, oy // invzoom * invzoom
                 
-            self.offset = ox, oy
-            self.translation = -ox, -oy
+                invzoom = 1 / zoom
+                invzoom_scale = Point(invzoom, invzoom)
+                offset = offset // invzoom_scale * invzoom_scale
+                
+            self.offset = offset
+            self.translation = -offset
             self.style = view.get_style_context()
         
         
@@ -911,7 +903,7 @@ class BaseFrame(GObject.Object):
     
     def set_rectangle_from_size(self, w, h):
         """Utility method for setting a symmetric .rectangle"""
-        self.rectangle = point.Rectangle(-w // 2, -h // 2, w, h)
+        self.rectangle = Rectangle(-w // 2, -h // 2, w, h)
         
     def render_surface(self, cr, drawstate, surface, offset):
         """Utility method for rendering a cairo surface"""

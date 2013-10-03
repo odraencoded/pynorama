@@ -19,7 +19,7 @@
 from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
 import math
-from pynorama import utility, widgets, point, extending, mousing
+from pynorama import utility, widgets, extending, mousing
 from pynorama.mousing import (
     MouseHandler, MouseEvents,
     MouseHandlerPivot, MouseHandler,
@@ -47,13 +47,12 @@ class HoverAndDragHandler(MouseHandler):
     relative_speed = GObject.Property(type=bool, default=True)
     
     def hover(self, view, to_point, from_point, data):
-        shift = point.subtract(to_point, from_point)
-        
-        scale = self.speed
-        if self.relative_speed:
+        shift = to_point - from_point
+        scale, relative_speed = self.get_properties("speed", "relative-speed")
+        if relative_speed:
             scale /= view.magnification
         
-        scaled_shift = point.scale(shift, scale)
+        scaled_shift = shift * (scale, scale)
         view.pan(scaled_shift)
     
     
@@ -150,14 +149,14 @@ class StretchHandler(MouseHandler):
             self.pivot = pivot
         else:
             self.pivot = MouseHandlerPivot(mode=mousing.PivotMode.Fixed)
-    
+        
         
     def start_dragging(self, view, start_point, data):
         widget_size = view.get_widget_size()
         widget_pivot = self.pivot.convert_point(view, start_point)
         
-        start_diff = point.subtract(start_point, widget_pivot)
-        distance = max(StretchHandler.MinDistance, point.length(start_diff))
+        start_diff = start_point - widget_pivot
+        distance = max(StretchHandler.MinDistance, start_diff.get_length())
         
         zoom = view.magnification
         zoom_ratio = zoom / distance
@@ -169,8 +168,8 @@ class StretchHandler(MouseHandler):
         zoom_ratio, widget_pivot, pin = data
         
         # Get vectors from the pivot
-        point_diff = point.subtract(to_point, widget_pivot)
-        distance = max(StretchHandler.MinDistance, point.length(point_diff))
+        point_diff = to_point - widget_pivot
+        distance = max(StretchHandler.MinDistance, point_diff.get_length())
         
         new_zoom = distance * zoom_ratio
         
@@ -209,26 +208,35 @@ class ScrollHandler(MouseHandler):
     
     
     def scroll(self, view, position, direction, data):
-        xd, yd = direction
+        delta = direction
         view_size = view.get_view()[2:]
-        if self.relative_scrolling:
-            scaled_view_size = point.scale(view_size, self.relative_speed)
-            xd, yd = point.multiply((xd, yd), scaled_view_size)
+        
+        (
+            relative_scrolling,
+            relative_speed, pixel_speed,
+            rotate, swap_axes,
+            inverse_horizontal, inverse_vertical
+        ) = self.get_properties(
+            "relative-scrolling",
+            "relative-speed", "pixel-speed",
+            "rotate", "swap-axes",
+            "inverse-horizontal", "inverse-vertical"
+        )
+        
+        if relative_scrolling:
+            delta = delta.scale(relative_speed) * view_size
             
         else:
-            xd, yd = point.scale((xd, yd), self.pixel_speed)
-            
-        if self.rotate:
-            xd, yd = point.spin((xd, yd), view.get_rotation_radians())
-            scroll_along_size = view.get_frames_outline()[2:]
-            
-        else:
-            scroll_along_size = view.get_boundary()[2:]
-            
-        if self.swap_axes:
-            xd, yd = yd, xd
-            
-        view.pan((xd, yd))
+            delta = delta.scale(pixel_speed)
+        
+        delta = delta.flip(inverse_horizontal, inverse_vertical)
+        if rotate:
+            delta = delta.spin(view.get_rotation_radians())
+        
+        if swap_axes:
+            delta = delta.swap()
+        
+        view.pan(delta)
 
 
 class ZoomHandler(MouseHandler):

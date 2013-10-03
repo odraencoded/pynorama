@@ -17,7 +17,9 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
 from gi.repository import Gdk, GLib, GObject
+from collections import namedtuple
 import cairo
+import math
 
 class IdlyMethod:
     """ Manages a simple idle callback signal in GLib """
@@ -72,6 +74,201 @@ class IdlyMethod:
             self._signal_id = None
         
         return self.is_queued
+
+
+#~ 2D aritmetic utilities ~#
+class Point(namedtuple("Point", ("x", "y"))):
+    def __add__(a, b):
+        return Point(a[0] + b[0], a[1] + b[1])
+    
+    
+    def __sub__(a, b):
+        return Point(a[0] - b[0], a[1] - b[1])
+    
+    
+    def __mul__(a, b):
+        return Point(a[0] * b[0], a[1] * b[1])
+    
+    
+    def __div__(a, b):
+        return Point(a[0] / b[0], a[1] / b[1])
+    
+    
+    def __floordiv__(a, b):
+        return Point(a[0] // b[0], a[1] // b[1])
+    
+    
+    def __neg__(self):
+        return Point(-self[0], -self[1])
+    
+    def __pos__(self):
+        return Point(+self[0], +self[1])
+    
+    def __abs__(self):
+        return Point(abs(self[0]), abs(self[1]))
+    
+    def __round__(self):
+        return Point(round(self[0]), round(self[1]))
+    
+    sum = __add__
+    difference = __sub__
+    product = __mul__
+    quotient = __div__
+    
+    
+    def scale(a, b):
+        return Point(a[0] * b, a[1] * b)
+    
+    
+    def flip(self, h, v):
+        return Point(self[0] * (-1 if h else 1), self[1] * (-1 if v else 1))
+    
+    def swap(self):
+        return Point(self[0], self[1])
+    
+    def spin(self, r):
+        x, y  = self
+        cos, sin = math.cos, math.sin
+        return Point(
+            x * cos(r) - y * sin(r),
+            x * sin(r) + y * cos(r)
+        )
+    
+    def is_tall(point):
+        return point[0] < point[1]
+    
+    
+    def is_wide(point):
+        return point[0] > point[1]
+    
+    
+    def get_length(self):
+        return math.sqrt(self[0] ** 2 + self[1] ** 2)
+
+
+Point.Zero = Point(0, 0)
+Point.Center = Point(.5, .5)
+Point.One = Point(1, 1)
+
+class Rectangle(namedtuple("Rectangle", ("left", "top", "width", "height"))):
+    @property
+    def right(self):
+        return self.left + self.width
+    
+    
+    @property
+    def bottom(self):
+        return self.top + self.height
+    
+    
+    @property
+    def area(self):
+        return self.width * self.height
+    
+    
+    def corners(self):
+        """ Returns a tuple of this rectangle four corners as points """
+        left, top = self.left, self.top,
+        right, bottom = left + self.width, top + self.height
+        return (
+            Point(left, top), Point(right, top),
+            Point(left, bottom), Point(right, bottom)
+        )
+    
+    
+    def overlaps_with(self, other):
+        """ Returns true if rectangle overlaps with other rectangle """
+        return not (
+            self.left >= other.left + other.width \
+            or self.top >= other.top + other.height \
+            or self.left + self.width < other.left \
+            or self.top + self.height < other.top
+        )
+    
+    
+    def __and__(self, other):
+        left = max(self.left, other.left)
+        top = max(self.top, other.top)
+        right = min(self.left + self.width, other.left + other.width)
+        bottom = min(self.top + self.height, other.top + other.height)
+        
+        width = max(right - left, 0)
+        height = max(bottom - top, 0)
+        
+        return Rectangle(left, top, width, height)
+    
+    
+    def unbox_point(self, relative_point):
+        scaled_point = relative_point * (self.width, self.height)
+        return scaled_point + (self.left, self.top)
+    
+    
+    def shift(self, displacement):
+        l, t = Point(self.left, self.top) + displacement
+        return Rectangle(l, t, self.width, self.height)
+    
+    
+    def resize(self, width, height):
+        return Rectangle(self.left, self.top, width, height)
+    
+    
+    def spin(self, angle):
+        """ Returns the smallest rectangle that can contain this rectangle
+        rotated by a certain value in radians """
+        if angle:
+            new_corners = [a_corner.spin(angle) for a_corner in self.corners()]
+            xs, ys = zip(*new_corners)
+            
+            left, right = min(xs), max(xs)
+            top, bottom = min(ys), max(ys)
+            
+            return Rectangle(left, top, right - left, bottom - top)
+            
+        else:
+            return self
+    
+    
+    def flip(self, horizontal, vertical):
+        """ Basic conditions """
+        left, top, width, height = self
+        if horizontal:
+            left = -(left + width)
+    
+        if vertical:
+            top = -(top + height)
+                
+        return Rectangle(left, top, width, height)
+    
+    
+    def scale(self, scale):
+        """ Basic mathematics """
+        return Rectangle(*(e * scale for e in self))
+    
+    
+    @staticmethod
+    def Union(rectangles):
+        """ Rectangles! UNITE!!! """
+        if rectangles:
+            top = min(r.top for r in rectangles)
+            left = min(r.left for r in rectangles)
+            bottom = max(r.top + r.height for r in rectangles)
+            right = max(r.left + r.width for r in rectangles)
+            
+            return Rectangle(left, top, right - left, bottom - top)
+        else:
+            return Rectangle.Zero
+    
+    
+    @staticmethod
+    def FromPoints(*points):
+        """ Returns the smallest rectangle that contains all points """
+        xs, ys = zip(*points)
+        left, right = min(xs), max(xs)
+        top, bottom = min(ys), max(ys)
+        
+        return Rectangle(left, top, right - left, bottom - top)
+
+Rectangle.Zero = Rectangle(0, 0, 0, 0)
 
 #~ GObject utilities ~#
 
