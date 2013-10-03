@@ -5,7 +5,7 @@
 import os, sys
 sys.path.insert(1, "@pynoramadir@")
 
-from pynorama import ImageViewer as just_an_image_viewer
+from pynorama.application import ImageViewer as just_an_image_viewer
 # Set package stuff
 just_an_image_viewer.Version = "v@PACKAGE_VERSION@"
 just_an_image_viewer.DataDirectory = "@pkgdatadir@"

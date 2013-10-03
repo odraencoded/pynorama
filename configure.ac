@@ -7,5 +7,7 @@ AC_CONFIG_FILES([\
 	pynorama.in \
 	Makefile \
 	code/Makefile \
+	code/pynorama/Makefile \
+	code/pynorama/components/Makefile \
 	resources/Makefile])
 AC_OUTPUT
