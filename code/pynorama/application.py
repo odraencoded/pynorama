@@ -26,6 +26,11 @@ from gettext import gettext as _
 from . import extending, notification, utility, mousing, preferences
 from . import viewing, organization, loading, opening
 from .viewing import ZoomMode
+
+from . import components
+from .components import *
+components.import_addons()
+
 DND_URI_LIST, DND_IMAGE = range(2)
 
 # Log stuff
@@ -82,8 +87,9 @@ class ImageViewer(Gtk.Application):
         
         # Setup components
         self.components = extending.ComponentMap()
-        for an_app_component in extending.LoadedComponentPackages:
-            an_app_component.add_on(self)
+        loaded_packages = extending.LoadedComponentPackages
+        for a_codename, a_component in loaded_packages.items():
+            a_component.add_on(self)
         
         preferences.LoadForApp(self)
         

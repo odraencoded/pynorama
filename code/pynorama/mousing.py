@@ -1598,13 +1598,8 @@ class GearHandlerFactory(extending.MouseHandlerFactory):
 
 
 class BuiltInMouseMechanismBrands(extending.ComponentPackage):
-    @staticmethod
-    def add_on(app):
+    def add_on(self, app):
         components = app.components
-        components.add_category(
-            "mouse-mechanism-brand", "Mouse Mechanism Brand"
-        )
-        
         brands = [
             HoverAndDragHandlerFactory(drag=True), # drag
             HoverAndDragHandlerFactory(drag=False), # hover
@@ -1617,4 +1612,4 @@ class BuiltInMouseMechanismBrands(extending.ComponentPackage):
         for a_brand in brands:
             components.add("mouse-mechanism-brand", a_brand)
             
-extending.LoadedComponentPackages.add(BuiltInMouseMechanismBrands)
+extending.LoadedComponentPackages["mousing"] = BuiltInMouseMechanismBrands()

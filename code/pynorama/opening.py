@@ -1168,9 +1168,6 @@ class BuiltInOpeners(extending.ComponentPackage):
     @staticmethod
     def add_on(app):
         components = app.components
-        components.add_category(FileOpener.CATEGORY, "File Opener")
-        components.add_category(SelectionOpener.CATEGORY, "Selection Opener")
-        
         pixbuf_opener = PixbufOpener()
         
         file_openers = (
@@ -1189,4 +1186,4 @@ class BuiltInOpeners(extending.ComponentPackage):
         for an_opener in selection_openers:
             components.add(SelectionOpener.CATEGORY, an_opener)
 
-extending.LoadedComponentPackages.add(BuiltInOpeners)
+extending.LoadedComponentPackages["opening"] = BuiltInOpeners

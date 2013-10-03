@@ -1645,10 +1645,8 @@ are too small to breach the pixel count limit''')
 
 
 class BuiltInLayouts(extending.ComponentPackage):
-    @staticmethod
-    def add_on(app):
+    def add_on(self, app):
         components = app.components
-        
         
         # Add settings
         app.settings.get_groups("layout", "image-strip", create=True)
@@ -1659,8 +1657,7 @@ class BuiltInLayouts(extending.ComponentPackage):
         ]
         
         LAYOUT_OPTION_CATEGORY = extending.LayoutOption.CATEGORY
-        components.add_category(LAYOUT_OPTION_CATEGORY, "Layout Option")
         for a_layout_option in layout_options:
             components.add(LAYOUT_OPTION_CATEGORY, a_layout_option)
 
-extending.LoadedComponentPackages.add(BuiltInLayouts)
+extending.LoadedComponentPackages["laying"] = BuiltInLayouts()
