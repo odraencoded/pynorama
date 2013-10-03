@@ -923,7 +923,8 @@ def LoadForWindow(window):
         layout_codename = settings_data["layout-codename"]
     except KeyError:
         logger.log("Preferred layout not found in preferences, using default")
-        layout_codename = organization.SingleImageLayoutOption.CODENAME
+        from .components.layouts import SingleImageLayoutOption
+        layout_codename = SingleImageLayoutOption.CODENAME
     
     try:
         layout_option = window.app.components["layout-option", layout_codename]
