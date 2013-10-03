@@ -18,7 +18,8 @@
 import math
 from gi.repository import Gdk, GdkPixbuf, GLib, GObject, Gtk
 import cairo
-from . import point, utility
+from . import point
+from .utility import SurfaceFromPixbuf, IdlyMethod
 
 class ZoomMode:
     FillView = 0
@@ -52,7 +53,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
         self._frame_signals = dict()
         
         # The outline is a the boundary of _frames before they are rotated
-        self.refresh_outline = utility.IdlyMethod(self.refresh_outline)
+        self.refresh_outline = IdlyMethod(self.refresh_outline)
         self.refresh_outline.priority = GLib.PRIORITY_HIGH
         
         self.outline = point.Rectangle(width=1, height=1)
@@ -1085,27 +1086,3 @@ class AnimatedPixbufSourceFrame(ImageFrame):
         self._current_frame_surface = None
         self._schedule_animation_advance()
         self.emit("changed")
-
-
-def SurfaceFromPixbuf(pixbuf):
-    """Returns a cairo surface from a Gdk.Pixbuf"""
-    if pixbuf.get_has_alpha():
-        surface_format = cairo.FORMAT_ARGB32
-    else:
-        surface_format = cairo.FORMAT_RGB24
-        
-    surface = cairo.ImageSurface(
-        surface_format, pixbuf.get_width(), pixbuf.get_height()
-    )
-    cr = cairo.Context(surface)
-    Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
-    cr.paint()
-    
-    return surface
-    
-def PixbufFromSurface(surface):
-    """Returns a Gdk.Pixbuf from a cairo surface"""
-    return Gdk.pixbuf_get_from_surface(
-        surface, 0, 0, surface.get_width(), surface.get_height()
-    )
-

@@ -1,4 +1,5 @@
-""" utility.py contains utility classes and methods """
+""" utility.py contains utility classes and methods that are used by multiple
+    modules in the image viewer and don't depend on any of them. """
 
 """ ...and this file is part of Pynorama.
     
@@ -15,7 +16,8 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
-from gi.repository import GLib, GObject, Gtk
+from gi.repository import Gdk, GLib, GObject, Gtk
+import cairo
 
 class IdlyMethod:
     """ Manages a simple idle callback signal in GLib """
@@ -131,6 +133,30 @@ def BindSame(source_property, dest_property,
         a_src.bind_property(source_property, a_dest, dest_property, flags)
         for a_src, a_dest in objects
     ]
+
+
+#-- GdkPixbuf to Cairo surface conversion down this line --#
+def SurfaceFromPixbuf(pixbuf):
+    """Returns a cairo surface from a Gdk.Pixbuf"""
+    if pixbuf.get_has_alpha():
+        surface_format = cairo.FORMAT_ARGB32
+    else:
+        surface_format = cairo.FORMAT_RGB24
+        
+    surface = cairo.ImageSurface(
+        surface_format, pixbuf.get_width(), pixbuf.get_height()
+    )
+    cr = cairo.Context(surface)
+    Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
+    cr.paint()
+    
+    return surface
+    
+def PixbufFromSurface(surface):
+    """Returns a Gdk.Pixbuf from a cairo surface"""
+    return Gdk.pixbuf_get_from_surface(
+        surface, 0, 0, surface.get_width(), surface.get_height()
+    )
 
 #-- widget Creation macros down this line --#
 

@@ -27,7 +27,7 @@
 import time
 from gi.repository import GdkPixbuf, Gio, GObject, GLib
 from gettext import gettext as _
-from pynorama import viewing, loading
+from pynorama import utility, loading, viewing
 from pynorama.loading import Status, Location
 
 
@@ -38,7 +38,7 @@ class PixbufDataImageSource(loading.ImageSource):
         
     def __init__(self, pixbuf, name="Image Data"):
         loading.ImageSource.__init__(self)
-        self.surface = viewing.SurfaceFromPixbuf(pixbuf)
+        self.surface = utility.SurfaceFromPixbuf(pixbuf)
         
         self.fullname = self.name = name
         
@@ -69,7 +69,7 @@ class PixbufDataImageSource(loading.ImageSource):
     
     
     def copy_to_clipboard(self, clipboard):
-        pixbuf = viewing.PixbufFromSurface(self.surface)
+        pixbuf = utility.PixbufFromSurface(self.surface)
         clipboard.set_image(pixbuf)
 
 
@@ -99,7 +99,7 @@ class PixbufFileImageSource(loading.GFileImageSource):
         try:
             async_finish = GdkPixbuf.Pixbuf.new_from_stream_finish
             pixbuf = async_finish(result)
-            self.surface = viewing.SurfaceFromPixbuf(pixbuf)
+            self.surface = utility.SurfaceFromPixbuf(pixbuf)
 
         except GLib.GError as gerror:
             # If cancellable is None, that means loading was cancelled
@@ -116,7 +116,8 @@ class PixbufFileImageSource(loading.GFileImageSource):
         finally:
             self.cancellable = None
             self.emit("finished-loading", self.error)
-            
+    
+    
     def unload(self):
         if self.cancellable:
             self.cancellable.cancel()
@@ -125,7 +126,8 @@ class PixbufFileImageSource(loading.GFileImageSource):
         self.surface = None
         self.location &= ~Location.Memory
         self.status = Status.Good
-        
+    
+    
     def load_metadata(self):
         if self.metadata is None:
             self.metadata = loading.ImageMeta()
@@ -170,12 +172,14 @@ class PixbufFileImageSource(loading.GFileImageSource):
                 self.metadata.height = 0
             
         # TODO: Add support for non-native files
-        
+    
+    
     def create_frame(self):
         return viewing.SurfaceSourceImageFrame(self)
     
+    
     def copy_to_clipboard(self, clipboard):
-        pixbuf = viewing.PixbufFromSurface(self.surface)
+        pixbuf = utility.PixbufFromSurface(self.surface)
         clipboard.set_image(pixbuf)
     
     
@@ -186,7 +190,8 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
         self.pixbuf_animation = None
         self.status = Status.Good
         self.cancellable = None
-        
+    
+    
     def load(self):
         if self.is_loading:
             raise Exception
@@ -200,7 +205,8 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
         self.animation = load_async(
             stream, self.cancellable, self._loaded, None
         )
-        
+    
+    
     def _loaded(self, me, result, *data):
         self.error = None
         try:
@@ -221,6 +227,7 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
             self.cancellable = None
             self.emit("finished-loading", self.error)
     
+    
     def unload(self):
         if self.cancellable:
             self.cancellable.cancel()
@@ -229,7 +236,8 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
         self.pixbuf_animation = None
         self.location &= ~Location.Memory
         self.status = Status.Good
-        
+    
+    
     def load_metadata(self):
         if self.metadata is None:
             self.metadata = loading.ImageMeta()
@@ -272,10 +280,12 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
                 self.metadata.height = 0
             
         # TODO: Add support for non-native files
-        
+    
+    
     def create_frame(self):
         return viewing.AnimatedPixbufSourceFrame(self)
-        
+
+    
     def copy_to_clipboard(self, clipboard):
         pixbuf = self.pixbuf_animation.get_iter(None).get_pixbuf()
         clipboard.set_image(pixbuf)
