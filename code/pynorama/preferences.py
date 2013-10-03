@@ -16,11 +16,16 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
-from gi.repository import Gdk, GObject, Gtk
-from gettext import gettext as _
 import os
-import organization, notification, mousing, utility
+from os.path import join as join_path
+import json
+import math
+from gi.repository import Gdk, GObject, Gtk
 import cairo
+from gettext import gettext as _
+from . import utility, notification, extending, organization
+from .mousing import MouseAdapter
+from .extending import PreferencesTab
 
 logger = notification.Logger("preferences")
 
@@ -98,10 +103,6 @@ class Dialog(Gtk.Dialog):
 
 
 #~ Built in preferences tabs implementation ~#
-
-import extending
-from extending import PreferencesTab
-
 class ViewPreferencesTabProxy(Gtk.Box):
     def __init__(self, dialog, label):
         Gtk.Box.__init__(self)
@@ -1001,7 +1002,7 @@ the chosen mouse button")
     
     def _mouse_button_presssed(self, widget, data):
         self.handler_data.button = data.button
-        self.handler_data.keys = data.state & mousing.MouseAdapter.ModifierKeys
+        self.handler_data.keys = data.state & MouseAdapter.ModifierKeys
     
     def _refresh_mouse_button(self, *data):
         button = self.handler_data.button
@@ -1030,10 +1031,6 @@ def GetMouseHandlerLabel(handler, default=""):
     
     else:
         return default
-
-
-import json
-from os.path import join as join_path
 
 
 class SettingsGroup(GObject.Object):
@@ -1406,8 +1403,6 @@ def GetMouseMechanismsSettings(meta_mouse_handler):
             a_brand_mechanisms.append(a_mechanism_obj)
     return mechanism_objs
 
-from gi.repository import Gdk
-import math
 
 class PointScale(Gtk.DrawingArea):
     """ A widget like a Gtk.HScale and Gtk.VScale together. """

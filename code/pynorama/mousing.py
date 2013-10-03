@@ -18,7 +18,7 @@
 from gi.repository import Gtk, Gdk, GLib, GObject
 from gettext import gettext as _
 import math, time
-import point
+from . import utility, point, extending
 
 class MouseAdapter(GObject.GObject):
     ''' Adapts a widget mouse events '''
@@ -1099,12 +1099,9 @@ class GearHandler(MouseHandler):
         pin = view.get_pin(anchor_point)
         view.rotate(self.effect * delta)
         view.adjust_to_pin(pin)
-        
+
+
 #-- Factories down this line --#
-
-import extending, utility
-from gettext import gettext as _
-
 def GetPivotSettings(pivot):
     result = { "mode": pivot.mode }
     if pivot.mode == PivotMode.Fixed:
@@ -1189,8 +1186,7 @@ class HoverAndDragHandlerFactory(extending.MouseHandlerFactory):
 
 
 # TODO: Fix MapHandler for multi-image layouts and create its factory
-
-from preferences import PointScale
+from .preferences import PointScale
 class PivotedHandlerSettingsWidget:
     def __init__(self):
         self.pivot_widgets = dict()

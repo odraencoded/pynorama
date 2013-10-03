@@ -17,9 +17,11 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
     
-from gi.repository import GLib, GObject
+from gi.repository import GLib, GObject, Gtk
 from collections import MutableSequence
-import utility
+from . import utility, point, extending
+from gettext import gettext as _
+
 
 class Album(GObject.Object):
     ''' It organizes images '''
@@ -180,7 +182,6 @@ class SortingKeys:
         ByImageSize, ByImageWidth, ByImageHeight
     ]
 
-import point
 
 class AlbumViewLayout(GObject.Object):
     ''' Used to tell layouts the album used for a view
@@ -1224,10 +1225,6 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 
 
 #~~~ Making the built-in layouts avaiable ~~~#
-import extending
-from gi.repository import Gtk
-from gettext import gettext as _
-
 class SingleImageLayoutOption(extending.LayoutOption):
     CODENAME = "single-image"
     def __init__(self):

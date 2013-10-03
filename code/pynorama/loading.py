@@ -20,7 +20,7 @@ import time
 
 from gi.repository import GdkPixbuf, Gio, GObject, GLib
 from gettext import gettext as _
-
+from . import viewing
 
 class DataError(Exception):
     ''' For exceptions due to the current state of the data loaded '''
@@ -199,9 +199,7 @@ class ImageSource(Loadable):
         
         """
         return False
-        
 
-import viewing
 
 class GFileImageSource(ImageSource):
     def __init__(self, gfile, opening_context=None):

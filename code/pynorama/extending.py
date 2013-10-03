@@ -15,8 +15,9 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
-import utility
+from . import utility
 from collections import OrderedDict
+from gi.repository import Gdk, GObject, Gtk
 
 LoadedComponentPackages = set()
 
@@ -114,7 +115,6 @@ class ComponentMap:
             self._components[component.codename] = component
 
 
-from gi.repository import Gdk, GObject, Gtk
 class LayoutOption(Component, GObject.Object):
     """ Represents a layout choice """
     

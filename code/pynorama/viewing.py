@@ -17,8 +17,8 @@
 
 import math
 from gi.repository import Gdk, GdkPixbuf, GLib, GObject, Gtk
-import point, utility
 import cairo
+from . import point, utility
 
 class ZoomMode:
     FillView = 0

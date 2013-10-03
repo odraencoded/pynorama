@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding=utf-8
  
-''' pynorama.py is the main module of an image viewer application. '''
+''' application.py is the main module of an image viewer application. '''
 
 ''' ...and this file is part of Pynorama.
     
@@ -22,9 +22,10 @@ import gc, math, random, os, sys
 from gi.repository import Gtk, Gdk, Gio, GObject
 import cairo
 from gettext import gettext as _
-import utility, notification, extending, mousing, preferences
-import opening, loading, organization, viewing
-from viewing import ZoomMode
+
+from . import extending, notification, utility, mousing, preferences
+from . import viewing, organization, loading, opening
+from .viewing import ZoomMode
 DND_URI_LIST, DND_IMAGE = range(2)
 
 # Log stuff

@@ -27,11 +27,11 @@
 
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk
 from gettext import gettext as _
-import notification, extending, utility, loading
-from extending import FileOpener, SelectionOpener
 from collections import deque
 from urllib.parse import urlparse
 from os import path as os_path
+from . import utility, notification, extending, loading
+from .extending import FileOpener, SelectionOpener
 
 logger = notification.Logger("opening")
 
