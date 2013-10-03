@@ -5,7 +5,8 @@ logger = notification.Logger("app")
 
 __all__ = [
     "background",
-    "mice"
+    "mice",
+    "layouts"
 ]
 
 def import_addons():
