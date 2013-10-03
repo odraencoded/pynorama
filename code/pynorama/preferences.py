@@ -23,7 +23,7 @@ import math
 from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
 from . import utility, notification, extending, organization
-from .mousing import MouseAdapter
+from .mousing import MOUSE_MODIFIER_KEYS
 from .extending import PreferencesTab
 
 logger = notification.Logger("preferences")
@@ -682,6 +682,7 @@ the chosen mouse button")
         
         self._refresh_title()
     
+    
     def _refresh_title(self, *data):
         label = GetMouseHandlerLabel(self.handler, default=None)
         
@@ -693,9 +694,11 @@ the chosen mouse button")
             
         self.set_title(title)
     
+    
     def _mouse_button_presssed(self, widget, data):
         self.handler_data.button = data.button
-        self.handler_data.keys = data.state & MouseAdapter.ModifierKeys
+        self.handler_data.keys = data.state & MOUSE_MODIFIER_KEYS
+    
     
     def _refresh_mouse_button(self, *data):
         button = self.handler_data.button

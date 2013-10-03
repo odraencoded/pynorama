@@ -1,6 +1,6 @@
-''' navigation.py defines viewing.py related navigation. '''
+""" mousing.py defines classes and interfaces for handling mouse events. """
 
-''' ...And this file is part of Pynorama.
+""" ...And this file is part of Pynorama.
     
     Pynorama is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -13,38 +13,39 @@
     GNU General Public License for more details.
     
     You should have received a copy of the GNU General Public License
-    along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
+    along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
-from gi.repository import Gtk, Gdk, GLib, GObject
+from gi.repository import Gtk, GLib, GObject
+from gi.repository.Gdk import EventMask, ModifierType
 from gettext import gettext as _
-import math, time
-from . import utility, point, extending
+from . import utility
+
+MOUSE_EVENT_MASK = (
+    EventMask.KEY_PRESS_MASK |
+    EventMask.KEY_RELEASE_MASK |
+    EventMask.BUTTON_PRESS_MASK |
+    EventMask.BUTTON_RELEASE_MASK |
+    EventMask.SCROLL_MASK |
+    EventMask.SMOOTH_SCROLL_MASK |
+    EventMask.ENTER_NOTIFY_MASK |
+    EventMask.POINTER_MOTION_MASK |
+    EventMask.POINTER_MOTION_HINT_MASK
+)
+
+MOUSE_MODIFIER_KEYS = (
+    ModifierType.SHIFT_MASK |
+    ModifierType.CONTROL_MASK |
+    ModifierType.MOD1_MASK
+)
+
+# According to the docs, Gtk uses +10 for resizing and +20 for redrawing
+# +15 should dispatch events after resizing and before redrawing
+# TODO: Figure out whether that is a good idea
+PRIORITY_MOUSE_IDLE = GLib.PRIORITY_HIGH_IDLE + 15
+
 
 class MouseAdapter(GObject.GObject):
-    ''' Adapts a widget mouse events '''
-    EventMask = (
-        Gdk.EventMask.KEY_PRESS_MASK |
-        Gdk.EventMask.KEY_RELEASE_MASK |
-        Gdk.EventMask.BUTTON_PRESS_MASK |
-        Gdk.EventMask.BUTTON_RELEASE_MASK |
-        Gdk.EventMask.SCROLL_MASK |
-        Gdk.EventMask.SMOOTH_SCROLL_MASK |
-        Gdk.EventMask.ENTER_NOTIFY_MASK |
-        Gdk.EventMask.POINTER_MOTION_MASK |
-        Gdk.EventMask.POINTER_MOTION_HINT_MASK
-    )
-    
-    ModifierKeys = (
-        Gdk.ModifierType.SHIFT_MASK |
-        Gdk.ModifierType.CONTROL_MASK |
-        Gdk.ModifierType.MOD1_MASK
-    )
-    
-    # According to the docs, Gtk uses +10 for resizing and +20 for redrawing
-    # +15 should dispatch events after resizing and before redrawing
-    # TODO: Figure out whether that is a good idea
-    IdlePriority = GLib.PRIORITY_HIGH_IDLE + 15
-    
+    """ Emits signals based on a widget mouse events """
     __gsignals__ = {
         "motion" : (GObject.SIGNAL_RUN_FIRST, None, [object, object]),
         "drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, object, int]),
@@ -58,47 +59,56 @@ class MouseAdapter(GObject.GObject):
     def __init__(self, widget=None):
         GObject.GObject.__init__(self)
         
-        self.__from_point = None
-        self.__pressure = dict()
-        self.__widget = None
+        self._current_point = self._from_point = None
+        self._pressure = dict()
+        self._widget = None
         
-        self.__delayed_motion_id = None
-        self.__widget_handler_ids = None
-        self.__ice_cubes = 0
-        self.__motion_from_outside = 2
-        self.__pressure_from_outside = True
+        self._delayed_motion = utility.IdlyMethod(self._delayed_motion_cb)
+        self._delayed_motion.priority = PRIORITY_MOUSE_IDLE
+        self._widget_handler_ids = None
+        self._ice_cubes = 0
+        # If the mouse pointer goes outside the widget this is set to 2.
+        # While it is greater than zero the "motion" signal won't be emitted.
+        # Basically, this means it takes two pointer coordinates samples
+        # inside the widget for a motion from-point-to-point to be emitted.
+        self._motion_from_outside = 2
+        self._pressure_from_outside = True
         
         if widget:
             self.set_widget(widget)
     
+    
     def get_widget(self):
-        return self.__widget
-        
+        """ Returns the widget whose signals are being adapted """
+        return self._widget
+    
     def set_widget(self, widget):
-        if self.__widget != widget:
-            if self.__widget:
-                self.__pressure.clear()
+        """ Sets the widget whose signals should be adapted """
+        if self._widget != widget:
+            if self._widget:
+                # Reset adapter state
+                self._pressure.clear()
                 
-                for a_handler_id in self.__widget_handler_ids:
-                    self.__widget.disconnect(a_handler_id)
-                self.__widget_handler_ids = None
-                
-                if self.__delayed_motion_id:
-                    GLib.source_remove(self.__delayed_motion_id)
-                    self.__delayed_motion_id = None
-                
-            self.__widget = widget
-            if widget:            
-                widget.add_events(MouseAdapter.EventMask)
+                for a_handler_id in self._widget_handler_ids:
+                    self._widget.disconnect(a_handler_id)
+                self._widget_handler_ids = None
+                self._delayed_motion.cancel_queue()
+            
+            self._widget = widget
+            self._delayed_motion.args = [widget]
+            
+            if widget:
+                # Connect things
+                widget.add_events(MOUSE_EVENT_MASK)
                 connect = widget.connect
-                self.__widget_handler_ids = [
-                    connect("key-press-event", self._key_press),
-                    connect("key-release-event", self._key_release),
-                    connect("button-press-event", self._button_press),
-                    connect("button-release-event", self._button_release),
-                    connect("scroll-event", self._mouse_scroll),
-                    connect("enter-notify-event", self._mouse_enter),
-                    connect("motion-notify-event", self._mouse_motion),
+                self._widget_handler_ids = [
+                    connect("key-press-event", self._key_press_cb),
+                    connect("key-release-event", self._key_release_cb),
+                    connect("button-press-event", self._button_press_cb),
+                    connect("button-release-event", self._button_release_cb),
+                    connect("scroll-event", self._mouse_scroll_cb),
+                    connect("enter-notify-event", self._mouse_enter_cb),
+                    connect("motion-notify-event", self._mouse_motion_cb),
                 ]
                 
     widget = GObject.Property(get_widget, set_widget, type=Gtk.Widget)
@@ -107,47 +117,59 @@ class MouseAdapter(GObject.GObject):
     # icy-wut-i-did-thaw
     @property
     def is_frozen(self):
-        return self.__ice_cubes > 0
+        """ Whether signals are being emitted """
+        return self._ice_cubes > 0
         
     def freeze(self):
-        self.__ice_cubes += 1
+        """ Stops signal emission until it's been thawed """
+        self._ice_cubes += 1
         
     def thaw(self):
-        self.__ice_cubes -= 1
+        """ Continue emitting signals """
+        self._ice_cubes -= 1
+    
     
     def is_pressed(self, button=None):
-        return bool(self.__pressure if button is None \
-                    else self.__pressure.get(button, 0))
+        """ If button is None, returns whether any button is pressed.
+        Otherwise, returns whether that specific button is pressed.
+        
+        The button should be an integer from Gdk enumerations
+        """
+        return bool(
+            self._pressure if button is None
+            else self._pressure.get(button, 0)
+        )
     
     
     # begins here the somewhat private functions
     def _update_keys(self, mask):
-        modifier_keys = mask & MouseAdapter.ModifierKeys
+        """ Sets .keys to a bitmask of modifier keys """
+        modifier_keys = mask & MOUSE_MODIFIER_KEYS
         if modifier_keys != self.keys:
             self.keys = modifier_keys
-        
-        
-    def _key_press(self, widget, data, *other_data):
-        self._update_keys(data.state)
-        
-        
-    def _key_release(self, widget, data, *other_data):
-        self._update_keys(data.state)
-        
     
-    def _button_press(self, widget, data):
-        self.__pressure.setdefault(data.button, 1)
+    
+    def _key_press_cb(self, widget, data, *other_data):
+        self._update_keys(data.state)
+    
+    
+    def _key_release_cb(self, widget, data, *other_data):
+        self._update_keys(data.state)
+    
+    
+    def _button_press_cb(self, widget, data):
+        self._pressure.setdefault(data.button, 1)
         self._update_keys(data.state)
         if not self.is_frozen:
             point = data.x, data.y
             self.emit("pression", point, data.button)
-        
-        
-    def _button_release(self, widget, data):
+    
+    
+    def _button_release_cb(self, widget, data):
         self._update_keys(data.state)
-        if data.button in self.__pressure:
+        if data.button in self._pressure:
             if not self.is_frozen:
-                button_pressure = self.__pressure.get(data.button, 0)
+                button_pressure = self._pressure.get(data.button, 0)
                 if button_pressure:
                     point = data.x, data.y
                     if button_pressure == 2:
@@ -155,10 +177,10 @@ class MouseAdapter(GObject.GObject):
                     
                     self.emit("click", point, data.button)
                 
-            del self.__pressure[data.button]
-            
-            
-    def _mouse_scroll(self, widget, data):
+            del self._pressure[data.button]
+    
+    
+    def _mouse_scroll_cb(self, widget, data):
         self._update_keys(data.state)
         if not self.is_frozen:
             point = data.x, data.y
@@ -178,65 +200,78 @@ class MouseAdapter(GObject.GObject):
                 self.emit("scroll", point, (xd, yd))
     
     
-    def _mouse_enter(self, *data):
-        self.__motion_from_outside = 2
-        if not self.__pressure:
-            self.__pressure_from_outside = True
-            
-                        
-    def _mouse_motion(self, widget, data):
+    def _mouse_enter_cb(self, *data):
+        self._motion_from_outside = 2
+        if not self._pressure:
+            self._pressure_from_outside = True
+    
+    
+    def _mouse_motion_cb(self, widget, data):
         self._update_keys(data.state)
         # Motion events are handled idly
-        self.__current_point = data.x, data.y
-        if not self.__delayed_motion_id:
-            if not self.__from_point:
-                self.__from_point = self.__current_point
+        self._current_point = data.x, data.y
+        
+        if not self._delayed_motion.is_queued:
+            if not self._from_point:
+                self._from_point = self._current_point
             
-            if self.__motion_from_outside:
-                self.__motion_from_outside -= 1
-                if not self.__motion_from_outside:
-                    self.__pressure_from_outside = False
+            if self._motion_from_outside:
+                self._motion_from_outside -= 1
+                if not self._motion_from_outside:
+                    self._pressure_from_outside = False
             
-            self.__delayed_motion_id = GLib.idle_add(
-                self.__delayed_motion, widget,
-                priority=MouseAdapter.IdlePriority
-            )
+            self._delayed_motion.queue()
     
     
-    def __delayed_motion(self, widget):
-        self.__delayed_motion_id = None
+    def _delayed_motion_cb(self, widget):
+        """ Emits motion signals idly
+        
+        This is used because handling every Gtk motion-notify-event is waaaaaaa
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaay too slow.
+        
+        """
         
         if not self.is_frozen:
             # You got to love tuple comparation
-            if self.__from_point != self.__current_point:
-                if not self.__pressure_from_outside:
-                    for button, pressure in self.__pressure.items():
+            if self._from_point != self._current_point:
+                if not self._pressure_from_outside:
+                    for button, pressure in self._pressure.items():
                         if pressure == 1:
-                            self.__pressure[button] = 2
+                            self._pressure[button] = 2
                             self.emit(
-                                "start-dragging", self.__current_point, button
+                                "start-dragging",
+                                self._current_point,
+                                button
                             )
                         
                         if pressure:
-                            self.emit("pression", self.__current_point, button)
+                            self.emit(
+                                "pression",
+                                self._current_point,
+                                button
+                            )
                         
-                if not self.__motion_from_outside:
+                if not self._motion_from_outside:
                     self.emit(
-                        "motion", self.__current_point, self.__from_point
+                        "motion",
+                        self._current_point,
+                        self._from_point
                     )
                     
-                for button, pressure in self.__pressure.items():
+                for button, pressure in self._pressure.items():
                     if pressure == 2:
                         self.emit(
-                            "drag", self.__current_point,
-                            self.__from_point, button
+                            "drag",
+                            self._current_point,
+                            self._from_point,
+                            button
                         )
-                
-        self.__from_point = self.__current_point
-        return False
-    
+        
+        self._from_point = self._current_point
+
+
 class MetaMouseHandler(GObject.Object):
-    ''' Handles mouse events from mouse adapters for mouse handlers '''
+    """ Handles mouse events from mouse adapters for mouse handlers """
     __gsignals__ = {
         "handler-added" : (GObject.SIGNAL_ACTION, None, [object]),
         "handler-removed" : (GObject.SIGNAL_ACTION, None, [object]),
@@ -265,7 +300,7 @@ class MetaMouseHandler(GObject.Object):
     
     
     def add(self, handler, button=0, keys=0):
-        ''' Adds a handler to be handled '''
+        """ Adds a handler to be handled """
         if not handler in self._handlers_data:
             handler_data = MouseHandlerBinding()
             handler_data.connect(
@@ -291,7 +326,7 @@ class MetaMouseHandler(GObject.Object):
     
     
     def remove(self, handler):
-        ''' Removes a handler to be handled '''
+        """ Removes a handler to be handled """
         handler_data = self._handlers_data.pop(handler, None)
         if handler_data:
             for an_adapter_data in self._adapters_data.values():
@@ -308,7 +343,7 @@ class MetaMouseHandler(GObject.Object):
     
     
     def get_handlers(self):
-        ''' Returns an iterator for the currently added handlers '''
+        """ Returns an iterator for the currently added handlers """
         yield from self._handlers_data.keys()
     
     
@@ -341,8 +376,8 @@ class MetaMouseHandler(GObject.Object):
     
     
     def _remove_handler_from_sets_dict(self, dictionary, handler):
-        ''' Utility for removing a handler from all sets in a dictionary and
-            then removing the empty sets '''
+        """ Utility for removing a handler from all sets in a dictionary and
+            then removing the empty sets """
         # Remove handler from any ditionary sets
         empty_set_keys = []
         for a_key, a_handler_set in dictionary.items():
@@ -370,7 +405,7 @@ class MetaMouseHandler(GObject.Object):
     
     
     def attach(self, adapter):
-        ''' Attach itself to a mouse adapter '''
+        """ Attach itself to a mouse adapter """
         if not adapter in self._adapters_data:
             signals = [
                 adapter.connect("motion", self._motion),
@@ -386,7 +421,7 @@ class MetaMouseHandler(GObject.Object):
     
     
     def detach(self, adapter):
-        ''' Detach itself from a mouse a adapter '''
+        """ Detach itself from a mouse a adapter """
         adapter_data = self._adapters_data.pop(adapter, None)
         if adapter_data:
             for a_signal in adapter_data.signals:
@@ -546,7 +581,7 @@ class MetaMouseHandler(GObject.Object):
 
 
 class MouseAdapterData:
-    ''' MetaMouseHandler data associated to an adapter '''
+    """ MetaMouseHandler data associated to an adapter """
     
     def __init__(self, signals):
         self.signals = signals
@@ -560,7 +595,7 @@ class MouseAdapterData:
 
 
 class MouseHandlerBinding(GObject.Object):
-    ''' Represents a condition required in order to activate a MouseHandler '''
+    """ Represents a condition required in order to activate a MouseHandler """
     __gsignals__ = {
         "removed" : (GObject.SIGNAL_ACTION, None, []),
     }
@@ -576,19 +611,19 @@ class MouseHandlerBinding(GObject.Object):
     def get_keys(self):
         result = 0
         if self.control_key:
-            result |= Gdk.ModifierType.CONTROL_MASK
+            result |= ModifierType.CONTROL_MASK
         if self.shift_key:
-            result |= Gdk.ModifierType.SHIFT_MASK
+            result |= ModifierType.SHIFT_MASK
         if self.alt_key:
-            result |= Gdk.ModifierType.MOD1_MASK
+            result |= ModifierType.MOD1_MASK
         return result
     
     
     def set_keys(self, value):
         self.freeze_notify()
-        control_key = bool(value & Gdk.ModifierType.CONTROL_MASK)
-        shift_key = bool(value & Gdk.ModifierType.SHIFT_MASK)
-        alt_key = bool(value & Gdk.ModifierType.MOD1_MASK)
+        control_key = bool(value & ModifierType.CONTROL_MASK)
+        shift_key = bool(value & ModifierType.SHIFT_MASK)
+        alt_key = bool(value & ModifierType.MOD1_MASK)
         
         if control_key != self.control_key:
             self.control_key = control_key
@@ -645,37 +680,37 @@ class MouseHandler(GObject.Object):
     
     @property
     def needs_button(self):
-        ''' Returns whether this mouse handler needs a button to be pressed '''
+        """ Returns whether this mouse handler needs a button to be pressed """
         return bool(self.events & MouseEvents.Pressing)
     
     
     def scroll(self, widget, point, direction, data):
-        ''' Handles a scroll wheel event '''
+        """ Handles a scroll wheel event """
         pass
     
     
     def press(self, widget, point, data):
-        ''' Handles the mouse being pressed somewhere '''
+        """ Handles the mouse being pressed somewhere """
         pass
     
     
     def hover(self, widget, to_point, from_point, data):
-        ''' Handles the mouse just hovering around '''
+        """ Handles the mouse just hovering around """
         pass
     
     
     def start_dragging(self, widget, point, data):
-        ''' Setup dragging variables '''
+        """ Setup dragging variables """
         pass
     
     
     def drag(self, widget, to_point, from_point, data):
-        ''' Drag to point A from B '''
+        """ Drag to point A from B """
         pass
     
     
     def stop_dragging(self, widget, point, data):
-        ''' Finish dragging '''
+        """ Finish dragging """
         pass
     
     
@@ -686,7 +721,7 @@ class PivotMode:
     
     
 class MouseHandlerPivot(GObject.Object):
-    ''' An utility class for mouse mechanisms which need a pivot point '''
+    """ An utility class for mouse mechanisms which need a pivot point """
     def __init__(self, settings=None, **kwargs):
         GObject.Object.__init__(self, **kwargs)
         notify_fixed_point = lambda s, w: s.notify("fixed-point")
@@ -715,8 +750,8 @@ class MouseHandlerPivot(GObject.Object):
     
     
     def convert_point(self, view, pointer):
-        ''' Returns a pivot point based on a view widget and
-            the mouse pointer coordinates '''
+        """ Returns a pivot point based on a view widget and
+            the mouse pointer coordinates """
         if self.mode == PivotMode.Mouse:
             result = pointer
         else:
