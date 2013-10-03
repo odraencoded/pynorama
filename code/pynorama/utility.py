@@ -144,6 +144,9 @@ class Point(namedtuple("Point", ("x", "y"))):
     
     def get_length(self):
         return math.sqrt(self[0] ** 2 + self[1] ** 2)
+    
+    def get_square_length(self):
+        return self[0] ** 2 + self[1] ** 2
 
 
 Point.Zero = Point(0, 0)

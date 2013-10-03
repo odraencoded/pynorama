@@ -15,7 +15,7 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
-import math
+from math import radians
 from gi.repository import Gdk, GdkPixbuf, GLib, GObject, Gtk
 import cairo
 from .utility import Point, Rectangle, SurfaceFromPixbuf, IdlyMethod
@@ -230,7 +230,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
         )
         magw = self.get_allocated_width() / magnification
         magh = self.get_allocated_height() / magnification
-        rad_rotation = rotation / 180 * math.pi
+        rad_rotation = radians(rotation)
         inv_zoom = 1 / magnification
         
         transformed_point = abs_point.flip(*self.flipping).spin(rad_rotation)
@@ -249,7 +249,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
         vw, vh = hadjust.get_page_size(), vadjust.get_page_size()
         relative_point = Point(rx, ry)
         rect = frame.rectangle.shift(frame.origin)
-        point = rect.unbox_point(relative_point).spin(rotation / 180 * math.pi)
+        point = rect.unbox_point(relative_point).spin(radians(rotation))
         
         self.adjust_to(*(point - relative_point * (vw, vh)))
 
@@ -355,11 +355,11 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
         magnification, rotation, hflip, vflip = self.get_properties(
             "magnification", "rotation", "horizontal-flip", "vertical-flip"
         )
-        rad_rotation = rotation / 180 * math.pi * -1
+        rad_rotation = radians(rotation)
         inv_zoom = 1 / magnification
         abs_point = self.offset + widget_point.scale(inv_zoom)
         
-        return abs_point.spin(rad_rotation).flip(hflip, vflip)
+        return abs_point.spin(rad_rotation * -1).flip(hflip, vflip)
     
     
     def get_view(self):
@@ -418,10 +418,6 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
             hadjust.get_value() if hadjust else 0,
             vadjust.get_value() if vadjust else 0
         )
-    
-    
-    def get_rotation_radians(self):
-        return self.rotation / 180 * math.pi
     
     
     def get_magnified_width(self):
@@ -572,12 +568,13 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
         
         """
         
-        # Name's Bounds, James Bounds
-        bounds = self.outline.flip(*self.flipping)
-        bounds = bounds.spin(self.rotation / 180 * math.pi)
-        hadjust, vadjust = self.get_properties(
-            "hadjustment", "vadjustment"
+        hadjust, vadjust, hflip, vflip, rotation = self.get_properties(
+            "hadjustment", "vadjustment", 
+            "horizontal-flip", "vertical-flip", "rotation"
         )
+        # Name's Bounds, James Bounds
+        bounds = self.outline.flip(hflip, vflip)
+        bounds = bounds.spin(radians(rotation))
         
         if hadjust:
             value, page_size = hadjust.get_properties("value", "page-size")
@@ -755,7 +752,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
             )
             
             self.magnification, self.rotation = zoom, rotation
-            self.rad_rotation = self.rotation / 180 * math.pi
+            self.rad_rotation = radians(rotation)
             self.flip = self.hflip, self.vflip
             self.is_flipped = self.hflip or self.vflip
             

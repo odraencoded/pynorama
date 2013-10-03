@@ -103,14 +103,13 @@ class SpinHandler(MouseHandler):
         pivot, pin = data
         
         # Get vectors from the pivot
-        (tx, ty), (fx, fy), (px, py) = to_point, from_point, pivot
-        tdx, tdy = tx - px, ty - py
-        fdx, fdy = fx - px, fy - py
+        to_delta = to_point - pivot
+        from_delta = from_point - pivot
         
         # Get rotational delta, multiply it by frequency
-        ta = math.atan2(tdy, tdx) / math.pi * 180
-        fa = math.atan2(fdy, fdx) / math.pi * 180
-        rotation_effect = (ta - fa) * self.frequency
+        to_angle = math.degrees(math.atan2(*to_delta))
+        from_angle = math.degrees(math.atan2(*from_delta))
+        rotation_effect = (from_angle - to_angle) * self.frequency
         
         # Modulate degrees
         rotation_effect %= 360 if rotation_effect >= 0 else -360
@@ -120,7 +119,7 @@ class SpinHandler(MouseHandler):
             rotation_effect += 360 
             
         # Thresholding stuff
-        square_distance = tdx ** 2 + tdy ** 2
+        square_distance = to_delta.get_square_length()
         if square_distance > SpinHandler.SpinThreshold ** 2:
             # Falling out stuff
             square_soft_radius = SpinHandler.SoftRadius ** 2
