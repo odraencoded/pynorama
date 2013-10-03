@@ -2043,8 +2043,3 @@ class ViewerWindow(Gtk.ApplicationWindow):
         <toolitem action="about" />
     </toolbar>
 </ui>'''
-    
-if __name__ == "__main__":
-    # Run the program
-    app = ImageViewer()
-    app.run(sys.argv)
