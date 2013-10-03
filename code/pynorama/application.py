@@ -24,7 +24,7 @@ import cairo
 from gettext import gettext as _
 
 from . import extending, notifying, utility, widgets, mousing, preferences
-from . import viewing, organization, loading, opening
+from . import viewing, organizing, loading, opening
 from .viewing import ZoomMode
 
 from . import components
@@ -447,7 +447,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self._focus_loaded_handler_id = None
         self._old_focused_image = None
         self.opening_context = None
-        self.album = organization.Album()
+        self.album = organizing.Album()
         self.album.connect("image-added", self._album_image_added_cb)
         self.album.connect("image-removed", self._album_image_removed_cb)
         self.album.connect("order-changed", self._album_order_changed_cb)
@@ -561,7 +561,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         # Setup layout stuff
         self.layout_dialog = None
-        self.avl = organization.AlbumViewLayout(
+        self.avl = organizing.AlbumViewLayout(
             album=self.album, view=self.view
         )
         
@@ -972,7 +972,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     def _changed_ordering_mode(self, *data):
         #TODO: Use GObject.bind_property_with_closure for this
-        new_comparer = organization.SortingKeys.Enum[self.ordering_mode]
+        new_comparer = organizing.SortingKeys.Enum[self.ordering_mode]
         if self.album.comparer != new_comparer:
             self.album.comparer = new_comparer
             
@@ -981,7 +981,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def _changed_album_comparer(self, album, *data):
-        sorting_keys_enum = organization.SortingKeys.Enum
+        sorting_keys_enum = organizing.SortingKeys.Enum
         ordering_mode = sorting_keys_enum.index(album.comparer)
         
         self.ordering_mode = ordering_mode
@@ -1893,7 +1893,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     #--- Properties down this line ---#
     
     view = GObject.Property(type=viewing.ImageView)
-    album = GObject.Property(type=organization.Album)
+    album = GObject.Property(type=organizing.Album)
     
     sort_automatically = GObject.Property(type=bool, default=True)
     ordering_mode = GObject.Property(type=int, default=0)

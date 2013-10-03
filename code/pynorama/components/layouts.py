@@ -18,7 +18,7 @@
 
 from gi.repository import GLib, GObject, Gtk
 from pynorama import utility, widgets, point, extending
-from pynorama.organization import AlbumLayout, LayoutDirection
+from pynorama.organizing import AlbumLayout, LayoutDirection
 from gettext import gettext as _
 
 class SingleImageLayout(AlbumLayout):

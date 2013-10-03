@@ -22,7 +22,7 @@ import json
 import math
 from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
-from . import utility, widgets, notifying, extending, organization
+from . import utility, widgets, notifying, extending, organizing
 from .mousing import MOUSE_MODIFIER_KEYS
 from .extending import PreferencesTab
 
@@ -972,7 +972,7 @@ def LoadForAlbum(album, app_settings=None, album_settings=None):
     )
     try:
         sort_mode = settings_data.get("sort-mode", 0)
-        album.comparer = organization.SortingKeys.Enum[sort_mode]
+        album.comparer = organizing.SortingKeys.Enum[sort_mode]
     except KeyError:
         logger.log_error("Could not load album comparer mode {mode}".format(
             mode=sort_mode
@@ -991,7 +991,7 @@ def SaveFromAlbum(album, app_settings=None, album_settings=None):
     settings_data["sort-auto"] = album.autosort
     settings_data["sort-reverse"] = album.reverse
     
-    sort_mode = organization.SortingKeys.Enum.index(album.comparer)
+    sort_mode = organizing.SortingKeys.Enum.index(album.comparer)
     settings_data["sort-mode"] = sort_mode
 
 
