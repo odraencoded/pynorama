@@ -15,12 +15,12 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
-from pynorama import utility, widgets, extending, notification
+from pynorama import utility, widgets, extending, notifying
 from pynorama.extending import PreferencesTab, LoadedComponentPackages
 from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
 import cairo
-logger = notification.Logger("preferences")
+logger = notifying.Logger("preferences")
 
 class BackgroundPreferencesTabProxy(Gtk.Box):
     def __init__(self, tab, dialog, label):

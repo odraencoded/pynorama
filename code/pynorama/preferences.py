@@ -22,11 +22,11 @@ import json
 import math
 from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
-from . import utility, widgets, notification, extending, organization
+from . import utility, widgets, notifying, extending, organization
 from .mousing import MOUSE_MODIFIER_KEYS
 from .extending import PreferencesTab
 
-logger = notification.Logger("preferences")
+logger = notifying.Logger("preferences")
 
 class Dialog(Gtk.Dialog):
     def __init__(self, app):
@@ -860,7 +860,7 @@ def LoadForApp(app):
         json_path = join_path(app.preferences_directory, "preferences.json")
         if not os.path.exists(json_path):
             json_path = join_path(app.data_directory, "preferences.json")
-            notification.log("Preferences file doesn't exist. Using defaults")
+            logger.log("Preferences file doesn't exist. Using defaults")
         
         try:
             with open(json_path) as prefs_file:
@@ -1033,7 +1033,7 @@ def LoadMouseMechanismsSettings(app, meta_mouse_handler, mechanisms_settings):
         # Try to get the factory with a "a_brand" codename
         a_factory = mouse_factories[a_brand]
         if not a_factory:
-            notification.log(
+            logger.log_error(
                 "Couldn't find \"%s\" mouse mechanism brand" % a_brand
             )
             continue
@@ -1054,9 +1054,8 @@ def LoadMouseMechanismsSettings(app, meta_mouse_handler, mechanisms_settings):
                 add_mouse_mechanism(a_mechanism, **a_binding)
                 
             except Exception:
-                notification.log_exception(
-                    "Failed to load a mouse mechanism"
-                )
+                logger.log_error("Failed to load a mouse mechanism")
+                logger.log_exception()
 
 
 def GetMouseMechanismsSettings(meta_mouse_handler):

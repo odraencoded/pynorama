@@ -27,10 +27,10 @@
 
 from gi.repository import Gdk, Gio, GLib, GObject, Gtk
 from collections import deque
-from . import utility, notification
+from . import utility, notifying
 from .extending import FileOpener, SelectionOpener
 
-logger = notification.Logger("opening")
+logger = notifying.Logger("opening")
 
 STANDARD_GFILE_INFO = (
     "standard::display-name", 

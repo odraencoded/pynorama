@@ -1,7 +1,7 @@
-from pynorama import notification
+from pynorama import notifying
 ADDON_PREFIX = "add_"
 
-logger = notification.Logger("app")
+logger = notifying.Logger("app")
 
 __all__ = [
     "background",

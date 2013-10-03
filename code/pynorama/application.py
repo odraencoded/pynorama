@@ -23,7 +23,7 @@ from gi.repository import Gtk, Gdk, Gio, GObject
 import cairo
 from gettext import gettext as _
 
-from . import extending, notification, utility, widgets, mousing, preferences
+from . import extending, notifying, utility, widgets, mousing, preferences
 from . import viewing, organization, loading, opening
 from .viewing import ZoomMode
 
@@ -34,8 +34,8 @@ components.import_addons()
 DND_URI_LIST, DND_IMAGE = range(2)
 
 # Log stuff
-uilogger = notification.Logger("interface")
-applogger = notification.Logger("app")
+uilogger = notifying.Logger("interface")
+applogger = notifying.Logger("app")
 
 # Prints exceptions using the applogger logger printing
 sys.excepthook = applogger.log_exception_info
@@ -358,7 +358,7 @@ class ImageViewer(Gtk.Application):
             
             
     def memory_check(self):
-        logger = notification.Logger("loading")
+        logger = notifying.Logger("loading")
         
         self.memory_check_queued = False
         
@@ -371,7 +371,7 @@ class ImageViewer(Gtk.Application):
                 unlisted_thing = self.memory.unlisted_stuff.pop()
                 if unlisted_thing.is_loading or unlisted_thing.on_memory:
                     unlisted_thing.unload()
-                    logger.debug(notification.Lines.Unloaded(unlisted_thing))
+                    logger.debug(notifying.Lines.Unloaded(unlisted_thing))
                     
             while self.memory.unused_stuff:
                 unused_thing = self.memory.unused_stuff.pop()
@@ -379,7 +379,7 @@ class ImageViewer(Gtk.Application):
                 if unused_thing.on_disk:
                     if unused_thing.is_loading or unused_thing.on_memory:
                         unused_thing.unload()
-                        logger.debug(notification.Lines.Unloaded(unused_thing))
+                        logger.debug(notifying.Lines.Unloaded(unused_thing))
                         
             gc.collect()
             
@@ -387,19 +387,19 @@ class ImageViewer(Gtk.Application):
             requested_thing = self.memory.requested_stuff.pop()
             if not (requested_thing.is_loading or requested_thing.on_memory):
                 requested_thing.load()
-                logger.debug(notification.Lines.Loading(requested_thing))
+                logger.debug(notifying.Lines.Loading(requested_thing))
                 
         return False
         
         
     def log_loading_finish(self, thing, error):
-        logger = notification.Logger("loading")
+        logger = notifying.Logger("loading")
         
         if error:
-            logger.log_error(notification.Lines.Error(error))
+            logger.log_error(notifying.Lines.Error(error))
             
         elif thing.on_memory:
-            logger.log(notification.Lines.Loaded(thing))
+            logger.log(notifying.Lines.Loaded(thing))
     
     
     def _save_settings(self, app_settings):
@@ -1713,7 +1713,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 
                 # Show error in status bar #
                 if focused_image.error:
-                    message = notification.Lines.Error(focused_image.error)
+                    message = notifying.Lines.Error(focused_image.error)
                     self.statusbar.push(loading_ctx, message)
                     
                 # Refresh frame #
@@ -1721,7 +1721,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
             else:
                 # Show loading hints #
-                message = notification.Lines.Loading(focused_image)
+                message = notifying.Lines.Loading(focused_image)
                 self.statusbar.push(loading_ctx, message)
                 self.loading_spinner.show()
                 self.loading_spinner.start() # ~like a record~
@@ -1746,7 +1746,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
             # Show error in status bar #
             if error:
-                message = notification.Lines.Error(error)
+                message = notifying.Lines.Error(error)
                 self.statusbar.push(loading_ctx, message)
                 
             # Refresh frame #
