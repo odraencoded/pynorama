@@ -1,12 +1,12 @@
-""" The opening module is the first part of the image opening process.
-    Which is awfully more complex than it should be.
+""" opening.py defines the image opening classes that interface with openers.
     
-    This module is responsible for figuring out how a certain file, uri, or
-    other resource should be processed. It does not actually load images,
-    it only instantiates ImageSources that can potentially load those images
-    properly.
-
-"""
+    The entirety of the process is: openers open input and output more input
+    and image sources. These image sources can be used to load image data and
+    to create frames. Finally, the frames can be displayed in an image view.
+    
+    Openers must implement either the FileOpener or the SelectionOpener
+    interfaces, described in extending.py, and image sources must implement
+    the ImageSource interface described in loading.py """
 
 """ ...and this file is part of Pynorama.
     
@@ -25,12 +25,9 @@
 
 """
 
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk
-from gettext import gettext as _
+from gi.repository import Gdk, Gio, GLib, GObject, Gtk
 from collections import deque
-from urllib.parse import urlparse
-from os import path as os_path
-from . import utility, notification, extending, loading
+from . import utility, notification
 from .extending import FileOpener, SelectionOpener
 
 logger = notification.Logger("opening")
@@ -41,6 +38,7 @@ STANDARD_GFILE_INFO = (
     "standard::content-type"
 )
 STANDARD_GFILE_INFO_STRING = ",".join(STANDARD_GFILE_INFO)
+PARENT_OPENER_CATEGORY = "parent-opener"
 
 class OpeningHandler(GObject.Object):
     """ Provides methods to open things """
@@ -253,13 +251,10 @@ class OpeningHandler(GObject.Object):
             if parent_files:
                 logger.debug_list(f.get_uri() for f in parent_files)
                 
-                directory_opener = self.app.components[
-                    "file-opener",
-                    DirectoryOpener.CODENAME
-                ]
+                parent_openers = self.app.components[PARENT_OPENER_CATEGORY]
                 
                 siblings_session = context.get_new_session()
-                siblings_session.add_openers([directory_opener])
+                siblings_session.add_openers(parent_openers)
                 siblings_session.add_files(parent_files)
             
         else: # not session.search_siblings
@@ -278,7 +273,9 @@ class OpeningHandler(GObject.Object):
                 session.depth, len(images), len(files), len(errors)
             )
         )
-        
+        for an_error in errors:
+            logger.log_exception(an_error)
+            
         self.app.memory.observe(*images)
         album.extend(images)
         
@@ -933,257 +930,3 @@ class FileOpenerGroup:
             result.add_mime_type(a_mime_type)
         
         return result
-
-
-class DirectoryOpener(FileOpener):
-    """ Opens directories and yields the files inside them """
-    
-    CODENAME = "directory"
-    
-    def __init__(self):
-        FileOpener.__init__(self,
-            DirectoryOpener.CODENAME,
-            mime_types={"inode/directory"}
-        )
-        self.show_on_dialog = False
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("Directory")
-    
-    
-    def open_file(self, context, results, gfile):
-        """ Opens a directory file and yields its contents """
-        
-        gfile.enumerate_children_async(
-            STANDARD_GFILE_INFO_STRING,
-            0,
-            GLib.PRIORITY_DEFAULT,
-            None,
-            self._enumerate_children_async_cb,
-            (context, results)
-        )
-    
-    
-    def _enumerate_children_async_cb(self, gfile, async_result, data):
-        context, results = data
-        try:
-            gfile_enumerator = gfile.enumerate_children_finish(async_result)
-        except Exception as e:
-            results.errors.append(e)
-        else:
-            get_child_for_display_name = gfile.get_child_for_display_name
-            append_file = results.files.append
-            file_info_cache = results.file_info_cache
-            for a_file_info in gfile_enumerator:
-                try:
-                    child_name = a_file_info.get_display_name()
-                    a_child_file = get_child_for_display_name(child_name)
-                    append_file(a_child_file)
-                    file_info_cache[a_child_file] = a_file_info
-                    
-                except Exception as e:
-                    results.errors.append(e)
-            gfile_enumerator.close_async(
-                GLib.PRIORITY_DEFAULT,
-                None,
-                self._close_async_cb,
-                None
-            )
-        finally:
-            results.complete()
-    
-    
-    def _close_async_cb(self, enumerator, async_result, *etc):
-        enumerator.close_finish(async_result)
-
-
-class PixbufOpener(SelectionOpener, FileOpener):
-    """
-    Opens image files supported by the GdkPixbuf library
-    
-    Also opens selections whose target is supported by the GdkPixbuf library
-    
-    """
-    
-    CODENAME = "gdk-pixbuf"
-    
-    def __init__(self):
-        # Get the GdkPixbuf supported extensions and mime types
-        extensions, mime_types = set(), set()
-        formats = GdkPixbuf.Pixbuf.get_formats()
-        for a_format in formats:
-            mime_types.update(a_format.get_mime_types())
-            for an_extension in a_format.get_extensions():
-                extensions.add(an_extension)
-        
-        FileOpener.__init__(self, 
-            PixbufOpener.CODENAME, 
-            extensions, 
-            mime_types
-        )
-        SelectionOpener.__init__(self,
-            PixbufOpener.CODENAME,
-            mime_types
-        )
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("GdkPixbuf Images")
-    
-    
-    def open_file(self, context, results, gfile):
-        try:
-            new_image = loading.PixbufFileImageSource(
-                gfile,
-                opening_context=context
-            )
-        except Exception as e:
-            results.errors.append(e)
-        else:
-            results.images.append(new_image)
-            
-        results.complete()
-    
-    
-    def open_selection(self, results, selection):
-        """
-        Gets a pixbuf from a Gtk.SelectionData and creates an image source
-        from it.
-        
-        """
-        pixbuf = selection.get_pixbuf()
-        image_source = loading.PixbufDataImageSource(pixbuf)
-        results.images.append(image_source)
-        results.complete()
-
-
-class PixbufAnimationFileOpener(FileOpener):
-    """ Opens animated image files supported by the GdkPixbuf library """
-    
-    # ...is what I'd like to say. But there is no way to check the
-    # supported extensions/mimes for animations, so it only opens gif files.
-    CODENAME = "gdk-pixbuf-animation"
-    
-    def __init__(self):
-        FileOpener.__init__(self,
-            PixbufAnimationFileOpener.CODENAME,
-            {".gif"},
-            {"image/gif"}
-        )
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("GdkPixbuf Animations")
-    
-    
-    def open_file(self, context, results, gfile):
-        try:
-            new_image = loading.PixbufAnimationFileImageSource(
-                gfile,
-                opening_context=context
-            )
-        except Exception as e:
-            results.errors.append(e)
-        else:
-            results.images.append(new_image)
-            
-        results.complete()
-
-
-class URIListSelectionOpener(SelectionOpener):
-    """ Opens selections whose target is "text/uri-list" """
-    CODENAME = "uri-list"
-    
-    def __init__(self):
-        SelectionOpener.__init__(self,
-            URIListSelectionOpener.CODENAME,
-            ["text/uri-list"]
-        )
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("URI list")
-    
-    
-    def open_selection(self, results, selection):
-        uris = selection.get_uris()
-        if uris:
-            results.uris.extend(uris)
-        results.complete()
-
-
-class TextSelectionOpener(SelectionOpener):
-    """ Opens selections whose target is "text/plain" as URIs """
-    CODENAME = "uri-text"
-    
-    def __init__(self):
-        # XXX: This is essentially the Gtk.SelectionData uses
-        # for checking whether its targets_include_text
-        # Except here it's missing the text/plain;charset=locale
-        # because I can't find the g_get_charset method
-        SelectionOpener.__init__(self,
-            TextSelectionOpener.CODENAME,
-            [
-                "UTF8_STRING",
-                "TEXT",
-                "COMPOUND_TEXT",
-                "text/plain",
-                "text/plain;charset=utf-8",
-            ]
-        )
-        self.atom_targets.add(Gdk.TARGET_STRING)
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("URI Text")
-    
-    
-    def open_selection(self, results, selection):
-        text = selection.get_text()
-        
-        parse_result = urlparse(text)
-        if parse_result.scheme and parse_result.path \
-                and (parse_result.netloc or parse_result.scheme == "file"):
-            results.uris.append(text)
-        else:
-            # Expanding "~"
-            text = os_path.expanduser(text)
-            if os_path.isabs(text):
-                # Wildly assuming this is a valid filename
-                # just because it starts with a slash
-                text = "file://" + os_path.normcase(os_path.normcase(text))
-                results.uris.append(text)
-            
-        results.complete()
-
-
-class BuiltInOpeners(extending.ComponentPackage):
-    """ A component package for installing the built in openers """
-    @staticmethod
-    def add_on(app):
-        components = app.components
-        pixbuf_opener = PixbufOpener()
-        
-        file_openers = (
-            DirectoryOpener(), # Opens directories
-            pixbuf_opener, # Opens images
-            PixbufAnimationFileOpener(), # Opens animations
-        )
-        for an_opener in file_openers:
-            components.add(FileOpener.CATEGORY, an_opener)
-        
-        selection_openers = (
-            pixbuf_opener, # Opens images
-            URIListSelectionOpener(), # Opens uri lists
-            TextSelectionOpener() # Tries to parse text into uris
-        )
-        for an_opener in selection_openers:
-            components.add(SelectionOpener.CATEGORY, an_opener)
-
-extending.LoadedComponentPackages["opening"] = BuiltInOpeners
