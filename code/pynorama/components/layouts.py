@@ -17,7 +17,7 @@
     
 
 from gi.repository import GLib, GObject, Gtk
-from pynorama import utility, point, extending
+from pynorama import utility, widgets, point, extending
 from pynorama.organization import AlbumLayout, LayoutDirection
 from gettext import gettext as _
 
@@ -1196,14 +1196,14 @@ screen height or width, depending on the strip direction''')
 
         label = _("Pixels to fill before the center")
         space_before_label = Gtk.Label(label)
-        space_before_entry, space_before_adjust = utility.SpinAdjustment(
+        space_before_entry, space_before_adjust = widgets.SpinAdjustment(
              0, 0, 8192, 32, 256, align=True,
          )
         space_before_entry.set_tooltip_text(space_tooltip)
         
         label = _("Pixels to fill after the center")
         space_after_label = Gtk.Label(label)
-        space_after_entry, space_after_adjust = utility.SpinAdjustment(
+        space_after_entry, space_after_adjust = widgets.SpinAdjustment(
             0, 0, 8192, 32, 256, align=True,
         )
         space_after_entry.set_tooltip_text(space_tooltip)
@@ -1215,13 +1215,13 @@ are too small to breach the pixel count limit''')
                     
         label = _("Image limit before the center")
         limit_before_label = Gtk.Label(label)
-        limit_before_entry, limit_before_adjust = utility.SpinAdjustment(
+        limit_before_entry, limit_before_adjust = widgets.SpinAdjustment(
             0, 0, 512, 1, 10, align=True)
         limit_before_entry.set_tooltip_text(limits_tooltip)
         
         label = _("Image limit after the center")
         limit_after_label = Gtk.Label(label)
-        limit_after_entry, limit_after_adjust = utility.SpinAdjustment(
+        limit_after_entry, limit_after_adjust = widgets.SpinAdjustment(
             0, 0, 512, 1, 10, align=True)
         limit_after_entry.set_tooltip_text(limits_tooltip)
         
@@ -1247,8 +1247,8 @@ are too small to breach the pixel count limit''')
         # Add tabs, pack lines
         def add_tab(self, label):
             gtk_label = Gtk.Label(label)
-            box = utility.WidgetStack()
-            box_pad = utility.PadNotebookContent(box)
+            box = widgets.Stack()
+            box_pad = widgets.PadNotebookContent(box)
             self.append_page(box_pad, gtk_label)
             return box
         
@@ -1266,41 +1266,41 @@ are too small to breach the pixel count limit''')
         space_before_label.set_hexpand(True)
         performance_label.set_line_wrap(True)
         
-        appearance_grid = utility.WidgetGrid(
+        appearance_grid = widgets.Grid(
             (direction_label, direction_selector),
             (alignment_button, alignment_scale)
         )
         
         appearance_grid.attach(Gtk.Separator(), 0, 2, 2, 1)
-        utility.WidgetGrid(
+        widgets.Grid(
             (margin_before_label, margin_before_entry),
             (margin_after_label, margin_after_entry),
             grid=appearance_grid, start_row=3
         )
         
         appearance_grid.attach(Gtk.Separator(), 0, 5, 2, 1)
-        loop_line = utility.WidgetLine(loop_button, repeat_button)
+        loop_line = widgets.Line(loop_button, repeat_button)
         appearance_grid.attach(loop_line, 0, 6, 2, 1)
         
-        performance_grid = utility.WidgetGrid()
+        performance_grid = widgets.Grid()
         performance_grid.attach(performance_label, 0, 0, 2, 1)
         
         performance_grid.attach(Gtk.Separator(), 0, 1, 2, 1)
-        utility.WidgetGrid(
+        widgets.Grid(
             (space_before_label, space_before_entry),
             (space_after_label, space_after_entry),
             grid=performance_grid, start_row=2,
         )
         
         performance_grid.attach(Gtk.Separator(), 0, 4, 2, 1)
-        utility.WidgetGrid(
+        widgets.Grid(
             (limit_before_label, limit_before_entry),
             (limit_after_label, limit_after_entry),
             grid=performance_grid, start_row=5,
         )
         
-        appearance_pad = utility.PadNotebookContent(appearance_grid)
-        performance_pad = utility.PadNotebookContent(performance_grid)
+        appearance_pad = widgets.PadNotebookContent(appearance_grid)
+        performance_pad = widgets.PadNotebookContent(performance_grid)
             
         label = _("Appearance")
         appearance_label = Gtk.Label(label)

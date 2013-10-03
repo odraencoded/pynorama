@@ -19,7 +19,7 @@
 from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
 import math
-from pynorama import utility, point, extending, mousing
+from pynorama import utility, widgets, point, extending, mousing
 from pynorama.mousing import (
     MouseHandler, MouseEvents,
     MouseHandlerPivot, MouseHandler,
@@ -314,12 +314,12 @@ class HoverAndDragHandlerSettingsWidget(Gtk.Box):
     def __init__(self, handler, drag=True):
         label = _("Panning speed")
         speed_label = Gtk.Label(label)
-        speed_entry, speed_adjustment = utility.SpinAdjustment(
+        speed_entry, speed_adjustment = widgets.SpinAdjustment(
             0, -10, 10, .1, 1, align=True, digits=2
         )
-        speed_line = utility.WidgetLine(speed_label, speed_entry)
+        speed_line = widgets.Line(speed_label, speed_entry)
         
-        speed_scale = utility.ScaleAdjustment(adjustment=speed_adjustment,
+        speed_scale = widgets.ScaleAdjustment(adjustment=speed_adjustment,
             marks=[
                 (-10, _("Pan Image")), (-1, None),
                 (0, _("Inertia")),
@@ -330,7 +330,7 @@ class HoverAndDragHandlerSettingsWidget(Gtk.Box):
         label = _("Speed relative to zoom")
         speed_relative = Gtk.CheckButton(label)
         
-        utility.InitWidgetStack(self, speed_line, speed_scale, speed_relative)
+        widgets.InitStack(self, speed_line, speed_scale, speed_relative)
         
         # Bind properties
         utility.Bind(handler,
@@ -388,16 +388,16 @@ class SpinHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
         # Add line for fequency
         label = _("Frequency of turns")
         frequency_label = Gtk.Label(label)
-        frequency_entry, frequency_adjustment = utility.SpinAdjustment(
+        frequency_entry, frequency_adjustment = widgets.SpinAdjustment(
             1, -9, 9, .1, 1, digits=2, align=True
         )
-        frequency_line = utility.WidgetLine(
+        frequency_line = widgets.Line(
             frequency_label, frequency_entry, expand=frequency_entry
         )
         
         # Get pivot widgets, pack everyting
         pivot_widgets = self.create_pivot_widgets(handler.pivot)
-        utility.InitWidgetStack(self, frequency_line, *pivot_widgets)
+        widgets.InitStack(self, frequency_line, *pivot_widgets)
         self.show_all()
         
         # Bind properties
@@ -437,8 +437,8 @@ class SpinHandlerFactory(extending.MouseHandlerFactory):
 class StretchHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
     def __init__(self, handler):
         PivotedHandlerSettingsWidget.__init__(self)
-        widgets = self.create_pivot_widgets(handler.pivot, anchor=True)
-        utility.InitWidgetStack(self, *widgets[1:])
+        pivot_widgets = self.create_pivot_widgets(handler.pivot, anchor=True)
+        widgets.InitStack(self, *pivot_widgets[1:])
         
         self.show_all()
 
@@ -473,10 +473,10 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
         # Fixed pixel speed
         label = _("Fixed pixel scrolling speed")
         pixel_radio = Gtk.RadioButton(label=label)
-        pixel_entry, pixel_adjust = utility.SpinAdjustment(
+        pixel_entry, pixel_adjust = widgets.SpinAdjustment(
             300, 0, 9001, 20, 150, align=True
         )
-        pixel_line = utility.WidgetLine(
+        pixel_line = widgets.Line(
             pixel_radio, pixel_entry, expand=pixel_entry
         )
         self.pixel_radio = pixel_radio
@@ -484,7 +484,7 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
         # Relative pixel speed
         label = _("Relative percentage scrolling speed")
         relative_radio = Gtk.RadioButton(label=label, group=pixel_radio)
-        relative_scale, relative_adjust = utility.ScaleAdjustment(
+        relative_scale, relative_adjust = widgets.ScaleAdjustment(
             1, 0, 3, .04, .5, percent=True,
             marks = [(0, _("Inertia")), (1, _("Entire Window"))]
         )
@@ -501,7 +501,7 @@ class ScrollHandlerSettingsWidget(Gtk.Box):
         label = _("Swap horizontal and vertical axes")
         swap = Gtk.CheckButton(label=label)
         
-        utility.InitWidgetStack(self,
+        widgets.InitStack(self,
             pixel_line, relative_radio, relative_scale,
             inverseh, inversev, rotate, swap
         )
@@ -580,14 +580,14 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
         # Zoom effect label, entry and invert checkbox
         label = _("Zoom effect")
         effect_label = Gtk.Label(label)
-        effect_entry, effect_adjust = utility.SpinAdjustment(
+        effect_entry, effect_adjust = widgets.SpinAdjustment(
             2, 1, 4, .05, .25, align=True, digits=2
         )
         label = _("Inverse effect")
         effect_inverse = Gtk.CheckButton(label)
         
         # Pack effect widgets in a line
-        effect_line = utility.WidgetLine(
+        effect_line = widgets.Line(
             effect_label, effect_entry, effect_inverse, expand=effect_entry
         )
         
@@ -600,10 +600,10 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
         for a_pivot, a_label in pivot_labels:
             # Create anchor widgets
             a_box_widgets = self.create_pivot_widgets(a_pivot, anchor=True)
-            a_box = utility.WidgetStack(*a_box_widgets)
+            a_box = widgets.Stack(*a_box_widgets)
             
             # Add widgets to notebook
-            a_box_pad = utility.PadNotebookContent(a_box)
+            a_box_pad = widgets.PadNotebookContent(a_box)
             a_tab_label = Gtk.Label(a_label)        
             pivot_book.append_page(a_box_pad, a_tab_label)
         
@@ -612,7 +612,7 @@ class ZoomHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
         horizontal_check = Gtk.CheckButton(label)
         
         # Pack everything
-        utility.InitWidgetStack(self, effect_line, pivot_book, horizontal_check)
+        widgets.InitStack(self, effect_line, pivot_book, horizontal_check)
         self.show_all()
         
         # Bind properties
@@ -670,10 +670,10 @@ class GearHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
         # Create effect line
         label = _("Spin effect")
         effect_label = Gtk.Label(label)
-        effect_entry, effect_adjust = utility.SpinAdjustment(
+        effect_entry, effect_adjust = widgets.SpinAdjustment(
             30, -180, 180, 10, 60, align=True, wrap=True
         )
-        effect_line = utility.WidgetLine(
+        effect_line = widgets.Line(
             effect_label, effect_entry
         )
         
@@ -685,7 +685,7 @@ class GearHandlerSettingsWidget(Gtk.Box, PivotedHandlerSettingsWidget):
         horizontal_check = Gtk.CheckButton(label)
         
         # Pack everything
-        utility.InitWidgetStack(self,
+        widgets.InitStack(self,
             *([effect_line] + pivot_widgets + [horizontal_check])
         )
         self.show_all()

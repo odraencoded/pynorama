@@ -22,7 +22,7 @@ import json
 import math
 from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
-from . import utility, notification, extending, organization
+from . import utility, widgets, notification, extending, organization
 from .mousing import MOUSE_MODIFIER_KEYS
 from .extending import PreferencesTab
 
@@ -45,7 +45,7 @@ class Dialog(Gtk.Dialog):
             try:
                 a_tab_label = a_tab.create_label(self)
                 a_proxy = a_tab.create_proxy(self, a_tab_label)
-                a_tab_pad = utility.PadNotebookContent(a_proxy)
+                a_tab_pad = widgets.PadNotebookContent(a_proxy)
                 tabs.append_page(a_tab_pad, a_tab_label)
             except Exception:
                 name = None
@@ -77,7 +77,7 @@ class Dialog(Gtk.Dialog):
                 logger.log_exception()
             
         # Pack tabs into dialog
-        padded_tabs = utility.PadDialogContent(tabs)
+        padded_tabs = widgets.PadDialogContent(tabs)
         padded_tabs.show_all()
         self.get_content_area().pack_start(padded_tabs, True, True, 0)
         
@@ -109,8 +109,8 @@ class ViewPreferencesTabProxy(Gtk.Box):
         alignment_label = Gtk.Label(_("Image alignment"))
         xadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
         yadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
-        point_scale = PointScale(xadjust, yadjust, square=True)
-        grid, xspin, yspin = utility.PointScaleGrid(
+        point_scale = widgets.PointScale(xadjust, yadjust, square=True)
+        grid, xspin, yspin = widgets.PointScaleGrid(
             point_scale, _("Horizontal"), _("Vertical"),
             corner=alignment_label, align=True
         )
@@ -129,7 +129,7 @@ class ViewPreferencesTabProxy(Gtk.Box):
         label = _("Spin effect")
         spin_tooltip = _("Rotate clockwise/anti-clockwise effect in degrees")
         spin_effect_label = Gtk.Label(label)
-        spin_effect_entry, spin_effect_adjust = utility.SpinAdjustment(
+        spin_effect_entry, spin_effect_adjust = widgets.SpinAdjustment(
             0, -180, 180, 10, 60, align=True, digits=2, wrap=True
         )
         # Seting spin tooltip
@@ -142,7 +142,7 @@ class ViewPreferencesTabProxy(Gtk.Box):
         label = _("Zoom in/out effect")
         zoom_tooltip = _("Zoom in/out effect as a multiplier/dividend")
         zoom_effect_label = Gtk.Label(label)
-        zoom_effect_entry, zoom_effect_adjust = utility.SpinAdjustment(
+        zoom_effect_entry, zoom_effect_adjust = widgets.SpinAdjustment(
             2, 1, 4, 0.1, 0.25, align=True, digits=2
         )
         # Setting zoom tooltipip
@@ -152,7 +152,7 @@ class ViewPreferencesTabProxy(Gtk.Box):
         )
         
         # packing widgets
-        utility.WidgetGrid(
+        widgets.Grid(
             (spin_effect_label, spin_effect_entry),
             (zoom_effect_label, zoom_effect_entry),
             align_first=True, expand_first=True,
@@ -231,17 +231,17 @@ class MousePreferencesTabProxy(Gtk.Box):
         
         # Add handler list label and widget container
         text = _("""Mouse mechanisms currently in use by the image viewer""")
-        view_handlers_description = utility.LoneLabel(text)
+        view_handlers_description = widgets.LoneLabel(text)
         mouse_label_notebook.append_page(view_handlers_description, None)
         
         # Add handler factory list label and widget container
         text = _("""Types of mouse mechanisms currently avaiable \
 for the image viewer""")
-        brands_description = utility.LoneLabel(text)
+        brands_description = widgets.LoneLabel(text)
         mouse_label_notebook.append_page(brands_description, None)
         
         # Init the proxy
-        utility.InitWidgetStack(self,
+        widgets.InitStack(self,
             mouse_label_notebook, very_mice_book,
             expand=very_mice_book
         )
@@ -291,13 +291,13 @@ for the image viewer""")
         configure_handler_button.set_can_default(True)
         self._configure_handler_button = configure_handler_button
         
-        edit_handler_buttonbox = utility.ButtonBox(
+        edit_handler_buttonbox = widgets.ButtonBox(
             configure_handler_button,
             secondary=[new_handler_button, remove_handler_button]
         )
         
         # Pack widgets into the notebook
-        view_handlers_box = utility.WidgetStack(
+        view_handlers_box = widgets.Stack(
             handler_listscroller, edit_handler_buttonbox,
             expand=handler_listscroller
         )
@@ -338,12 +338,12 @@ for the image viewer""")
         add_button.set_can_default(True)
         self._add_handler_button = add_button
         
-        add_handler_buttonbox = utility.ButtonBox(
+        add_handler_buttonbox = widgets.ButtonBox(
             cancel_add_button, add_button
         )
         
         # Pack widgets into the pseudo notebook
-        add_handler_box = utility.WidgetStack(
+        add_handler_box = widgets.Stack(
             brand_listscroller, add_handler_buttonbox,
             expand=brand_listscroller
         )
@@ -609,8 +609,8 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
         self.handler = handler
         self.handler_data = handler_data
         
-        vbox = utility.WidgetStack()
-        vbox_pad = utility.PadDialogContent(vbox)
+        vbox = widgets.Stack()
+        vbox_pad = widgets.PadDialogContent(vbox)
         self.get_content_area().pack_start(vbox_pad, True, True, 0)
         
         # Create nickname widgets
@@ -618,7 +618,7 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
         nickname_label = Gtk.Label(label)
         nickname_entry = Gtk.Entry()
         # Pack nickname entry
-        nickname_line = utility.WidgetLine(
+        nickname_line = widgets.Line(
             nickname_label, nickname_entry, expand=nickname_entry
         )
         vbox.pack_start(nickname_line, False, True, 0)
@@ -643,7 +643,7 @@ the chosen mouse button")
         shift_check = Gtk.CheckButton(_("Shift"))
         alt_check = Gtk.CheckButton(_("Alt"))
         
-        modifier_line = utility.WidgetLine(
+        modifier_line = widgets.Line(
             ctrl_check, shift_check, alt_check
         )
         vbox.pack_start(modifier_line, False, True, 0)
@@ -1099,238 +1099,3 @@ def GetMouseMechanismsSettings(meta_mouse_handler):
                 
             a_brand_mechanisms.append(a_mechanism_obj)
     return mechanism_objs
-
-
-class PointScale(Gtk.DrawingArea):
-    """ A widget like a Gtk.HScale and Gtk.VScale together. """
-    def __init__(self, hrange, vrange, square=False):
-        Gtk.DrawingArea.__init__(self)
-        self.set_size_request(50, 50)
-        self.square = square
-        if square:
-            self.padding = 0
-            self.mark_width = 32
-            self.mark_height = 32
-            
-        else:
-            self.padding = 4
-            self.mark_width = 8
-            self.mark_height = 8
-            
-        self.dragging = False
-        self.__hrange = self.__vrange = None
-        self.hrange_signal = self.vrange_signal = None
-        self.set_hrange(hrange)
-        self.set_vrange(vrange)
-        self.add_events(
-            Gdk.EventMask.BUTTON_PRESS_MASK |
-            Gdk.EventMask.BUTTON_RELEASE_MASK |
-            Gdk.EventMask.POINTER_MOTION_MASK |
-            Gdk.EventMask.POINTER_MOTION_HINT_MASK
-        )
-            
-    def adjust_from_point(self, x, y):
-        w, h = self.get_allocated_width(), self.get_allocated_height()
-        if self.square:
-            hpadding = self.padding + self.mark_width / 2
-            vpadding = self.padding + self.mark_height / 2
-        else:
-            hpadding, vpadding = self.padding, self.padding
-        
-        t, l = vpadding, hpadding
-        r, b = w - hpadding, h - vpadding
-        
-        x, y = (max(0, min(r - l, x - l)) / (r - l),
-                max(0, min(b - t, y - t)) / (b - t))
-                
-        hrange = self.get_hrange()
-        if hrange:
-            lx, ux = hrange.get_lower(), hrange.get_upper()
-            vx = x * (ux - lx) + lx
-            self.hrange.set_value(vx)
-        
-        vrange = self.get_vrange()
-        if vrange:
-            ly, uy = vrange.get_lower(), vrange.get_upper()
-            vy = y * (uy - ly) + ly
-            self.vrange.set_value(vy)
-    
-    def do_get_request_mode(self):
-        return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
-
-    def do_get_preferred_width(self):
-        hrange = self.get_hrange()
-        vrange = self.get_vrange()
-        lx, ux = hrange.get_lower(), hrange.get_upper()
-        ly, uy = vrange.get_lower(), vrange.get_upper()
-        
-        ratio = (ux - lx) / (uy - ly)
-        w = self.get_allocated_height()
-        return w * ratio, w * ratio
-                    
-    def do_get_preferred_height(self):
-        hrange = self.get_hrange()
-        vrange = self.get_vrange()
-        lx, ux = hrange.get_lower(), hrange.get_upper()
-        ly, uy = vrange.get_lower(), vrange.get_upper()
-        
-        ratio = (uy - ly) / (ux - lx)
-        h = self.get_allocated_height()
-        return h * ratio, h * ratio
-    
-    def do_get_preferred_height_for_width(self, width):
-        hrange = self.get_hrange()
-        vrange = self.get_vrange()
-        lx, ux = hrange.get_lower(), hrange.get_upper()
-        ly, uy = vrange.get_lower(), vrange.get_upper()
-        
-        ratio = (uy - ly) / (ux - lx)
-        
-        return width * ratio, width * ratio
-            
-    def do_get_preferred_width_for_height(self, height):
-        hrange = self.get_hrange()
-        vrange = self.get_vrange()
-        lx, ux = hrange.get_lower(), hrange.get_upper()
-        ly, uy = vrange.get_lower(), vrange.get_upper()
-        
-        ratio = (ux - lx) / (uy - ly)
-        
-        return height * ratio, height * ratio
-        
-    def do_button_press_event(self, data):
-        self.dragging = True
-        self.adjust_from_point(data.x, data.y)
-            
-    def do_button_release_event(self, data):
-        self.dragging = False
-        self.queue_draw()
-    
-    def do_motion_notify_event(self, data):
-        if self.dragging:
-            mx, my = data.x, data.y
-            self.adjust_from_point(mx, my)
-    
-    def do_draw(self, cr):
-        w, h = self.get_allocated_width(), self.get_allocated_height()        
-        if self.square:
-            hpadding = self.padding + self.mark_width / 2
-            vpadding = self.padding + self.mark_height / 2
-        else:
-            hpadding, vpadding = self.padding, self.padding
-        
-        t, l = vpadding, hpadding
-        r, b = w - hpadding, h - vpadding
-                
-        hrange = self.get_hrange()
-        if hrange:
-            lx, ux = hrange.get_lower(), hrange.get_upper()
-            vx = hrange.get_value()
-            x = (r - l - 1) * (vx / (ux - lx) - lx) + l
-        else:
-            x = w / 2
-            
-        vrange = self.get_vrange()
-        if vrange:
-            ly, uy = vrange.get_lower(), vrange.get_upper()
-            vy = vrange.get_value()
-            y = (b - t - 1) * (vy / (uy - ly) - ly) + l
-        else:
-            y = h / 2
-        
-        style = self.get_style_context()
-        
-        style.add_class(Gtk.STYLE_CLASS_ENTRY)
-        Gtk.render_background(style, cr, 0, 0, w, h)
-        cr.save()
-        border = style.get_border(style.get_state())
-        radius = style.get_property(Gtk.STYLE_PROPERTY_BORDER_RADIUS,
-                                    Gtk.StateFlags.NORMAL)
-        color = style.get_color(style.get_state())
-        cr.arc(border.left + radius,
-               border.top + radius, radius, math.pi, math.pi * 1.5)
-        cr.arc(w - border.right - radius -1,
-               border.top + radius, radius, math.pi * 1.5, math.pi * 2)
-        cr.arc(w - border.right - radius -1,
-               h -border.bottom - radius -1, radius, 0, math.pi / 2)
-        cr.arc(border.left + radius,
-               h - border.bottom - radius - 1, radius, math.pi / 2, math.pi)
-        cr.clip()
-        
-        cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
-        x, y = round(x), round(y)
-        
-        if self.square:
-            ml, mt = x - self.mark_width / 2, y - self.mark_height / 2
-            mr, mb = ml + self.mark_width, mt + self.mark_height
-            ml, mt, mr, mb = round(ml), round(mt), round(mr), round(mb)
-            
-            cr.set_line_width(1)
-            cr.set_dash([3, 7], x + y)
-            cr.move_to(ml, 0); cr.line_to(ml, h); cr.stroke()
-            cr.move_to(mr, 0); cr.line_to(mr, h); cr.stroke()
-            cr.move_to(0, mt); cr.line_to(w, mt); cr.stroke()
-            cr.move_to(0, mb); cr.line_to(w, mb); cr.stroke()
-            
-            cr.set_dash([], 0)
-            cr.rectangle(ml, mt, self.mark_width, self.mark_height)
-            cr.stroke()
-        
-        else:
-            cr.set_line_width(1)
-            cr.set_dash([3, 7], x + y)
-            cr.move_to(x, 0); cr.line_to(x, h); cr.stroke()
-            cr.move_to(0, y); cr.line_to(w, y); cr.stroke()
-            
-            cr.save()
-            cr.translate(x, y)
-            cr.scale(self.mark_width * 3, self.mark_height * 3)
-            cr.arc(0, 0, 1, 0, 2 * math.pi)
-            cr.restore()
-            cr.stroke()
-            
-            cr.set_dash([], 0)
-            
-            cr.save()
-            cr.translate(x, y)
-            cr.scale(self.mark_width / 2, self.mark_height / 2)
-            cr.arc(0, 0, 1, 0, 2 * math.pi)
-            cr.restore()
-            cr.fill()
-            
-        cr.restore()
-        Gtk.render_frame(style, cr, 0, 0, w, h)
-        
-    def adjustment_changed(self, data):
-        self.queue_draw()
-    
-    def get_hrange(self):
-        return self.__hrange
-    def set_hrange(self, adjustment):
-        if self.__hrange:
-            self.__hrange.disconnect(self.hrange_signal)
-            self.hrange_signal = None
-            
-        self.__hrange = adjustment
-        if adjustment:
-            self.hrange_signal = adjustment.connect(
-                "value-changed", self.adjustment_changed
-            )
-        self.queue_draw()
-        
-    def get_vrange(self):
-        return self.__vrange
-    def set_vrange(self, adjustment):
-        if self.__vrange:
-            self.__vrange.disconnect(self.vrange_signal)
-            self.vrange_signal = None
-            
-        self.__vrange = adjustment
-        if adjustment:
-            self.vrange_signal = adjustment.connect(
-                "value-changed", self.adjustment_changed
-            )
-        self.queue_draw()
-    
-    hrange = GObject.property(get_hrange, set_hrange, type=Gtk.Adjustment)
-    vrange = GObject.property(get_vrange, set_vrange, type=Gtk.Adjustment)

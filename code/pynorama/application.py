@@ -23,7 +23,7 @@ from gi.repository import Gtk, Gdk, Gio, GObject
 import cairo
 from gettext import gettext as _
 
-from . import extending, notification, utility, mousing, preferences
+from . import extending, notification, utility, widgets, mousing, preferences
 from . import viewing, organization, loading, opening
 from .viewing import ZoomMode
 
@@ -1612,7 +1612,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                     (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
                 )
                 
-                widget_pad = utility.PadDialogContent(widget)
+                widget_pad = widgets.PadDialogContent(widget)
                 widget_pad.show()
                 content_area = dialog.get_content_area()
                 content_area.pack_start(widget_pad, True, True, 0)

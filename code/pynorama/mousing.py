@@ -18,7 +18,7 @@
 from gi.repository import Gtk, GLib, GObject
 from gi.repository.Gdk import EventMask, ModifierType
 from gettext import gettext as _
-from . import utility
+from . import utility, widgets
 
 MOUSE_EVENT_MASK = (
     EventMask.KEY_PRESS_MASK |
@@ -780,7 +780,6 @@ class MouseHandlerPivot(GObject.Object):
         self.fixed_point = settings.get("fixed-point", (.5, .5))
 
 
-from .preferences import PointScale
 class PivotedHandlerSettingsWidget:
     def __init__(self):
         self.pivot_widgets = dict()
@@ -809,9 +808,9 @@ class PivotedHandlerSettingsWidget:
         pivot_fixed = Gtk.RadioButton(label=fixed_label, group=pivot_alignment)
         xadjust = Gtk.Adjustment(.5, 0, 1, .1, .25, 0)
         yadjust = Gtk.Adjustment(.5, 0, 1, .1, .25, 0)
-        point_scale = PointScale(xadjust, yadjust)
+        point_scale = widgets.PointScale(xadjust, yadjust)
         
-        fixed_point_grid, xspin, yspin = utility.PointScaleGrid(
+        fixed_point_grid, xspin, yspin = widgets.PointScaleGrid(
             point_scale, xlabel, ylabel, corner=pivot_fixed
         )
         

@@ -15,7 +15,7 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
-from pynorama import utility, extending, notification
+from pynorama import utility, widgets, extending, notification
 from pynorama.extending import PreferencesTab, LoadedComponentPackages
 from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
@@ -41,7 +41,7 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
             tooltip_text=_("The color used as the window background"),
             use_alpha=True
         )
-        bg_line = utility.WidgetLine(custom_color_option, color_chooser)
+        bg_line = widgets.Line(custom_color_option, color_chooser)
         
         checkered_option = Gtk.RadioButton(
             _("Checkered background"),
@@ -51,7 +51,7 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         
         # Checks size
         size_label = Gtk.Label(_("Checks size"))
-        size_entry, size_adjust = utility.SpinAdjustment(
+        size_entry, size_adjust = widgets.SpinAdjustment(
             16, 4, 1280, 4, 32, align=True, digits=0,
         )
         size_entry.set_tooltip_text(_(
@@ -72,14 +72,14 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         colors_box.add(primary_color_button)
         colors_box.add(secondary_color_button)
         
-        checks_appearance_widgets = utility.WidgetGrid(
+        checks_appearance_widgets = widgets.Grid(
             (size_label, size_entry),
             (colors_label, colors_box),
             align_first=True
         )
         
         # A box with the customizing widgets
-        utility.InitWidgetStack(self,
+        widgets.InitStack(self,
             theme_option, bg_line, checkered_option, checks_appearance_widgets
         )
         
