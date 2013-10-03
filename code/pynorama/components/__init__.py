@@ -4,7 +4,8 @@ ADDON_PREFIX = "add_"
 logger = notification.Logger("app")
 
 __all__ = [
-    "background"
+    "background",
+    "mice"
 ]
 
 def import_addons():
