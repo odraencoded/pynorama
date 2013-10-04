@@ -232,7 +232,7 @@ class OpeningHandler(GObject.Object):
                     if some_results.files:
                         files.append((a_key, some_results.files))
                         
-                    else:
+                    elif some_results.images:
                         try:
                             a_parent_key = a_key.get_parent()
                             a_parent_uri = a_parent_key.get_uri()
