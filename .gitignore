@@ -13,6 +13,8 @@ autom4te.cache
 missing
 install-sh
 py-compile
-pynorama
-pynorama.in
+/pynorama
+/pynorama.in
+/code/imageviewer.py
+/code/imageviewer.py.in
 *.gschema.valid

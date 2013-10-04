@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding=utf-8
  
-''' pynorama.py is the main module of an image viewer application. '''
+''' application.py is the main module of an image viewer application. '''
 
 ''' ...and this file is part of Pynorama.
     
@@ -22,14 +22,20 @@ import gc, math, random, os, sys
 from gi.repository import Gtk, Gdk, Gio, GObject
 import cairo
 from gettext import gettext as _
-import utility, notification, extending, mousing, preferences
-import opening, loading, organization, viewing
-from viewing import ZoomMode
+
+from . import extending, notifying, utility, widgets, mousing, preferences
+from . import viewing, organizing, loading, opening
+from .viewing import ZoomMode
+
+from . import components
+from .components import *
+components.import_addons()
+
 DND_URI_LIST, DND_IMAGE = range(2)
 
 # Log stuff
-uilogger = notification.Logger("interface")
-applogger = notification.Logger("app")
+uilogger = notifying.Logger("interface")
+applogger = notifying.Logger("app")
 
 # Prints exceptions using the applogger logger printing
 sys.excepthook = applogger.log_exception_info
@@ -81,8 +87,9 @@ class ImageViewer(Gtk.Application):
         
         # Setup components
         self.components = extending.ComponentMap()
-        for an_app_component in extending.LoadedComponentPackages:
-            an_app_component.add_on(self)
+        loaded_packages = extending.LoadedComponentPackages
+        for a_codename, a_component in loaded_packages.items():
+            a_component.add_on(self)
         
         preferences.LoadForApp(self)
         
@@ -351,7 +358,7 @@ class ImageViewer(Gtk.Application):
             
             
     def memory_check(self):
-        logger = notification.Logger("loading")
+        logger = notifying.Logger("loading")
         
         self.memory_check_queued = False
         
@@ -364,7 +371,7 @@ class ImageViewer(Gtk.Application):
                 unlisted_thing = self.memory.unlisted_stuff.pop()
                 if unlisted_thing.is_loading or unlisted_thing.on_memory:
                     unlisted_thing.unload()
-                    logger.debug(notification.Lines.Unloaded(unlisted_thing))
+                    logger.debug(notifying.Lines.Unloaded(unlisted_thing))
                     
             while self.memory.unused_stuff:
                 unused_thing = self.memory.unused_stuff.pop()
@@ -372,7 +379,7 @@ class ImageViewer(Gtk.Application):
                 if unused_thing.on_disk:
                     if unused_thing.is_loading or unused_thing.on_memory:
                         unused_thing.unload()
-                        logger.debug(notification.Lines.Unloaded(unused_thing))
+                        logger.debug(notifying.Lines.Unloaded(unused_thing))
                         
             gc.collect()
             
@@ -380,19 +387,19 @@ class ImageViewer(Gtk.Application):
             requested_thing = self.memory.requested_stuff.pop()
             if not (requested_thing.is_loading or requested_thing.on_memory):
                 requested_thing.load()
-                logger.debug(notification.Lines.Loading(requested_thing))
+                logger.debug(notifying.Lines.Loading(requested_thing))
                 
         return False
         
         
     def log_loading_finish(self, thing, error):
-        logger = notification.Logger("loading")
+        logger = notifying.Logger("loading")
         
         if error:
-            logger.log_error(notification.Lines.Error(error))
+            logger.log_error(notifying.Lines.Error(error))
             
         elif thing.on_memory:
-            logger.log(notification.Lines.Loaded(thing))
+            logger.log(notifying.Lines.Loaded(thing))
     
     
     def _save_settings(self, app_settings):
@@ -440,7 +447,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self._focus_loaded_handler_id = None
         self._old_focused_image = None
         self.opening_context = None
-        self.album = organization.Album()
+        self.album = organizing.Album()
         self.album.connect("image-added", self._album_image_added_cb)
         self.album.connect("image-removed", self._album_image_removed_cb)
         self.album.connect("order-changed", self._album_order_changed_cb)
@@ -554,7 +561,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         # Setup layout stuff
         self.layout_dialog = None
-        self.avl = organization.AlbumViewLayout(
+        self.avl = organizing.AlbumViewLayout(
             album=self.album, view=self.view
         )
         
@@ -965,7 +972,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     def _changed_ordering_mode(self, *data):
         #TODO: Use GObject.bind_property_with_closure for this
-        new_comparer = organization.SortingKeys.Enum[self.ordering_mode]
+        new_comparer = organizing.SortingKeys.Enum[self.ordering_mode]
         if self.album.comparer != new_comparer:
             self.album.comparer = new_comparer
             
@@ -974,7 +981,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def _changed_album_comparer(self, album, *data):
-        sorting_keys_enum = organization.SortingKeys.Enum
+        sorting_keys_enum = organizing.SortingKeys.Enum
         ordering_mode = sorting_keys_enum.index(album.comparer)
         
         self.ordering_mode = ordering_mode
@@ -1273,19 +1280,22 @@ class ViewerWindow(Gtk.ApplicationWindow):
             self.zoom_label.hide()
             self.angle_label.hide()
             self.flip_label.hide()
-            
+    
+    
     def set_view_rotation(self, angle):
         anchor = self.view.get_widget_point()
         pin = self.view.get_pin(anchor)
         self.view.rotation = angle % 360
         self.view.adjust_to_pin(pin)
     
+    
     def set_view_zoom(self, magnification):
         anchor = self.view.get_widget_point()
         pin = self.view.get_pin(anchor)
         self.view.magnification = magnification
         self.view.adjust_to_pin(pin)
-        
+    
+    
     def set_view_flip(self, horizontal, vertical):
         hflip, vflip = self.view.flipping
         
@@ -1307,7 +1317,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
             self.view.flipping = (horizontal, vertical)
             self.view.adjust_to_pin(pin)
-        
+    
+    
     def zoom_view(self, power):
         ''' Zooms the viewport '''        
         zoom_effect = self.app.zoom_effect
@@ -1315,7 +1326,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             old_zoom = self.view.magnification
             new_zoom = self.app.zoom_effect ** power * old_zoom
             self.set_view_zoom(new_zoom)
-            
+    
+    
     def flip_view(self, vertically):
         ''' Flips the viewport '''
         # Horizontal mirroring depends on the rotation of the image
@@ -1326,7 +1338,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             hflip = not hflip
         
         self.set_view_flip(hflip, vflip)
-        
+    
+    
     def rotate_view(self, effect):
         ''' Rotates the viewport '''
         change = self.app.spin_effect * effect
@@ -1336,9 +1349,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
         if change:
             self.set_view_rotation(self.view.rotation + change)
     
+    
     def reset_view_transform(self):
         self.set_view_flip(False, False)
         self.set_view_rotation(0)
+    
     
     def autozoom(self):
         ''' Zooms automatically! '''
@@ -1368,7 +1383,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             keep_below.set_active(False)
             
         self.set_keep_above(keep_above.get_active())
-                
+    
+    
     def toggle_keep_below(self, *data):
         keep_above = self.actions.get_action("ui-keep-above")
         keep_below = self.actions.get_action("ui-keep-below")
@@ -1376,8 +1392,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             keep_above.set_active(False)
             
         self.set_keep_below(keep_below.get_active())
-        
-            
+    
+    
     def toggle_fullscreen(self, data=None):
         # This simply tries to fullscreen / unfullscreen
         fullscreenaction = self.actions.get_action("fullscreen")
@@ -1390,16 +1406,20 @@ class ViewerWindow(Gtk.ApplicationWindow):
     # --- Go go go!!! --- #
     def go_next(self, *data):
         self.avl.go_next()
-        
+    
+    
     def go_previous(self, *data):
         self.avl.go_previous()
-            
+    
+    
     def go_first(self, *data):
         self.avl.go_index(0)
-        
+    
+    
     def go_last(self, *data):
         self.avl.go_index(-1)
-        
+    
+    
     def go_random(self, *data):
         image_count = len(self.album)
         if image_count > 1:
@@ -1410,14 +1430,17 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 random_int += 1
             
             self.avl.go_index(random_int)
-            
+    
+    
     def handle_clear(self, *data):
         del self.album[:]
-        
+    
+    
     def handle_remove(self, *data):
         focus = self.avl.focus_image
         if focus:
             self.album.remove(focus)
+    
     
     def copy_image(self, *stuff):
         focus = self.avl.focus_image
@@ -1605,7 +1628,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                     (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
                 )
                 
-                widget_pad = utility.PadDialogContent(widget)
+                widget_pad = widgets.PadDialogContent(widget)
                 widget_pad.show()
                 content_area = dialog.get_content_area()
                 content_area.pack_start(widget_pad, True, True, 0)
@@ -1706,7 +1729,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 
                 # Show error in status bar #
                 if focused_image.error:
-                    message = notification.Lines.Error(focused_image.error)
+                    message = notifying.Lines.Error(focused_image.error)
                     self.statusbar.push(loading_ctx, message)
                     
                 # Refresh frame #
@@ -1714,7 +1737,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
             else:
                 # Show loading hints #
-                message = notification.Lines.Loading(focused_image)
+                message = notifying.Lines.Loading(focused_image)
                 self.statusbar.push(loading_ctx, message)
                 self.loading_spinner.show()
                 self.loading_spinner.start() # ~like a record~
@@ -1739,7 +1762,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
             # Show error in status bar #
             if error:
-                message = notification.Lines.Error(error)
+                message = notifying.Lines.Error(error)
                 self.statusbar.push(loading_ctx, message)
                 
             # Refresh frame #
@@ -1886,7 +1909,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     #--- Properties down this line ---#
     
     view = GObject.Property(type=viewing.ImageView)
-    album = GObject.Property(type=organization.Album)
+    album = GObject.Property(type=organizing.Album)
     
     sort_automatically = GObject.Property(type=bool, default=True)
     ordering_mode = GObject.Property(type=int, default=0)
@@ -2042,8 +2065,3 @@ class ViewerWindow(Gtk.ApplicationWindow):
         <toolitem action="about" />
     </toolbar>
 </ui>'''
-    
-if __name__ == "__main__":
-    # Run the program
-    app = ImageViewer()
-    app.run(sys.argv)

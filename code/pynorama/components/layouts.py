@@ -1,8 +1,6 @@
-# coding=utf-8
+""" layouts.py adds a few album layouts to the image viewer """
 
-''' organization.py contains code about collections of images. '''
-
-''' ...and this file is part of Pynorama.
+""" ...and this file is part of Pynorama.
     
     Pynorama is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,319 +13,13 @@
     GNU General Public License for more details.
     
     You should have received a copy of the GNU General Public License
-    along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
+    along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
     
-from gi.repository import GLib, GObject
-from collections import MutableSequence
-import utility
 
-class Album(GObject.Object):
-    ''' It organizes images '''
-    
-    __gsignals__ = {
-        "image-added" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
-        "image-removed" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
-        "order-changed" : (GObject.SIGNAL_RUN_FIRST, None, []),
-    }
-    def __init__(self):
-        GObject.GObject.__init__(self)
-        MutableSequence.__init__(self)
-        
-        self.connect("notify::reverse", self.__queue_autosort)
-        self.connect("notify::autosort", self.__queue_autosort)
-        self.connect("notify::comparer", self.__queue_autosort)
-        
-        self._store = []
-        self.__autosort_signal_id = None
-        
-    # --- Mutable sequence interface down this line ---#
-    def __len__(self):
-        return len(self._store)
-        
-    def __getitem__(self, item):
-        return self._store[item]
-        
-    def __setitem__(self, item, value):
-        self._store[item] = value
-        
-    def __delitem__(self, item):
-        if isinstance(item, slice):
-            indices = item.indices(len(self._store))
-            removed_indices = []
-            for i in range(*indices):
-                if item.step and item.step < 0:
-                    removed_indices.append(i)
-                else:
-                    removed_indices.append(i - len(removed_indices))
-                    
-            removed_images = self._store[item]
-            del self._store[item]
-            
-            for i in range(len(removed_indices)):
-                image, index = removed_images[i], removed_indices[i]
-                self.emit("image-removed", image, index)
-        else:
-            image = self._store.pop(item)
-            self.emit("image-removed", image, item)
-    
-    def insert(self, index, image):
-        self._store.insert(index, image)
-        self.emit("image-added", image, index)
-        self.__queue_autosort()
-    
-    # --- "inheriting" down this line --- #
-    
-    __contains__ = MutableSequence.__contains__
-    __iter__ = MutableSequence.__iter__
-    __reversed__ = MutableSequence.__reversed__
-    
-    append = MutableSequence.append
-    count = MutableSequence.count
-    extend = MutableSequence.extend
-    index = MutableSequence.index
-    pop = MutableSequence.pop
-    remove = MutableSequence.remove
-    reverse = MutableSequence.reverse
-    
-    def sort(self):
-        if self.__autosort_signal_id:
-            GLib.source_remove(self.__autosort_signal_id)
-            self.__autosort_signal_id = None
-        
-        if self.sort_list(self._store):
-            self.emit("order-changed")
-    
-    def sort_list(self, a_list):
-        if self.comparer and len(a_list) > 1:
-            a_list.sort(key=self.comparer, reverse=self.reverse)
-            return True
-            
-        else:
-            return False
-    
-    def next(self, image):
-        ''' Returns the image after the input '''
-        index = self._store.index(image)
-        return self._store[(index + 1) % len(self._store)]
-        
-    def previous(self, image):
-        ''' Returns the image before the input '''
-        index = self._store.index(image)
-        return self._store[(index - 1) % len(self._store)]        
-    
-    def around(self, image, forward, backwards):
-        ''' Returns "forward" images after "image" and
-            "backwards" images before "image".
-            This method cycles around the list '''
-        result = []
-        if forward or backwards:
-            start = self._store.index(image)
-            count = len(self._store)
-        
-            for i in range(1, 1 + forward):
-                result.append(self._store[(start + i) % count])
-            
-            for i in range(1, 1 + backwards):
-                result.append(self._store[(start - i) % count])
-            
-        return result
-    
-    # --- properties down this line --- #
-    
-    autosort = GObject.property(type=bool, default=False)
-    comparer = GObject.property(type=object, default=None)
-    reverse = GObject.property(type=bool, default=False)
-    
-    def __queue_autosort(self, *data):
-        if self.autosort and not self.__autosort_signal_id:
-            self.__autosort_signal_id = GLib.idle_add(
-                self.__do_autosort, priority=GLib.PRIORITY_HIGH+10)
-    
-    def __do_autosort(self):
-        self.__autosort_signal_id = None
-        if self.autosort:
-            self.sort()
-        
-        return False
-        
-class SortingKeys:
-    ''' Contains functions to get keys in images for sorting them '''
-    
-    def ByName(image):
-        return GLib.utf8_collate_key_for_filename(image.fullname, -1)
-        
-    def ByCharacters(image):
-        return image.fullname.lower()
-            
-    def ByFileSize(image):
-        return image.get_metadata().data_size
-        
-    def ByFileDate(image):
-        return image.get_metadata().modification_date
-        
-    def ByImageSize(image):
-        return image.get_metadata().get_area()
-        
-    def ByImageWidth(image):
-        return image.get_metadata().width
-        
-    def ByImageHeight(image):
-        return image.get_metadata().height
-        
-    Enum = [
-        ByName, ByCharacters,
-        ByFileSize, ByFileDate,
-        ByImageSize, ByImageWidth, ByImageHeight
-    ]
-
-import point
-
-class AlbumViewLayout(GObject.Object):
-    ''' Used to tell layouts the album used for a view
-        Layouts should store data in this thing
-        Just call this avl for short '''
-    
-    __gsignals__ = {
-        "focus-changed" : (GObject.SIGNAL_RUN_FIRST, None, [object, bool])
-    }
-    
-    
-    def __init__(self, album=None, view=None, layout=None):
-        GObject.Object.__init__(self)
-        self.__is_clean = True
-        self.__old_view = self.__old_album = self.__old_layout = None
-        
-        self.connect("notify::layout", self._layout_changed)
-        
-        self.layout = layout
-        self.album = album
-        self.view = view
-    
-    
-    @property
-    def focus_image(self):
-        return self.__old_layout.get_focus_image(self)
-    
-    
-    @property
-    def focus_frame(self):
-        return self.__old_layout.get_focus_frame(self)
-    
-    
-    def go_index(self, index):
-        self.__old_layout.go_image(self, self.album[index])
-    
-    
-    def go_image(self, image):
-        self.__old_layout.go_image(self, image)
-    
-    
-    def go_next(self):
-        self.__old_layout.go_next(self)
-    
-    
-    def go_previous(self):
-        self.__old_layout.go_previous(self)
-    
-    
-    def clean(self):
-        if not self.__is_clean:
-            self.__old_layout.clean(self)
-            self.__is_clean = True
-    
-    
-    def _layout_changed(self, *data):
-        focus_image = None
-        if self.__old_layout:
-            focus_image = self.focus_image
-            self.__old_layout.unsubscribe(self)
-            self.clean()
-        
-        self.__old_layout = self.layout
-        if self.layout:
-            self.__is_clean = False
-            self.layout.start(self)
-            self.layout.subscribe(self)
-            self.go_image(focus_image)
-    
-    
-    album = GObject.property(type=object, default=None)
-    view = GObject.property(type=object, default=None)
-    layout = GObject.property(type=object, default=None)
-
-
-class AlbumLayout:
-    ''' Places images from an album into a view '''
-    def __init__(self):
-        self.__subscribers = set()
-        
-        self.refresh_subscribers = utility.IdlyMethod(self.refresh_subscribers)
-        self.refresh_subscribers.priority = GLib.PRIORITY_HIGH + 20
-        
-        # This value is set by the app when the layout is created
-        self.source_option = None
-        
-        # Set this to a Gtk.ActionGroup to include custom menu items
-        # into the ViewerWindow uimanager. You also have to implement
-        # the add_ui method in that case.
-        self.ui_action_group = None
-        
-
-    def subscribe(self, avl):
-        self.__subscribers.add(avl)
-        
-
-    def unsubscribe(self, avl):
-        self.__subscribers.discard(avl)
-        
-
-    def refresh_subscribers(self):
-        ''' Layouts should call this or queue_refresh for
-            propagating changes in the layout properites '''
-            
-        for avl in self.__subscribers:
-            self.update(avl)    
-    
-    #~ Interface down this line ~#
-    
-    def get_focus_image(self, avl):
-        ''' Returns the image in focus '''
-        raise NotImplementedError
-
-    
-    def get_focus_frame(self, avl):
-        ''' Returns the frame in focus '''
-        raise NotImplementedError
-                
-
-    def go_image(self, avl, image):
-        ''' Lays out an image '''
-        raise NotImplementedError
-        
-    def go_next(self, avl):
-        focus = avl.focus_image
-        next_image = avl.album.next(focus)
-        avl.go_image(next_image)
-        
-    def go_previous(self, avl):
-        focus = avl.focus_image
-        previous_image = avl.album.previous(focus)
-        avl.go_image(previous_image)        
-        
-
-    def start(self, avl):
-        ''' Set any initial variables in an AlbumViewLayout '''
-        pass
-        
-    def clean(self, avl):
-        ''' Reverse whatever was done at start '''
-        pass    
-
-    def update(self, avl):
-        ''' Propagate changes in a layout property to an avl '''
-        pass
-
-
+from gi.repository import GLib, GObject, Gtk
+from pynorama import utility, widgets, extending
+from pynorama.organizing import AlbumLayout, LayoutDirection
+from gettext import gettext as _
 
 class SingleImageLayout(AlbumLayout):
     ''' Places a single album image in a view '''
@@ -449,15 +141,6 @@ class SingleImageLayout(AlbumLayout):
     
     def _image_loaded(self, image, error, avl):
         self._refresh_frame(avl)
-
-
-class LayoutDirection:
-    Left = "left"
-    Right = "right"
-    Up = "up"
-    Down = "down"
-    
-    Enum = [Up, Right, Down, Left]
 
 
 class ImageStripLayout(GObject.Object, AlbumLayout):
@@ -732,11 +415,11 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
             
         if avl.center_frame and not view.frames_fit:
             w, h = avl.view.get_widget_size()
-            tl = avl.view.get_absolute_point((0, 0))
-            tr = avl.view.get_absolute_point((w, 0))
-            bl = avl.view.get_absolute_point((0, h))
-            br = avl.view.get_absolute_point((w, h))
-            absolute_view_rect = point.Rectangle.FromPoints(tl, tr, bl, br)
+            get_absolute_point = avl.view.get_absolute_point
+            corners = utility.Rectangle(0, 0, w, h).corners()
+            absolute_view_rect = utility.Rectangle.FromPoints(
+                *(get_absolute_point(a_corner) for a_corner in corners)
+            )
             
             current_index = avl.center_index
             current_distance = None
@@ -1224,10 +907,6 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
 
 
 #~~~ Making the built-in layouts avaiable ~~~#
-import extending
-from gi.repository import Gtk
-from gettext import gettext as _
-
 class SingleImageLayoutOption(extending.LayoutOption):
     CODENAME = "single-image"
     def __init__(self):
@@ -1517,14 +1196,14 @@ screen height or width, depending on the strip direction''')
 
         label = _("Pixels to fill before the center")
         space_before_label = Gtk.Label(label)
-        space_before_entry, space_before_adjust = utility.SpinAdjustment(
+        space_before_entry, space_before_adjust = widgets.SpinAdjustment(
              0, 0, 8192, 32, 256, align=True,
          )
         space_before_entry.set_tooltip_text(space_tooltip)
         
         label = _("Pixels to fill after the center")
         space_after_label = Gtk.Label(label)
-        space_after_entry, space_after_adjust = utility.SpinAdjustment(
+        space_after_entry, space_after_adjust = widgets.SpinAdjustment(
             0, 0, 8192, 32, 256, align=True,
         )
         space_after_entry.set_tooltip_text(space_tooltip)
@@ -1536,13 +1215,13 @@ are too small to breach the pixel count limit''')
                     
         label = _("Image limit before the center")
         limit_before_label = Gtk.Label(label)
-        limit_before_entry, limit_before_adjust = utility.SpinAdjustment(
+        limit_before_entry, limit_before_adjust = widgets.SpinAdjustment(
             0, 0, 512, 1, 10, align=True)
         limit_before_entry.set_tooltip_text(limits_tooltip)
         
         label = _("Image limit after the center")
         limit_after_label = Gtk.Label(label)
-        limit_after_entry, limit_after_adjust = utility.SpinAdjustment(
+        limit_after_entry, limit_after_adjust = widgets.SpinAdjustment(
             0, 0, 512, 1, 10, align=True)
         limit_after_entry.set_tooltip_text(limits_tooltip)
         
@@ -1568,8 +1247,8 @@ are too small to breach the pixel count limit''')
         # Add tabs, pack lines
         def add_tab(self, label):
             gtk_label = Gtk.Label(label)
-            box = utility.WidgetStack()
-            box_pad = utility.PadNotebookContent(box)
+            box = widgets.Stack()
+            box_pad = widgets.PadNotebookContent(box)
             self.append_page(box_pad, gtk_label)
             return box
         
@@ -1587,41 +1266,41 @@ are too small to breach the pixel count limit''')
         space_before_label.set_hexpand(True)
         performance_label.set_line_wrap(True)
         
-        appearance_grid = utility.WidgetGrid(
+        appearance_grid = widgets.Grid(
             (direction_label, direction_selector),
             (alignment_button, alignment_scale)
         )
         
         appearance_grid.attach(Gtk.Separator(), 0, 2, 2, 1)
-        utility.WidgetGrid(
+        widgets.Grid(
             (margin_before_label, margin_before_entry),
             (margin_after_label, margin_after_entry),
             grid=appearance_grid, start_row=3
         )
         
         appearance_grid.attach(Gtk.Separator(), 0, 5, 2, 1)
-        loop_line = utility.WidgetLine(loop_button, repeat_button)
+        loop_line = widgets.Line(loop_button, repeat_button)
         appearance_grid.attach(loop_line, 0, 6, 2, 1)
         
-        performance_grid = utility.WidgetGrid()
+        performance_grid = widgets.Grid()
         performance_grid.attach(performance_label, 0, 0, 2, 1)
         
         performance_grid.attach(Gtk.Separator(), 0, 1, 2, 1)
-        utility.WidgetGrid(
+        widgets.Grid(
             (space_before_label, space_before_entry),
             (space_after_label, space_after_entry),
             grid=performance_grid, start_row=2,
         )
         
         performance_grid.attach(Gtk.Separator(), 0, 4, 2, 1)
-        utility.WidgetGrid(
+        widgets.Grid(
             (limit_before_label, limit_before_entry),
             (limit_after_label, limit_after_entry),
             grid=performance_grid, start_row=5,
         )
         
-        appearance_pad = utility.PadNotebookContent(appearance_grid)
-        performance_pad = utility.PadNotebookContent(performance_grid)
+        appearance_pad = widgets.PadNotebookContent(appearance_grid)
+        performance_pad = widgets.PadNotebookContent(performance_grid)
             
         label = _("Appearance")
         appearance_label = Gtk.Label(label)
@@ -1648,10 +1327,8 @@ are too small to breach the pixel count limit''')
 
 
 class BuiltInLayouts(extending.ComponentPackage):
-    @staticmethod
-    def add_on(app):
+    def add_on(self, app):
         components = app.components
-        
         
         # Add settings
         app.settings.get_groups("layout", "image-strip", create=True)
@@ -1662,8 +1339,7 @@ class BuiltInLayouts(extending.ComponentPackage):
         ]
         
         LAYOUT_OPTION_CATEGORY = extending.LayoutOption.CATEGORY
-        components.add_category(LAYOUT_OPTION_CATEGORY, "Layout Option")
         for a_layout_option in layout_options:
             components.add(LAYOUT_OPTION_CATEGORY, a_layout_option)
 
-extending.LoadedComponentPackages.add(BuiltInLayouts)
+extending.LoadedComponentPackages["laying"] = BuiltInLayouts()

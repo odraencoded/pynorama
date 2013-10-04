@@ -15,10 +15,11 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
-import utility
-from collections import OrderedDict
+from . import utility
+from collections import defaultdict, OrderedDict
+from gi.repository import Gdk, GObject, Gtk
 
-LoadedComponentPackages = set()
+LoadedComponentPackages = OrderedDict()
 
 class ComponentPackage:
     """Represents a set of components that extend the app"""
@@ -48,7 +49,7 @@ class ComponentMap:
     #TODO: Make it a GObject and add signals for adding/removing stuff
     
     def __init__(self):
-        self._categories = OrderedDict()
+        self._categories = defaultdict(ComponentMap.Category)
     
     
     def __getitem__(self, key):
@@ -75,20 +76,9 @@ class ComponentMap:
         self._categories[category].add(component)
     
     
-    def add_category(self, category, label=""):
-        """ Adds a component category category to this component map """
-        if category in self._categories:
-            raise KeyError
-        
-        result = ComponentMap.Category(label)
-        self._categories[category] = result
-        return result
-    
-    
     class Category:
-        def __init__(self, label=""):
+        def __init__(self):
             self._components = OrderedDict()
-            self.label = label
         
         
         def __getitem__(self, codename):
@@ -114,7 +104,6 @@ class ComponentMap:
             self._components[component.codename] = component
 
 
-from gi.repository import Gdk, GObject, Gtk
 class LayoutOption(Component, GObject.Object):
     """ Represents a layout choice """
     

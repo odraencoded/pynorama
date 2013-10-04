@@ -16,13 +16,17 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
+import os
+from os.path import join as join_path
+import json
+import math
 from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
-import os
-import organization, notification, mousing, utility
-import cairo
+from . import utility, widgets, notifying, extending, organizing
+from .mousing import MOUSE_MODIFIER_KEYS
+from .extending import PreferencesTab
 
-logger = notification.Logger("preferences")
+logger = notifying.Logger("preferences")
 
 class Dialog(Gtk.Dialog):
     def __init__(self, app):
@@ -41,7 +45,7 @@ class Dialog(Gtk.Dialog):
             try:
                 a_tab_label = a_tab.create_label(self)
                 a_proxy = a_tab.create_proxy(self, a_tab_label)
-                a_tab_pad = utility.PadNotebookContent(a_proxy)
+                a_tab_pad = widgets.PadNotebookContent(a_proxy)
                 tabs.append_page(a_tab_pad, a_tab_label)
             except Exception:
                 name = None
@@ -73,7 +77,7 @@ class Dialog(Gtk.Dialog):
                 logger.log_exception()
             
         # Pack tabs into dialog
-        padded_tabs = utility.PadDialogContent(tabs)
+        padded_tabs = widgets.PadDialogContent(tabs)
         padded_tabs.show_all()
         self.get_content_area().pack_start(padded_tabs, True, True, 0)
         
@@ -98,10 +102,6 @@ class Dialog(Gtk.Dialog):
 
 
 #~ Built in preferences tabs implementation ~#
-
-import extending
-from extending import PreferencesTab
-
 class ViewPreferencesTabProxy(Gtk.Box):
     def __init__(self, dialog, label):
         Gtk.Box.__init__(self)
@@ -109,8 +109,8 @@ class ViewPreferencesTabProxy(Gtk.Box):
         alignment_label = Gtk.Label(_("Image alignment"))
         xadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
         yadjust = Gtk.Adjustment(0.5, 0, 1, .04, .2, 0)
-        point_scale = PointScale(xadjust, yadjust, square=True)
-        grid, xspin, yspin = utility.PointScaleGrid(
+        point_scale = widgets.PointScale(xadjust, yadjust, square=True)
+        grid, xspin, yspin = widgets.PointScaleGrid(
             point_scale, _("Horizontal"), _("Vertical"),
             corner=alignment_label, align=True
         )
@@ -129,7 +129,7 @@ class ViewPreferencesTabProxy(Gtk.Box):
         label = _("Spin effect")
         spin_tooltip = _("Rotate clockwise/anti-clockwise effect in degrees")
         spin_effect_label = Gtk.Label(label)
-        spin_effect_entry, spin_effect_adjust = utility.SpinAdjustment(
+        spin_effect_entry, spin_effect_adjust = widgets.SpinAdjustment(
             0, -180, 180, 10, 60, align=True, digits=2, wrap=True
         )
         # Seting spin tooltip
@@ -142,7 +142,7 @@ class ViewPreferencesTabProxy(Gtk.Box):
         label = _("Zoom in/out effect")
         zoom_tooltip = _("Zoom in/out effect as a multiplier/dividend")
         zoom_effect_label = Gtk.Label(label)
-        zoom_effect_entry, zoom_effect_adjust = utility.SpinAdjustment(
+        zoom_effect_entry, zoom_effect_adjust = widgets.SpinAdjustment(
             2, 1, 4, 0.1, 0.25, align=True, digits=2
         )
         # Setting zoom tooltipip
@@ -152,7 +152,7 @@ class ViewPreferencesTabProxy(Gtk.Box):
         )
         
         # packing widgets
-        utility.WidgetGrid(
+        widgets.Grid(
             (spin_effect_label, spin_effect_entry),
             (zoom_effect_label, zoom_effect_entry),
             align_first=True, expand_first=True,
@@ -231,17 +231,17 @@ class MousePreferencesTabProxy(Gtk.Box):
         
         # Add handler list label and widget container
         text = _("""Mouse mechanisms currently in use by the image viewer""")
-        view_handlers_description = utility.LoneLabel(text)
+        view_handlers_description = widgets.LoneLabel(text)
         mouse_label_notebook.append_page(view_handlers_description, None)
         
         # Add handler factory list label and widget container
         text = _("""Types of mouse mechanisms currently avaiable \
 for the image viewer""")
-        brands_description = utility.LoneLabel(text)
+        brands_description = widgets.LoneLabel(text)
         mouse_label_notebook.append_page(brands_description, None)
         
         # Init the proxy
-        utility.InitWidgetStack(self,
+        widgets.InitStack(self,
             mouse_label_notebook, very_mice_book,
             expand=very_mice_book
         )
@@ -291,13 +291,13 @@ for the image viewer""")
         configure_handler_button.set_can_default(True)
         self._configure_handler_button = configure_handler_button
         
-        edit_handler_buttonbox = utility.ButtonBox(
+        edit_handler_buttonbox = widgets.ButtonBox(
             configure_handler_button,
             secondary=[new_handler_button, remove_handler_button]
         )
         
         # Pack widgets into the notebook
-        view_handlers_box = utility.WidgetStack(
+        view_handlers_box = widgets.Stack(
             handler_listscroller, edit_handler_buttonbox,
             expand=handler_listscroller
         )
@@ -338,12 +338,12 @@ for the image viewer""")
         add_button.set_can_default(True)
         self._add_handler_button = add_button
         
-        add_handler_buttonbox = utility.ButtonBox(
+        add_handler_buttonbox = widgets.ButtonBox(
             cancel_add_button, add_button
         )
         
         # Pack widgets into the pseudo notebook
-        add_handler_box = utility.WidgetStack(
+        add_handler_box = widgets.Stack(
             brand_listscroller, add_handler_buttonbox,
             expand=brand_listscroller
         )
@@ -587,323 +587,17 @@ class MousePreferencesTab(PreferencesTab):
     create_proxy = MousePreferencesTabProxy
 
 
-class BackgroundPreferencesTabProxy(Gtk.Box):
-    def __init__(self, tab, dialog, label):
-        # Enabled checkbutton at the top
-        theme_option = Gtk.RadioButton(
-            _("Theme background"),
-            tooltip_text=_("Use the background set by the Gtk theme")
-        )
-        
-        # Custom background color line
-        custom_color_option = Gtk.RadioButton(
-            _("Solid background color"),
-            tooltip_text=_("Use one custom color as the window background"),
-            group=theme_option
-        )
-        color_chooser = Gtk.ColorButton(
-            title=_("Background Color"),
-            tooltip_text=_("The color used as the window background"),
-            use_alpha=True
-        )
-        bg_line = utility.WidgetLine(custom_color_option, color_chooser)
-        
-        checkered_option = Gtk.RadioButton(
-            _("Checkered background"),
-            tooltip_text=_("Use a checkered pattern as the window background"),
-            group=custom_color_option
-        )
-        
-        # Checks size
-        size_label = Gtk.Label(_("Checks size"))
-        size_entry, size_adjust = utility.SpinAdjustment(
-            16, 4, 1280, 4, 32, align=True, digits=0,
-        )
-        size_entry.set_tooltip_text(_(
-            "The size of the checks of the checkered pattern"
-        ))
-        # Checks colors
-        colors_label = Gtk.Label(_("Colors"))
-        primary_color_button = Gtk.ColorButton(
-            title=_("Checkered Pattern Primary Color"), use_alpha=False
-        )
-        secondary_color_button = Gtk.ColorButton(
-            title=_("Checkered Pattern Primary Color"), use_alpha=False
-        )
-        colors_box = Gtk.ButtonBox(
-            tooltip_text=_("The checkered pattern colors")
-        )
-        colors_box.get_style_context().add_class(Gtk.STYLE_CLASS_LINKED)
-        colors_box.add(primary_color_button)
-        colors_box.add(secondary_color_button)
-        
-        checks_appearance_widgets = utility.WidgetGrid(
-            (size_label, size_entry),
-            (colors_label, colors_box),
-            align_first=True
-        )
-        
-        # A box with the customizing widgets
-        utility.InitWidgetStack(self,
-            theme_option, bg_line, checkered_option, checks_appearance_widgets
-        )
-        
-        # Bind properties
-        flags = GObject.BindingFlags
-        tab.bind_property(
-            "enabled", theme_option, "active",
-            flags.BIDIRECTIONAL | flags.SYNC_CREATE | flags.INVERT_BOOLEAN
-        )
-        utility.Bind(tab,
-            ("use-custom-color", custom_color_option, "active"),
-            ("color", color_chooser, "rgba"),
-            ("checkered", checkered_option, "active"),
-            ("checks-size", size_adjust, "value"),
-            ("checks-primary-color", primary_color_button, "rgba"),
-            ("checks-secondary-color", secondary_color_button, "rgba"),
-            bidirectional=True, synchronize=True
-        )
-        # Sensitivity binds
-        utility.Bind(tab,
-            ("use-custom-color", color_chooser, "sensitive"),
-            ("checkered", checks_appearance_widgets, "sensitive"),
-            synchronize=True
-        )
-
-
-class BackgroundPreferencesTab(extending.PreferencesTab):
-    """ Allows for customizing the background of the image viewer window """
-    CODENAME = "background-tab"
-    def __init__(self, app):
-        extending.PreferencesTab.__init__(
-            self, BackgroundPreferencesTab.CODENAME
-        )
-        # Set default colors
-        self.color = Gdk.RGBA(0, 0, 0 ,1)
-        self.checks_primary_color = Gdk.RGBA(.93, .93, .93 ,1)
-        self.checks_secondary_color = Gdk.RGBA(.82, .82, .82 ,1)
-        self._enabled = False
-        self._view_signals = {}
-        self._checkered_pattern = None
-        
-        # Flag for creating a checkered pattern
-        self._obsolete_checkered_pattern = True
-        
-        # Connect signals
-        app.connect("new-window", self._new_window_cb)
-        self.connect("notify::enabled", self._changed_enabled_cb)
-        self.connect("notify::use-custom-color", self._changed_effect_cb)
-        self.connect("notify::color", self._changed_effect_cb)
-        self.connect("notify::checkered", self._changed_checkered_cb)
-        self.connect("notify::checks-size", self._changed_checks_cb)
-        self.connect("notify::checks-primary-color", self._changed_checks_cb)
-        self.connect("notify::checks-secondary-color", self._changed_checks_cb)
-        
-        # Create settings
-        settings = app.settings.get_groups(
-            "view", "background", create=True
-        )[-1]
-        settings.connect("save", self._save_settings_cb)
-        settings.connect("load", self._load_settings_cb)
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("Background")
-    
-    
-    def get_enabled(self):
-        return self._enabled
-    
-    
-    def set_enabled(self, is_enabled):
-        """ Sets whether to enable a custom background
-        
-        Setting this to false disconnects all signals handlers connected to
-        the application image views.
-        """
-        if is_enabled != self._enabled:
-            self._enabled = is_enabled
-            if is_enabled:
-                for a_view in self._view_signals:
-                    self._connect_view(a_view)
-            else:
-                for a_view, some_signals in self._view_signals.items():
-                    for a_signal in some_signals:
-                        a_view.disconnect(a_signal)
-                    
-                    self._view_signals[a_view] = None
-            
-            
-    enabled = GObject.Property(
-        get_enabled, set_enabled, type=bool, default=False
-    )
-    color = GObject.Property(type=Gdk.RGBA)
-    use_custom_color = GObject.Property(type=bool, default=False) 
-    checkered = GObject.Property(type=bool, default=False)
-    checks_size = GObject.Property(type=int, default=16)
-    checks_primary_color = GObject.Property(type=Gdk.RGBA)
-    checks_secondary_color = GObject.Property(type=Gdk.RGBA)
-    
-    
-    def create_proxy(self, dialog, label):
-        return BackgroundPreferencesTabProxy(self, dialog, label)
-    
-    
-    def _connect_view(self, view):
-        """ Connects to a view signals and stores the handler ids """
-        self._view_signals[view] = [
-            view.connect("destroy", self._destroy_view_cb),
-            view.connect("draw-bg", self._draw_bg_cb)
-        ]
-    
-    
-    def _redraw_views(self):
-        """ Redraws every view in the app """
-        for a_view in self._view_signals:
-            a_view.queue_draw()
-    
-    
-    def _create_checkered_pattern(self):
-        """ Creates the checkered background pattern """
-        checks_size = self.checks_size
-        checkered_surface = cairo.ImageSurface(
-            cairo.FORMAT_RGB24, checks_size * 2, checks_size * 2
-        )
-        cr = cairo.Context(checkered_surface)
-        
-        Gdk.cairo_set_source_rgba(cr, self.checks_primary_color)
-        cr.rectangle(0, 0, checks_size, checks_size)
-        cr.rectangle(checks_size, checks_size, checks_size, checks_size)
-        cr.fill()
-        
-        Gdk.cairo_set_source_rgba(cr, self.checks_secondary_color)
-        cr.rectangle(checks_size, 0, checks_size, checks_size)
-        cr.rectangle(0, checks_size, checks_size, checks_size)
-        cr.fill()
-        
-        self._checkered_pattern = cairo.SurfacePattern(checkered_surface)
-        self._checkered_pattern.set_extend(cairo.EXTEND_REPEAT)
-    
-    
-    def _new_window_cb(self, app, window):
-        """ Connects its background changing ability to a window view """
-        if self.enabled:
-            view = window.view
-            self._connect_view(view)
-            view.queue_draw()
-        else:
-            self._view_signals[window.view] = None
-    
-    
-    def _changed_enabled_cb(self, *whatever):
-        """ Redraw views when it's toggled on/off """
-        self._redraw_views()
-    
-    
-    def _changed_effect_cb(self, *whatever):
-        """ Redraws views if it's enabled """
-        if self.enabled:
-            self._redraw_views()
-    
-    
-    def _changed_checkered_cb(self, *whatever):
-        """ Redraws views if the checkered property was turned on """
-        
-        if self.checkered:
-            self._obsolete_checkered_pattern = True
-        else:
-            # Remove useless pattern
-            self._checkered_pattern = None
-        
-        if self.enabled:
-            self._redraw_views()
-    
-    
-    def _changed_checks_cb(self, *whatever):
-        """ Redraws views when its checks have been changed and they affect
-        the views' background
-        
-        """
-        self._obsolete_checkered_pattern = True
-        if self.checkered and self.enabled:
-            self._redraw_views()
-    
-    
-    def _draw_bg_cb(self, view, cr, drawstate):
-        """ Renders a background in a ImageView """
-        use_custom_color, color, checkered, = self.get_properties(
-            "use-custom-color", "color", "checkered"
-        )
-        if use_custom_color:
-            Gdk.cairo_set_source_rgba(cr, color)
-            cr.paint()
-            
-        if checkered:
-            if self._obsolete_checkered_pattern:
-                self._create_checkered_pattern()
-            
-            cr.set_source(self._checkered_pattern)
-            cr.paint()
-    
-    
-    def _destroy_view_cb(self, view):
-        """ Disconnect signals and drop references to a ImageView """
-        signals = self._view_signals.pop(view)
-        for a_signal in signals:
-            view.disconnect(a_signal)
-    
-    
-    def _save_settings_cb(self, settings):
-        """ Saves its settings """
-        logger.debug("Saving background preferences...")
-        utility.SetDictFromProperties(
-            self, settings.data,
-            "enabled", "use-custom-color",
-            "checkered", "checks-size"
-        )
-        colors = "color", "checks-primary-color", "checks-secondary-color"
-        for a_color_name in colors:
-            a_color = self.get_property(a_color_name)
-            settings.data[a_color_name] = a_color.to_string()
-    
-    
-    def _load_settings_cb(self, settings):
-        """ Loads its settings """
-        logger.debug("Loading background preferences...")
-        utility.SetPropertiesFromDict(
-            self, settings.data,
-            "enabled", "use-custom-color",
-            "checkered", "checks-size"
-        )
-        
-        colors = "color", "checks-primary-color", "checks-secondary-color"
-        for a_color_name in colors:
-            try:
-                a_color_string = settings.data[a_color_name]
-            except KeyError:
-                pass
-            else:
-                # I don't get it either
-                a_color = self.get_property(a_color_name)
-                a_color.parse(a_color_string)
-                self.set_property(a_color_name, a_color)
-    
-    
 class BuiltinPreferencesTabPackage(extending.ComponentPackage):
-    @staticmethod
-    def add_on(app):
+    def add_on(self, app):
         components = app.components
-        components.add_category(PreferencesTab.CATEGORY, "Preferences Tab")
         preferences_tabs = (
             ViewPreferencesTab(),
             MousePreferencesTab(),
-            BackgroundPreferencesTab(app)
         )
         for a_preferences_tab in preferences_tabs:
             components.add(PreferencesTab.CATEGORY, a_preferences_tab)
 
-extending.LoadedComponentPackages.add(BuiltinPreferencesTabPackage)
+extending.LoadedComponentPackages["prefs"] = BuiltinPreferencesTabPackage()
 
 
 class MouseHandlerSettingDialog(Gtk.Dialog):
@@ -915,8 +609,8 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
         self.handler = handler
         self.handler_data = handler_data
         
-        vbox = utility.WidgetStack()
-        vbox_pad = utility.PadDialogContent(vbox)
+        vbox = widgets.Stack()
+        vbox_pad = widgets.PadDialogContent(vbox)
         self.get_content_area().pack_start(vbox_pad, True, True, 0)
         
         # Create nickname widgets
@@ -924,7 +618,7 @@ class MouseHandlerSettingDialog(Gtk.Dialog):
         nickname_label = Gtk.Label(label)
         nickname_entry = Gtk.Entry()
         # Pack nickname entry
-        nickname_line = utility.WidgetLine(
+        nickname_line = widgets.Line(
             nickname_label, nickname_entry, expand=nickname_entry
         )
         vbox.pack_start(nickname_line, False, True, 0)
@@ -949,7 +643,7 @@ the chosen mouse button")
         shift_check = Gtk.CheckButton(_("Shift"))
         alt_check = Gtk.CheckButton(_("Alt"))
         
-        modifier_line = utility.WidgetLine(
+        modifier_line = widgets.Line(
             ctrl_check, shift_check, alt_check
         )
         vbox.pack_start(modifier_line, False, True, 0)
@@ -988,6 +682,7 @@ the chosen mouse button")
         
         self._refresh_title()
     
+    
     def _refresh_title(self, *data):
         label = GetMouseHandlerLabel(self.handler, default=None)
         
@@ -999,9 +694,11 @@ the chosen mouse button")
             
         self.set_title(title)
     
+    
     def _mouse_button_presssed(self, widget, data):
         self.handler_data.button = data.button
-        self.handler_data.keys = data.state & mousing.MouseAdapter.ModifierKeys
+        self.handler_data.keys = data.state & MOUSE_MODIFIER_KEYS
+    
     
     def _refresh_mouse_button(self, *data):
         button = self.handler_data.button
@@ -1030,10 +727,6 @@ def GetMouseHandlerLabel(handler, default=""):
     
     else:
         return default
-
-
-import json
-from os.path import join as join_path
 
 
 class SettingsGroup(GObject.Object):
@@ -1167,7 +860,7 @@ def LoadForApp(app):
         json_path = join_path(app.preferences_directory, "preferences.json")
         if not os.path.exists(json_path):
             json_path = join_path(app.data_directory, "preferences.json")
-            notification.log("Preferences file doesn't exist. Using defaults")
+            logger.log("Preferences file doesn't exist. Using defaults")
         
         try:
             with open(json_path) as prefs_file:
@@ -1230,7 +923,8 @@ def LoadForWindow(window):
         layout_codename = settings_data["layout-codename"]
     except KeyError:
         logger.log("Preferred layout not found in preferences, using default")
-        layout_codename = organization.SingleImageLayoutOption.CODENAME
+        from .components.layouts import SingleImageLayoutOption
+        layout_codename = SingleImageLayoutOption.CODENAME
     
     try:
         layout_option = window.app.components["layout-option", layout_codename]
@@ -1278,7 +972,7 @@ def LoadForAlbum(album, app_settings=None, album_settings=None):
     )
     try:
         sort_mode = settings_data.get("sort-mode", 0)
-        album.comparer = organization.SortingKeys.Enum[sort_mode]
+        album.comparer = organizing.SortingKeys.Enum[sort_mode]
     except KeyError:
         logger.log_error("Could not load album comparer mode {mode}".format(
             mode=sort_mode
@@ -1297,7 +991,7 @@ def SaveFromAlbum(album, app_settings=None, album_settings=None):
     settings_data["sort-auto"] = album.autosort
     settings_data["sort-reverse"] = album.reverse
     
-    sort_mode = organization.SortingKeys.Enum.index(album.comparer)
+    sort_mode = organizing.SortingKeys.Enum.index(album.comparer)
     settings_data["sort-mode"] = sort_mode
 
 
@@ -1339,7 +1033,7 @@ def LoadMouseMechanismsSettings(app, meta_mouse_handler, mechanisms_settings):
         # Try to get the factory with a "a_brand" codename
         a_factory = mouse_factories[a_brand]
         if not a_factory:
-            notification.log(
+            logger.log_error(
                 "Couldn't find \"%s\" mouse mechanism brand" % a_brand
             )
             continue
@@ -1360,9 +1054,8 @@ def LoadMouseMechanismsSettings(app, meta_mouse_handler, mechanisms_settings):
                 add_mouse_mechanism(a_mechanism, **a_binding)
                 
             except Exception:
-                notification.log_exception(
-                    "Failed to load a mouse mechanism"
-                )
+                logger.log_error("Failed to load a mouse mechanism")
+                logger.log_exception()
 
 
 def GetMouseMechanismsSettings(meta_mouse_handler):
@@ -1405,240 +1098,3 @@ def GetMouseMechanismsSettings(meta_mouse_handler):
                 
             a_brand_mechanisms.append(a_mechanism_obj)
     return mechanism_objs
-
-from gi.repository import Gdk
-import math
-
-class PointScale(Gtk.DrawingArea):
-    """ A widget like a Gtk.HScale and Gtk.VScale together. """
-    def __init__(self, hrange, vrange, square=False):
-        Gtk.DrawingArea.__init__(self)
-        self.set_size_request(50, 50)
-        self.square = square
-        if square:
-            self.padding = 0
-            self.mark_width = 32
-            self.mark_height = 32
-            
-        else:
-            self.padding = 4
-            self.mark_width = 8
-            self.mark_height = 8
-            
-        self.dragging = False
-        self.__hrange = self.__vrange = None
-        self.hrange_signal = self.vrange_signal = None
-        self.set_hrange(hrange)
-        self.set_vrange(vrange)
-        self.add_events(
-            Gdk.EventMask.BUTTON_PRESS_MASK |
-            Gdk.EventMask.BUTTON_RELEASE_MASK |
-            Gdk.EventMask.POINTER_MOTION_MASK |
-            Gdk.EventMask.POINTER_MOTION_HINT_MASK
-        )
-            
-    def adjust_from_point(self, x, y):
-        w, h = self.get_allocated_width(), self.get_allocated_height()
-        if self.square:
-            hpadding = self.padding + self.mark_width / 2
-            vpadding = self.padding + self.mark_height / 2
-        else:
-            hpadding, vpadding = self.padding, self.padding
-        
-        t, l = vpadding, hpadding
-        r, b = w - hpadding, h - vpadding
-        
-        x, y = (max(0, min(r - l, x - l)) / (r - l),
-                max(0, min(b - t, y - t)) / (b - t))
-                
-        hrange = self.get_hrange()
-        if hrange:
-            lx, ux = hrange.get_lower(), hrange.get_upper()
-            vx = x * (ux - lx) + lx
-            self.hrange.set_value(vx)
-        
-        vrange = self.get_vrange()
-        if vrange:
-            ly, uy = vrange.get_lower(), vrange.get_upper()
-            vy = y * (uy - ly) + ly
-            self.vrange.set_value(vy)
-    
-    def do_get_request_mode(self):
-        return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
-
-    def do_get_preferred_width(self):
-        hrange = self.get_hrange()
-        vrange = self.get_vrange()
-        lx, ux = hrange.get_lower(), hrange.get_upper()
-        ly, uy = vrange.get_lower(), vrange.get_upper()
-        
-        ratio = (ux - lx) / (uy - ly)
-        w = self.get_allocated_height()
-        return w * ratio, w * ratio
-                    
-    def do_get_preferred_height(self):
-        hrange = self.get_hrange()
-        vrange = self.get_vrange()
-        lx, ux = hrange.get_lower(), hrange.get_upper()
-        ly, uy = vrange.get_lower(), vrange.get_upper()
-        
-        ratio = (uy - ly) / (ux - lx)
-        h = self.get_allocated_height()
-        return h * ratio, h * ratio
-    
-    def do_get_preferred_height_for_width(self, width):
-        hrange = self.get_hrange()
-        vrange = self.get_vrange()
-        lx, ux = hrange.get_lower(), hrange.get_upper()
-        ly, uy = vrange.get_lower(), vrange.get_upper()
-        
-        ratio = (uy - ly) / (ux - lx)
-        
-        return width * ratio, width * ratio
-            
-    def do_get_preferred_width_for_height(self, height):
-        hrange = self.get_hrange()
-        vrange = self.get_vrange()
-        lx, ux = hrange.get_lower(), hrange.get_upper()
-        ly, uy = vrange.get_lower(), vrange.get_upper()
-        
-        ratio = (ux - lx) / (uy - ly)
-        
-        return height * ratio, height * ratio
-        
-    def do_button_press_event(self, data):
-        self.dragging = True
-        self.adjust_from_point(data.x, data.y)
-            
-    def do_button_release_event(self, data):
-        self.dragging = False
-        self.queue_draw()
-    
-    def do_motion_notify_event(self, data):
-        if self.dragging:
-            mx, my = data.x, data.y
-            self.adjust_from_point(mx, my)
-    
-    def do_draw(self, cr):
-        w, h = self.get_allocated_width(), self.get_allocated_height()        
-        if self.square:
-            hpadding = self.padding + self.mark_width / 2
-            vpadding = self.padding + self.mark_height / 2
-        else:
-            hpadding, vpadding = self.padding, self.padding
-        
-        t, l = vpadding, hpadding
-        r, b = w - hpadding, h - vpadding
-                
-        hrange = self.get_hrange()
-        if hrange:
-            lx, ux = hrange.get_lower(), hrange.get_upper()
-            vx = hrange.get_value()
-            x = (r - l - 1) * (vx / (ux - lx) - lx) + l
-        else:
-            x = w / 2
-            
-        vrange = self.get_vrange()
-        if vrange:
-            ly, uy = vrange.get_lower(), vrange.get_upper()
-            vy = vrange.get_value()
-            y = (b - t - 1) * (vy / (uy - ly) - ly) + l
-        else:
-            y = h / 2
-        
-        style = self.get_style_context()
-        
-        style.add_class(Gtk.STYLE_CLASS_ENTRY)
-        Gtk.render_background(style, cr, 0, 0, w, h)
-        cr.save()
-        border = style.get_border(style.get_state())
-        radius = style.get_property(Gtk.STYLE_PROPERTY_BORDER_RADIUS,
-                                    Gtk.StateFlags.NORMAL)
-        color = style.get_color(style.get_state())
-        cr.arc(border.left + radius,
-               border.top + radius, radius, math.pi, math.pi * 1.5)
-        cr.arc(w - border.right - radius -1,
-               border.top + radius, radius, math.pi * 1.5, math.pi * 2)
-        cr.arc(w - border.right - radius -1,
-               h -border.bottom - radius -1, radius, 0, math.pi / 2)
-        cr.arc(border.left + radius,
-               h - border.bottom - radius - 1, radius, math.pi / 2, math.pi)
-        cr.clip()
-        
-        cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
-        x, y = round(x), round(y)
-        
-        if self.square:
-            ml, mt = x - self.mark_width / 2, y - self.mark_height / 2
-            mr, mb = ml + self.mark_width, mt + self.mark_height
-            ml, mt, mr, mb = round(ml), round(mt), round(mr), round(mb)
-            
-            cr.set_line_width(1)
-            cr.set_dash([3, 7], x + y)
-            cr.move_to(ml, 0); cr.line_to(ml, h); cr.stroke()
-            cr.move_to(mr, 0); cr.line_to(mr, h); cr.stroke()
-            cr.move_to(0, mt); cr.line_to(w, mt); cr.stroke()
-            cr.move_to(0, mb); cr.line_to(w, mb); cr.stroke()
-            
-            cr.set_dash([], 0)
-            cr.rectangle(ml, mt, self.mark_width, self.mark_height)
-            cr.stroke()
-        
-        else:
-            cr.set_line_width(1)
-            cr.set_dash([3, 7], x + y)
-            cr.move_to(x, 0); cr.line_to(x, h); cr.stroke()
-            cr.move_to(0, y); cr.line_to(w, y); cr.stroke()
-            
-            cr.save()
-            cr.translate(x, y)
-            cr.scale(self.mark_width * 3, self.mark_height * 3)
-            cr.arc(0, 0, 1, 0, 2 * math.pi)
-            cr.restore()
-            cr.stroke()
-            
-            cr.set_dash([], 0)
-            
-            cr.save()
-            cr.translate(x, y)
-            cr.scale(self.mark_width / 2, self.mark_height / 2)
-            cr.arc(0, 0, 1, 0, 2 * math.pi)
-            cr.restore()
-            cr.fill()
-            
-        cr.restore()
-        Gtk.render_frame(style, cr, 0, 0, w, h)
-        
-    def adjustment_changed(self, data):
-        self.queue_draw()
-    
-    def get_hrange(self):
-        return self.__hrange
-    def set_hrange(self, adjustment):
-        if self.__hrange:
-            self.__hrange.disconnect(self.hrange_signal)
-            self.hrange_signal = None
-            
-        self.__hrange = adjustment
-        if adjustment:
-            self.hrange_signal = adjustment.connect(
-                "value-changed", self.adjustment_changed
-            )
-        self.queue_draw()
-        
-    def get_vrange(self):
-        return self.__vrange
-    def set_vrange(self, adjustment):
-        if self.__vrange:
-            self.__vrange.disconnect(self.vrange_signal)
-            self.vrange_signal = None
-            
-        self.__vrange = adjustment
-        if adjustment:
-            self.vrange_signal = adjustment.connect(
-                "value-changed", self.adjustment_changed
-            )
-        self.queue_draw()
-    
-    hrange = GObject.property(get_hrange, set_hrange, type=Gtk.Adjustment)
-    vrange = GObject.property(get_vrange, set_vrange, type=Gtk.Adjustment)
