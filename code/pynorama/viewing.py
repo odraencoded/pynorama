@@ -743,7 +743,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
                 zoom, rotation,
                 self.hflip, self.vflip,
                 self.minify_filter, self.magnify_filter,
-                round_full_pixel_offset, round_sub_pixel_offset
+                self.round_full_pixel_offset, self.round_sub_pixel_offset
             ) = view.get_properties(
                 "magnification", "rotation",
                 "horizontal-flip", "vertical-flip",
@@ -751,7 +751,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
                 "round-full-pixel-offset", "round-sub-pixel-offset"
             )
             
-            self.magnification, self.rotation = zoom, rotation
+            self.rotation = rotation
             self.rad_rotation = radians(rotation)
             self.flip = self.hflip, self.vflip
             self.is_flipped = self.hflip or self.vflip
@@ -759,21 +759,9 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
             alloc = view.get_allocation()
             self.size = self.width, self.height = alloc.width, alloc.height
             
-            offset = view.offset
-            if(zoom > 1 and round_full_pixel_offset):
-                # Round pixel offset, removing pixel fractions from it
-                offset = round(offset)
-                
-            if(zoom != 1 and round_sub_pixel_offset):
-                # Round offset to match pixels shown on display using
-                # inverse magnification
-                
-                invzoom = 1 / zoom
-                invzoom_scale = Point(invzoom, invzoom)
-                offset = offset // invzoom_scale * invzoom_scale
-                
-            self.offset = offset
-            self.translation = -offset
+            self.real_offset = view.offset
+            self.set_magnification(zoom)
+            
             self.style = view.get_style_context()
         
         
@@ -804,6 +792,43 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
                     -1 if self.hflip else 1,
                     -1 if self.vflip else 1
                 )
+        
+        
+        def set_magnification(self, zoom):
+            self.magnification = zoom
+            offset = self.real_offset
+            if(zoom > 1 and self.round_full_pixel_offset):
+                # Round pixel offset, removing pixel fractions from it
+                offset = round(offset)
+                
+            if(zoom != 1 and self.round_sub_pixel_offset):
+                # Round offset to match pixels shown on display using
+                # inverse magnification
+                
+                invzoom = 1 / zoom
+                invzoom_scale = Point(invzoom, invzoom)
+                offset = offset // invzoom_scale * invzoom_scale
+                
+            self.offset = offset
+            self.translation = -offset
+        
+        
+        def set_offset(self, offset):
+            self.real_offset = offset
+            if(self.magnification > 1 and self.round_full_pixel_offset):
+                # Round pixel offset, removing pixel fractions from it
+                offset = round(offset)
+                
+            if(self.magnification != 1 and self.round_sub_pixel_offset):
+                # Round offset to match pixels shown on display using
+                # inverse magnification
+                
+                invzoom = 1 / self.magnification
+                invzoom_scale = Point(invzoom, invzoom)
+                offset = offset // invzoom_scale * invzoom_scale
+                
+            self.offset = offset
+            self.translation = -offset
     
     
     def do_draw(self, cr):

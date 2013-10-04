@@ -5,9 +5,12 @@ logger = notifying.Logger("app")
 
 __all__ = [
     "background",
+    "magnifier",
+    
     "mice",
     "layouts",
-    "openers"
+    "openers",
+    "loaders",
 ]
 
 def import_addons():
