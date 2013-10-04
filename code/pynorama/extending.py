@@ -169,6 +169,8 @@ class LayoutOption(Component, GObject.Object):
 class MouseHandlerFactory(Component, GObject.Object):
     """ Manufacturates a certain kind of mousing.MouseHandler """
     
+    CATEGORY = "mouse-mechanism-brand"
+    
     def __init__(self, codename=""):
         Component.__init__(self, codename)
         GObject.Object.__init__(self)

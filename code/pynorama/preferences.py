@@ -24,7 +24,7 @@ from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
 from . import utility, widgets, notifying, extending, organizing
 from .mousing import MOUSE_MODIFIER_KEYS
-from .extending import PreferencesTab
+from .extending import PreferencesTab, MouseHandlerFactory
 
 logger = notifying.Logger("preferences")
 
@@ -306,7 +306,7 @@ for the image viewer""")
         # Setup add handlers grid (it is used to add handlers)
         brand_liststore = Gtk.ListStore(object)
         
-        for a_brand in self._app.components["mouse-mechanism-brand"]:
+        for a_brand in self._app.components[MouseHandlerFactory.CATEGORY]:
             brand_liststore.append([a_brand])
         
         # Setup listview and selection
@@ -1027,7 +1027,7 @@ def SaveFromView(view, app_settings=None, view_settings=None):
 def LoadMouseMechanismsSettings(app, meta_mouse_handler, mechanisms_settings):
     """ Loads mouse settings from a dictionary """
     
-    mouse_factories = app.components["mouse-mechanism-brand"]
+    mouse_factories = app.components[MouseHandlerFactory.CATEGORY]
     add_mouse_mechanism = meta_mouse_handler.add
     for a_brand, some_mechanisms in mechanisms_settings.items():
         # Try to get the factory with a "a_brand" codename

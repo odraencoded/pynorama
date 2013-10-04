@@ -745,7 +745,8 @@ class BuiltInMouseMechanismBrands(extending.ComponentPackage):
             ZoomHandlerFactory(),
             GearHandlerFactory(),
         ]
+        category = extending.MouseHandlerFactory.CATEGORY
         for a_brand in brands:
-            components.add("mouse-mechanism-brand", a_brand)
+            components.add(category, a_brand)
 
 extending.LoadedComponentPackages["mice"] = BuiltInMouseMechanismBrands()
