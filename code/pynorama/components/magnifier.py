@@ -56,7 +56,7 @@ class Magnifier(GObject.Object):
     position = GObject.Property(get_position, set_position, type=object) 
     position_x = GObject.Property(type=int, default=0) 
     position_y = GObject.Property(type=int, default=0) 
-    radius = GObject.Property(type=float, default=64)
+    radius = GObject.Property(type=float, default=128)
     magnification = GObject.Property(type=float, default=2)
     
     
@@ -81,10 +81,19 @@ class Magnifier(GObject.Object):
             
             # Modify transform properties of the drawstate so drawstate
             # features can be used
+            
             normal_zoom = drawstate.magnification
             normal_offset = drawstate.real_offset
             glass_zoom = normal_zoom * magnification
-            glass_offset = normal_offset + Point(x, y).scale(1 / glass_zoom)
+            # In order to use drawstate.transform() the tranlation is
+            # calculated like this. This equals to
+            # translate(x, y); scale(magnification); translate(-x, -y)
+            # scale(drawstate.magnification); translate(*drawstate.translation)
+            glass_offset = (
+                normal_offset
+                + Point(x, y).scale(1 / normal_zoom)
+                - Point(x, y).scale(1 / glass_zoom)
+            )
             drawstate.set_magnification(glass_zoom)
             drawstate.set_offset(glass_offset)
             
@@ -160,9 +169,35 @@ class HoverMagnifyingGlass(MouseHandler):
         self.context.get_magnifier(view).position = to_point
 
 
+class ScrollMagnifyingGlass(MouseHandler):
+    def __init__(self, magnifier_context, **kwargs):
+        self.context = magnifier_context
+        
+        MouseHandler.__init__(self, **kwargs)
+        self.events = MouseEvents.Scrolling
+    
+    
+    zoom_effect = GObject.Property(type=float, default=1.5)
+    radius_effect = GObject.Property(type=float, default=1.5)
+    
+    
+    def scroll(self, view, point, direction, data):
+        magnifier = self.context.get_magnifier(view)
+        dx, dy = direction
+        if dy < 0:
+            magnifier.magnification *= -dy * self.zoom_effect
+            magnifier.radius *= -dy * self.radius_effect
+        elif dy > 0:
+            magnifier.magnification /= dy * self.zoom_effect
+            magnifier.radius /= dy * self.radius_effect
+
+
 class HoverMagnifyingGlassFactory(extending.MouseHandlerFactory):
+    CODENAME = "hover-magnifying-glass"
     def __init__(self, magnifier_context):
-        extending.MouseHandlerFactory.__init__(self)
+        extending.MouseHandlerFactory.__init__(
+            self, HoverMagnifyingGlassFactory.CODENAME
+        )
         self.context = magnifier_context
     
     
@@ -184,13 +219,69 @@ class HoverMagnifyingGlassFactory(extending.MouseHandlerFactory):
         return HoverAndDragHandler(self.context)
 
 
+class ScrollMagnifyingGlassSettingsWidget(Gtk.Box):
+    def __init__(self, handler):
+        zoom_label = Gtk.Label(_("Zoom effect"))
+        zoom_spin, zoom_adjust = widgets.SpinAdjustment(
+            1.5, 1, 4, .1, .5, align=True, digits=2
+        )
+        zoom_line = widgets.Line(zoom_label, zoom_spin)
+        
+        radius_label = Gtk.Label(_("Radius effect"))
+        radius_spin, radius_adjust = widgets.SpinAdjustment(
+            1.5, 1, 4, .1, .5, align=True, digits=2
+        )
+        radius_line = widgets.Line(radius_label, radius_spin)
+        
+        utility.Bind(handler,
+            ("zoom-effect", zoom_adjust, "value"),
+            ("radius-effect", radius_adjust, "value"),
+            bidirectional=True, synchronize=True
+        )
+        widgets.InitStack(self, zoom_line, radius_line)
+        self.show_all()
+
+
+class ScrollMagnifyingGlassFactory(extending.MouseHandlerFactory):
+    CODENAME = "scroll-magnifying-glass"
+    def __init__(self, magnifier_context):
+        extending.MouseHandlerFactory.__init__(
+            self, ScrollMagnifyingGlassFactory.CODENAME
+        )
+        self.context = magnifier_context
+        self.create_settings_widget = ScrollMagnifyingGlassSettingsWidget
+    
+    
+    @GObject.Property
+    def label(self):
+        return _("Scroll to Modify the Magnifying Glass")
+    
+    
+    def create_default(self):
+        return ScrollMagnifyingGlass(self.context)
+    
+    
+    @staticmethod
+    def get_settings(handler):
+        return { "zoom-effect": handler.zoom_effect }
+    
+    
+    def load_settings(self, settings):
+        return ScrollMagnifyingGlass(self.context, **settings)
+
+
 class BackgroundPreferencesTabPackage(extending.ComponentPackage):
     def add_on(self, app):
         add_component = app.components.add
         magnifier_tab = MagnifierPreferencesTab(app)
-        mice_factory = HoverMagnifyingGlassFactory(magnifier_tab)
+        mouse_factories = (
+            HoverMagnifyingGlassFactory(magnifier_tab),
+            ScrollMagnifyingGlassFactory(magnifier_tab)
+        )
         
         add_component(extending.PreferencesTab.CATEGORY, magnifier_tab)
-        add_component(extending.MouseHandlerFactory.CATEGORY, mice_factory)
+        mouse_factory_category = extending.MouseHandlerFactory.CATEGORY
+        for a_mouse_handler_factory in mouse_factories:
+            add_component(mouse_factory_category, a_mouse_handler_factory)
 
 LoadedComponentPackages["magnifying-glass"] = BackgroundPreferencesTabPackage()
