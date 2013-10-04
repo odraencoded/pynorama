@@ -3,8 +3,7 @@ SUBDIRS = code resources
 bin_SCRIPTS = pynorama
 CLEANFILES = $(bin_SCRIPTS)
 do_substitution = sed \
-	-e 's,[@]pynoramadir[@],$(pkglibdir),g' \
-	-e 's,[@]pkgdatadir[@],$(pkgdatadir),g'
+	-e 's,[@]pynoramadir[@],$(pkglibdir),g'
 
 EXTRA_DIST = pynorama.in
 
