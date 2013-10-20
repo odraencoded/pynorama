@@ -125,7 +125,7 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         self._obsolete_checkered_pattern = True
         
         # Connect signals
-        app.connect("new-window", self._new_window_cb)
+        app.connect("new-view", self._new_view_cb)
         self.connect("notify::enabled", self._changed_enabled_cb)
         self.connect("notify::use-custom-color", self._changed_effect_cb)
         self.connect("notify::color", self._changed_effect_cb)
@@ -221,10 +221,9 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         self._checkered_pattern.set_extend(cairo.EXTEND_REPEAT)
     
     
-    def _new_window_cb(self, app, window):
-        """ Connects its background changing ability to a window view """
+    def _new_view_cb(self, app, view):
+        """ Connects its background changing ability to a view """
         if self.enabled:
-            view = window.view
             self._connect_view(view)
             view.queue_draw()
         else:

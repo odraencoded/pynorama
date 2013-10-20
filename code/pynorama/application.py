@@ -48,6 +48,7 @@ class ImageViewer(Gtk.Application):
     
     __gsignals__ = {
         "new-window": (GObject.SIGNAL_RUN_FIRST, None, [object]),
+        "new-view": (GObject.SIGNAL_RUN_FIRST, None, [object])
     }
     
     def __init__(self):
@@ -315,7 +316,7 @@ class ImageViewer(Gtk.Application):
         else:
             # Create a window and return it
             try:
-                a_window = self.create_new_window()
+                a_window = self.create_window()
             
             except Exception:
                 # Doing this because I'm tired of ending up with a
@@ -345,9 +346,18 @@ class ImageViewer(Gtk.Application):
                 
             return a_window
     
-    def create_new_window(self):
+    
+    def create_window(self):
+        """ Creates a new ViewerWindow and returns it """
         result = ViewerWindow(self)
         self.emit("new-window", result)
+        return result
+    
+    
+    def create_view(self):
+        """ Creates a new ImageView and returns it """
+        result = viewing.ImageView()
+        self.emit("new-view", result)
         return result
     
     
@@ -480,7 +490,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.view_scroller.connect("key-release-event", lambda x, y: True)
         self.view_scroller.connect("scroll-event", lambda x, y: True)
         
-        self.view = viewing.ImageView()
+        self.view = app.create_view()
         # Setup a bunch of reactions to all sorts of things
         self.view.connect("notify::magnification", self._changed_magnification)
         self.view.connect("notify::rotation", self._reapply_autozoom)
