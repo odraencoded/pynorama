@@ -29,6 +29,7 @@ MOUSE_EVENT_MASK = (
     EventMask.SCROLL_MASK |
     EventMask.SMOOTH_SCROLL_MASK |
     EventMask.ENTER_NOTIFY_MASK |
+    EventMask.LEAVE_NOTIFY_MASK |
     EventMask.POINTER_MOTION_MASK |
     EventMask.POINTER_MOTION_HINT_MASK
 )
@@ -48,6 +49,7 @@ PRIORITY_MOUSE_IDLE = GLib.PRIORITY_HIGH_IDLE + 15
 class MouseAdapter(GObject.GObject):
     """ Emits signals based on a widget mouse events """
     __gsignals__ = {
+        "cross" : (GObject.SIGNAL_RUN_FIRST, None, [object, bool]),
         "motion" : (GObject.SIGNAL_RUN_FIRST, None, [object, object]),
         "drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, object, int]),
         "pression" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
@@ -109,6 +111,7 @@ class MouseAdapter(GObject.GObject):
                     connect("button-release-event", self._button_release_cb),
                     connect("scroll-event", self._mouse_scroll_cb),
                     connect("enter-notify-event", self._mouse_enter_cb),
+                    connect("leave-notify-event", self._mouse_leave_cb),
                     connect("motion-notify-event", self._mouse_motion_cb),
                 ]
                 
@@ -201,10 +204,16 @@ class MouseAdapter(GObject.GObject):
                 self.emit("scroll", point, Point(xd, yd))
     
     
-    def _mouse_enter_cb(self, *data):
+    def _mouse_enter_cb(self, widget, data):
         self._motion_from_outside = 2
         if not self._pressure:
             self._pressure_from_outside = True
+        
+        self.emit("cross", Point(data.x, data.y), True)
+    
+    
+    def _mouse_leave_cb(self, widget, data):
+        self.emit("cross", Point(data.x, data.y), False)
     
     
     def _mouse_motion_cb(self, widget, data):
@@ -290,6 +299,7 @@ class MetaMouseHandler(GObject.Object):
         self._hovering_handlers = set()
         self._dragging_handlers = set()
         self._scrolling_handlers = set()
+        self._crossing_handlers = set()
         # This is a button/mouse handler set
         self._button_handlers = dict()
         # This is a key modifier/mouse handler set
@@ -403,12 +413,16 @@ class MetaMouseHandler(GObject.Object):
             
         if handler.handles(MouseEvents.Dragging):
             yield self._dragging_handlers
+        
+        if handler.handles(MouseEvents.Crossing):
+            yield self._crossing_handlers
     
     
     def attach(self, adapter):
         """ Attach itself to a mouse adapter """
         if not adapter in self._adapters_data:
             signals = [
+                adapter.connect("cross", self._cross),
                 adapter.connect("motion", self._motion),
                 adapter.connect("pression", self._pression),
                 adapter.connect("scroll", self._scroll),
@@ -485,6 +499,15 @@ class MetaMouseHandler(GObject.Object):
         )
         self._basic_event_dispatch(
             adapter, active_handlers, "scroll", point, direction
+        )
+    
+    
+    def _cross(self, adapter, point, inside):
+        active_handlers = self._overlap_handler_sets(
+            self._crossing_handlers, adapter.keys
+        )
+        self._basic_event_dispatch(
+            adapter, active_handlers, "cross", point, inside
         )
     
     
@@ -644,14 +667,15 @@ class MouseHandlerBinding(GObject.Object):
 
 
 class MouseEvents:
-    Nothing   = 0b0000000
-    Moving    = 0b0000011
-    Hovering  = 0b0000001 # Movement without pressure
-    Pressing  = 0b0010110 # Pressure regardless of movement
-    Dragging  = 0b0001110 # Pressure and movement
-    Clicking  = 0b0010100
-    Scrolling = 0b0100000 # Handles either scrolling axes
-    Rolling   = 0b1100000 # Handles both scrolling axes
+    Nothing   = 0b00000000
+    Moving    = 0b00000011
+    Hovering  = 0b00000001 # Movement without pressure
+    Pressing  = 0b00010110 # Pressure regardless of movement
+    Dragging  = 0b00001110 # Pressure and movement
+    Clicking  = 0b00010100
+    Scrolling = 0b00100000 # Handles either scrolling axes
+    Rolling   = 0b01100000 # Handles both scrolling axes
+    Crossing  = 0b10000000 # Entering and exiting the widget
 
 
 class MouseHandler(GObject.Object):
@@ -695,6 +719,11 @@ class MouseHandler(GObject.Object):
         pass
     
     
+    def cross(self, widget, point, inside, data):
+        """ Handles the mouse entering or leaving the widget """
+        pass
+    
+    
     def hover(self, widget, to_point, from_point, data):
         """ Handles the mouse just hovering around """
         pass
@@ -713,14 +742,14 @@ class MouseHandler(GObject.Object):
     def stop_dragging(self, widget, point, data):
         """ Finish dragging """
         pass
-    
-    
+
+
 class PivotMode:
     Mouse = 0
     Alignment = 1
     Fixed = 2
-    
-    
+
+
 class MouseHandlerPivot(GObject.Object):
     """ An utility class for mouse mechanisms which need a pivot point """
     def __init__(self, settings=None, **kwargs):
