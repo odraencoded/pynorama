@@ -22,7 +22,7 @@ from pynorama import utility, widgets, extending, notifying
 from pynorama.utility import Point
 from pynorama.extending import PreferencesTab, LoadedComponentPackages
 from pynorama.mousing import MouseHandler, MouseEvents
-from gi.repository import GObject, Gtk
+from gi.repository import Gtk, Gdk, GObject
 from gettext import gettext as _
 from math import pi as PI
 logger = notifying.Logger("preferences")
@@ -31,6 +31,9 @@ logger = notifying.Logger("preferences")
 class Magnifier(GObject.Object):
     def __init__(self, **kwargs):
         self._view = None
+        
+        kwargs.setdefault("outline-color", Gdk.RGBA(0, 0, 0 ,1))
+        
         GObject.Object.__init__(self, **kwargs)
         self.view_connector = utility.SignalHandlerConnector(
             self, "view",
@@ -39,10 +42,12 @@ class Magnifier(GObject.Object):
         )
         
         self.connect("notify::visible", self._changed_visibility_cb)
-        self.connect("notify::position-x", self._changed_effect_cb)
-        self.connect("notify::position-y", self._changed_effect_cb)
-        self.connect("notify::magnification", self._changed_effect_cb)
-    
+        appearance_properties = [
+            "position-x", "position-y", "magnification", "draw-outline",
+            "outline-thickness", "outline-scale", "outline-color"
+        ]
+        for a_property in appearance_properties:
+            self.connect("notify::" + a_property, self._changed_effect_cb)
     
     def get_position(self):
         return Point(*self.get_properties("position-x", "position-y"))
@@ -59,6 +64,10 @@ class Magnifier(GObject.Object):
     radius = GObject.Property(type=float, default=128)
     magnification = GObject.Property(type=float, default=2)
     
+    draw_outline = GObject.Property(type=bool, default=True)
+    outline_thickness = GObject.Property(type=float, default=.5)
+    outline_scale = GObject.Property(type=bool, default=True)
+    outline_color = GObject.Property(type=Gdk.RGBA)
     
     def _changed_visibility_cb(self, *whatever):
         if self.view:
@@ -71,10 +80,33 @@ class Magnifier(GObject.Object):
     
     
     def _draw_fg_cb(self, view, cr, drawstate):
-        visible, x, y, radius, magnification = self.get_properties(
-            "visible", "position-x", "position-y", "radius", "magnification"
+        (
+            visible, x, y, radius, magnification,
+            draw_outline,
+            outline_thickness, outline_scale, outline_color
+        ) = self.get_properties(
+            "visible", "position-x", "position-y", "radius", "magnification",
+            "draw-outline",
+            "outline-thickness", "outline-scale", "outline-color"
         )
         if visible:
+            if draw_outline:
+                cr.save()
+                cr.arc(x, y, radius, 0, PI * 2)
+                
+                # The thickness is always x2 because half of the arc path
+                # is the center of the stroke, half of the stroke will be
+                # overlaid by the magnified content so it is width is doubled
+                # to compensate
+                if outline_scale:
+                    cr.set_line_width(outline_thickness * 2 * magnification)
+                else:
+                    cr.set_line_width(outline_thickness * 2)
+                
+                Gdk.cairo_set_source_rgba(cr, self.outline_color)
+                cr.stroke()
+                cr.restore()
+        
             cr.save()
             cr.arc(x, y, radius, 0, PI * 2)
             cr.clip()
@@ -113,7 +145,57 @@ class Magnifier(GObject.Object):
 
 class BackgroundPreferencesTabProxy(Gtk.Box):
     def __init__(self, tab, dialog, label):
-        Gtk.Box.__init__(self)
+        outline_check = Gtk.CheckButton(
+            _("Outline magnifier"),
+            tooltip_text=_("Draw an outline around the magnifier")
+        )
+        
+        # Outline thickness controls
+        thickness_label = Gtk.Label(_("Thickness"))
+        thickness_entry, thickness_adjust = widgets.SpinAdjustment(
+            .5, .01, 256.0, .5, 6, align=True, digits=2,
+        )
+        thickness_entry.set_tooltip_text(
+            _("The thickness of the outline in pixels")
+        )
+        thickness_scale = Gtk.CheckButton(
+            _("Scale thickness"),
+            tooltip_text=_("Increase the thickness with the magnifier zoom"),
+        )
+        
+        # Outline colour controls
+        outline_color_label = Gtk.Label(_("Color"))
+        outline_color = Gtk.ColorButton(
+            tooltip_text=_("The color of the magnifier outline"),
+            title=_("Magnifier outline color"),
+            use_alpha=True
+        )
+        
+        outline_grid = widgets.Grid(
+            (thickness_label, thickness_entry, thickness_scale),
+            (outline_color_label, outline_color),
+            align_first=True
+        )
+        
+        widgets.InitStack(self,
+            outline_check,
+            outline_grid
+        )
+        
+        utility.Bind(tab.magnifier,
+            ("draw-outline", outline_check, "active"),
+            ("outline-thickness", thickness_adjust, "value"),
+            ("outline-scale", thickness_scale, "active"),
+            ("outline-color", outline_color, "rgba"), 
+            synchronize=True, bidirectional=True
+        )
+        
+        utility.Bind(outline_check,
+            ("active", outline_grid, "sensitive"),
+            synchronize=True
+        )
+        
+        self.show_all()
 
 
 class MagnifierPreferencesTab(extending.PreferencesTab):
@@ -270,7 +352,7 @@ class ScrollMagnifyingGlassFactory(extending.MouseHandlerFactory):
         return ScrollMagnifyingGlass(self.context, **settings)
 
 
-class BackgroundPreferencesTabPackage(extending.ComponentPackage):
+class MagnifierPackage(extending.ComponentPackage):
     def add_on(self, app):
         add_component = app.components.add
         magnifier_tab = MagnifierPreferencesTab(app)
@@ -284,4 +366,4 @@ class BackgroundPreferencesTabPackage(extending.ComponentPackage):
         for a_mouse_handler_factory in mouse_factories:
             add_component(mouse_factory_category, a_mouse_handler_factory)
 
-LoadedComponentPackages["magnifying-glass"] = BackgroundPreferencesTabPackage()
+LoadedComponentPackages["magnifying-glass"] = MagnifierPackage()
