@@ -449,14 +449,20 @@ class MetaMouseHandler(GObject.Object):
             return base_set
         
         
-        # If there are not handlers with "keys" keys we default to keys=0        
+        # If there are not handlers with "keys" keys we default to keys=0
         try:
             keys_set = self._keys_handlers[keys]
             
         except KeyError:
-            keys_set = self._keys_handlers.get(0, set())
+            keys_set = self._keys_handlers.get(0, None)
+        
+        if keys_set:
+            result_set = base_set & keys_set
             
-        result_set = base_set & keys_set
+            # If there are not items in the base set that overlap with the
+            # Keys set, go back to the base set
+            if not result_set:
+                result_set = base_set
         
         # Overlapping the button set if any
         if button is not None:
