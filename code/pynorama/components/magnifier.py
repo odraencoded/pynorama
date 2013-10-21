@@ -263,7 +263,12 @@ class HoverMagnifyingGlass(MouseHandler):
         MouseHandler.__init__(self)
         
         self.context = magnifier_context
-        self.events = MouseEvents.Hovering
+        self.events = MouseEvents.Hovering | MouseEvents.Crossing
+    
+    
+    def cross(self, view, point, inside, data):
+        magnifier = self.context.get_magnifier(view)
+        magnifier.set_properties(position=point, visible=inside)
     
     
     def hover(self, view, to_point, from_point, data):
