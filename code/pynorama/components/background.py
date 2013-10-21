@@ -219,6 +219,7 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         
         self._checkered_pattern = cairo.SurfacePattern(checkered_surface)
         self._checkered_pattern.set_extend(cairo.EXTEND_REPEAT)
+        self._checkered_pattern.set_filter(cairo.FILTER_NEAREST)
     
     
     def _new_window_cb(self, app, window):

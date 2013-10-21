@@ -69,6 +69,8 @@ class Magnifier(GObject.Object):
     outline_scale = GObject.Property(type=bool, default=True)
     outline_color = GObject.Property(type=Gdk.RGBA)
     
+    draw_background = GObject.Property(type=bool, default=False)
+    
     def _changed_visibility_cb(self, *whatever):
         if self.view:
             self.view.queue_draw()
@@ -83,11 +85,13 @@ class Magnifier(GObject.Object):
         (
             visible, x, y, radius, magnification,
             draw_outline,
-            outline_thickness, outline_scale, outline_color
+            outline_thickness, outline_scale, outline_color,
+            draw_background
         ) = self.get_properties(
             "visible", "position-x", "position-y", "radius", "magnification",
             "draw-outline",
-            "outline-thickness", "outline-scale", "outline-color"
+            "outline-thickness", "outline-scale", "outline-color",
+            "draw-background",
         )
         if visible:
             if draw_outline:
@@ -128,6 +132,13 @@ class Magnifier(GObject.Object):
             )
             drawstate.set_magnification(glass_zoom)
             drawstate.set_offset(glass_offset)
+            
+            if draw_background:
+                cr.save()
+                cr.scale(drawstate.magnification, drawstate.magnification)
+                cr.translate(*drawstate.translation)
+                view.emit("draw-bg", cr, drawstate)
+                cr.restore()
             
             drawstate.transform(cr)
             view.draw_frames(cr, drawstate)
@@ -177,9 +188,16 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
             align_first=True
         )
         
+        background_check = Gtk.CheckButton(
+            _("Draw background"),
+            tooltip_text=_("Magnify the view background")
+        )
+        
+        
         widgets.InitStack(self,
             outline_check,
-            outline_grid
+            outline_grid,
+            background_check
         )
         
         utility.Bind(tab.magnifier,
@@ -187,6 +205,7 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
             ("outline-thickness", thickness_adjust, "value"),
             ("outline-scale", thickness_scale, "active"),
             ("outline-color", outline_color, "rgba"), 
+            ("draw-background", background_check, "active"),
             synchronize=True, bidirectional=True
         )
         
