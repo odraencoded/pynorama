@@ -348,6 +348,11 @@ def SetDictFromProperties(obj, dct, *params, **kwargs):
     dct.update(zip(names.values(), prop_values))
 
 
+def GetPropertiesDict(obj, *properties):
+    """ Returns a dictionary with the properties """
+    return dict(zip(properties, obj.get_properties(*properties)))
+
+
 def Bind(source, *properties, bidirectional=False, synchronize=False):
     """ Bind GObject properties """
     

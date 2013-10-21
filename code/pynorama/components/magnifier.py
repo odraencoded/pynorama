@@ -376,22 +376,42 @@ class ScrollMagnifyingGlass(MouseHandler):
         self.events = MouseEvents.Scrolling
     
     
+    change_zoom = GObject.Property(type=bool, default=True)
     zoom_effect = GObject.Property(type=float, default=1.5)
     
     
+    change_radius = GObject.Property(type=bool, default=False)
+    radius_effect = GObject.Property(type=float, default=32)
+    
+    
     def scroll(self, view, point, direction, data):
-        magnifier = self.context.get_magnifier(view)
-        magnification = magnifier.magnification
         dx, dy = direction
-        if dy < 0:
-            if magnification < 1:
-                magnification = 1
+        
+        (
+            change_zoom, change_radius, zoom_effect, radius_effect
+        ) = self.get_properties(
+            "change-zoom", "change-radius", "zoom-effect", "radius-effect"
+        )
+        
+        magnifier = self.context.get_magnifier(view)
+        magnification, base_radius = magnifier.get_properties(
+            "magnification", "base-radius"
+        )
+        
+        if change_zoom:
+            if dy < 0:
+                if magnification < 1:
+                    magnification = 1
                 
-            magnifier.magnification = magnification * -dy * self.zoom_effect
-            
-        elif dy > 0:
-            if magnifier.magnification > 1:
-                magnifier.magnification /= dy * self.zoom_effect
+                magnifier.magnification = magnification * -dy * zoom_effect
+                
+            elif dy > 0 and magnification > 1:
+                    magnifier.magnification = magnification / (dy * zoom_effect)
+        
+        if change_radius:
+            new_radius_effect = base_radius + radius_effect * -dy
+            if new_radius_effect > 0:
+                magnifier.base_radius = new_radius_effect
 
 
 class MoveMagnifyingGlassFactory(extending.MouseHandlerFactory):
@@ -423,17 +443,47 @@ class MoveMagnifyingGlassFactory(extending.MouseHandlerFactory):
 
 class ScrollMagnifyingGlassSettingsWidget(Gtk.Box):
     def __init__(self, handler):
-        zoom_label = Gtk.Label(_("Zoom effect"))
+        zoom_check = Gtk.CheckButton(_("Magnification effect"))
         zoom_spin, zoom_adjust = widgets.SpinAdjustment(
-            1.5, 1, 4, .1, .5, align=True, digits=2
+            1.5, 1.1, 4, .1, .5, align=True, digits=2
         )
-        zoom_line = widgets.Line(zoom_label, zoom_spin)
+        utility.SetProperties(
+            zoom_check, zoom_spin, 
+            tooltip_text=_("Changes the magnification of the glass")
+        )
         
+        radius_check = Gtk.CheckButton(_("Radius effect"))
+        radius_spin, radius_adjust = widgets.SpinAdjustment(
+            32, 8, 512, 4, 32, align=True
+        )
+        utility.SetProperties(
+            radius_check, radius_spin, 
+            tooltip_text=_("Changes the base radius of the glass")
+        )
+        
+        grid = widgets.Grid(
+            (zoom_check, zoom_spin),
+            (radius_check, radius_spin),
+        )
+        
+        widgets.InitStack(self, grid)
+        
+        # Bind properties
         utility.Bind(handler,
+            ("change-zoom", zoom_check, "active"),
             ("zoom-effect", zoom_adjust, "value"),
+            ("change-radius", radius_check, "active"),
+            ("radius-effect", radius_adjust, "value"),
             bidirectional=True, synchronize=True
         )
-        widgets.InitStack(self, zoom_line)
+        
+        # Bind sensitivity
+        utility.BindSame("active", "sensitive",
+            (zoom_check, zoom_spin),
+            (radius_check, radius_spin),
+            synchronize=True
+        )
+        
         self.show_all()
 
 
@@ -449,7 +499,7 @@ class ScrollMagnifyingGlassFactory(extending.MouseHandlerFactory):
     
     @GObject.Property
     def label(self):
-        return _("Scroll to Magnify")
+        return _("Scroll to Change Magnifying Glass")
     
     
     def create_default(self):
@@ -458,7 +508,9 @@ class ScrollMagnifyingGlassFactory(extending.MouseHandlerFactory):
     
     @staticmethod
     def get_settings(handler):
-        return { "zoom-effect": handler.zoom_effect }
+        return utility.GetPropertiesDict(handler,
+            "change-zoom", "zoom-effect", "change-radius", "radius-effect"
+        )
     
     
     def load_settings(self, settings):
