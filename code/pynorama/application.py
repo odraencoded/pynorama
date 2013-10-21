@@ -818,7 +818,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         signaling_params = {
             "open" : (lambda w: self.show_open_image_dialog(),),
             "paste" : (lambda w: self.paste(),),
-            "copy": (self.copy_image,),
+            "copy": (lambda w: self.copy_image(),),
             "sort" : (lambda data: self.album.sort(),),
             "sort-reverse" : (self._toggled_reverse_sort,),
             "remove" : (self.handle_remove,),
@@ -1452,10 +1452,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
             self.album.remove(focus)
     
     
-    def copy_image(self, *stuff):
+    def copy_image(self, clipboard=None):
+        """ Copies the focus image to the clipboard """
         focus = self.avl.focus_image
         if focus:
-            focus.copy_to_clipboard(self.clipboard)
+            if clipboard is None:
+                clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+                
+            focus.copy_to_clipboard(clipboard)
     
     
     def open_uris(self,
