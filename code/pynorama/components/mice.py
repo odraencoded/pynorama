@@ -38,7 +38,7 @@ class HoverAndDragHandler(MouseHandler):
             self.events = MouseEvents.Dragging
         
         else:
-            self.events = MouseEvents.Hovering
+            self.events = MouseEvents.Moving
             
         self.speed = speed
         self.relative_speed = relative_speed
