@@ -46,7 +46,8 @@ class Magnifier(GObject.Object):
         
         appearance_properties = [
             "position-x", "position-y", "draw-outline",
-            "outline-thickness", "outline-scale", "outline-color"
+            "square-shape", "base-radius", "incremental-radius",
+            "outline-thickness", "outline-scale", "outline-color",
         ]
         for a_property in appearance_properties:
             self.connect("notify::" + a_property, self._changed_effect_cb)
@@ -82,14 +83,16 @@ class Magnifier(GObject.Object):
     view = GObject.Property(type=object)
     visible = GObject.Property(get_visible, type=bool, default=False)
     enabled = GObject.Property(type=bool, default=True)
+    
     position = GObject.Property(get_position, set_position, type=object) 
     position_x = GObject.Property(type=int, default=0) 
     position_y = GObject.Property(type=int, default=0) 
     
-    
     radius = GObject.Property(get_radius, set_radius, type=float)
     base_radius = GObject.Property(type=float, default=32)
     incremental_radius = GObject.Property(type=float, default=32)
+    
+    square_shape = GObject.Property(type=bool, default=False)
     
     magnification = GObject.Property(type=float, default=1)
     
@@ -117,22 +120,37 @@ class Magnifier(GObject.Object):
     
     
     def _draw_fg_cb(self, view, cr, drawstate):
-        (
-            visible, x, y, radius, magnification,
-            draw_outline,
-            outline_thickness, outline_scale, outline_color,
-            draw_background
-        ) = self.get_properties(
-            "visible", "position-x", "position-y", "radius", "magnification",
-            "draw-outline",
-            "outline-thickness", "outline-scale", "outline-color",
-            "draw-background",
-        )
-        if visible:
-            if draw_outline:
-                cr.save()
+        """ Callback for rendering the magnifier in a view """
+        if self.visible:
+            (
+                x, y,
+                base_radius, incremental_radius, magnification,
+                square_shape, draw_outline, 
+                outline_thickness, outline_scale, outline_color,
+                draw_background
+            ) = self.get_properties(
+                "position-x", "position-y",
+                "base-radius", "incremental-radius", "magnification",
+                "square-shape", "draw-outline",
+                "outline-thickness", "outline-scale", "outline-color",
+                "draw-background",
+            )
+            # Calculating radius
+            radius = (
+                base_radius + incremental_radius * max(0, magnification - 1)
+            )
+            
+            if square_shape:
+                cr.rectangle(x - radius, y - radius, radius * 2, radius * 2)
+                
+            else:
                 cr.arc(x, y, radius, 0, PI * 2)
                 
+            shape_path = cr.copy_path()
+            
+            # Drawing outline
+            if draw_outline:
+                cr.save()
                 # The thickness is always x2 because half of the arc path
                 # is the center of the stroke, half of the stroke will be
                 # overlaid by the magnified content so it is width is doubled
@@ -147,7 +165,7 @@ class Magnifier(GObject.Object):
                 cr.restore()
         
             cr.save()
-            cr.arc(x, y, radius, 0, PI * 2)
+            cr.append_path(shape_path)
             cr.clip()
             
             # Modify transform properties of the drawstate so drawstate
@@ -191,6 +209,7 @@ class Magnifier(GObject.Object):
 
 class BackgroundPreferencesTabProxy(Gtk.Box):
     def __init__(self, tab, dialog, label):
+        # Radius controls
         base_radius_label = Gtk.Label(_("Base radius"))
         base_radius_entry, base_radius_adjust = widgets.SpinAdjustment(
             64, 0, 1024, 16, 128, align=True,
@@ -211,12 +230,16 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
             )
         )
         
-        size_grid = widgets.Grid(
+        radius_grid = widgets.Grid(
             (base_radius_label, base_radius_entry),
             (increment_label, increment_entry),
             align_first=True
         )
         
+        # Shape controls
+        square_check = Gtk.CheckButton(_("Square shape"))
+        
+        # Outline controls
         outline_check = Gtk.CheckButton(
             _("Outline magnifier"),
             tooltip_text=_("Draw an outline around the magnifying glass")
@@ -255,16 +278,21 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
             _("Draw background"),
             tooltip_text=_("Magnify the view background")
         )
+        
+        # Pack Everywinth
         widgets.InitStack(self,
-            size_grid,
+            radius_grid,
+            square_check,
             outline_check,
             outline_grid,
             background_check
         )
         
+        # Bind everything
         utility.Bind(tab.magnifier,
             ("base-radius", base_radius_adjust, "value"),
             ("incremental-radius", increment_adjust, "value"),
+            ("square-shape", square_check, "active"),
             ("draw-outline", outline_check, "active"),
             ("outline-thickness", thickness_adjust, "value"),
             ("outline-scale", thickness_scale, "active"),
@@ -278,6 +306,7 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
             synchronize=True
         )
         
+        # Show everything
         self.show_all()
 
 
@@ -365,18 +394,18 @@ class ScrollMagnifyingGlass(MouseHandler):
                 magnifier.magnification /= dy * self.zoom_effect
 
 
-class HoverMagnifyingGlassFactory(extending.MouseHandlerFactory):
-    CODENAME = "hover-magnifying-glass"
+class MoveMagnifyingGlassFactory(extending.MouseHandlerFactory):
+    CODENAME = "move-magnifying-glass"
     def __init__(self, magnifier_context):
         extending.MouseHandlerFactory.__init__(
-            self, HoverMagnifyingGlassFactory.CODENAME
+            self, MoveMagnifyingGlassFactory.CODENAME
         )
         self.context = magnifier_context
     
     
     @GObject.Property
     def label(self):
-        return _("Hover Magnifying Glass")
+        return _("Move Magnifying Glass")
     
     
     def create_default(self):
@@ -389,7 +418,7 @@ class HoverMagnifyingGlassFactory(extending.MouseHandlerFactory):
     
     
     def load_settings(self, settings):
-        return HoverAndDragHandler(self.context)
+        return MoveMagnifyingGlassFactory(self.context)
 
 
 class ScrollMagnifyingGlassSettingsWidget(Gtk.Box):
@@ -441,7 +470,7 @@ class MagnifierPackage(extending.ComponentPackage):
         add_component = app.components.add
         magnifier_tab = MagnifierPreferencesTab(app)
         mouse_factories = (
-            HoverMagnifyingGlassFactory(magnifier_tab),
+            MoveMagnifyingGlassFactory(magnifier_tab),
             ScrollMagnifyingGlassFactory(magnifier_tab)
         )
         
