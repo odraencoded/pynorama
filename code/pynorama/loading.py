@@ -138,7 +138,8 @@ class Memory(GObject.GObject):
             else:
                 self.unlisted_stuff.add(thing)
                 self.emit("thing-unlisted", thing)
-                
+
+# TODO: Make this thing better
 class ImageMeta():
     ''' Contains some assorted metadata of an image
         This should be used in sorting functions '''
@@ -151,9 +152,10 @@ class ImageMeta():
     
     def get_area(self):
         return self.width * self.height
-    
+
+
 class ImageSource(Loadable):
-    ''' Represents an image  '''
+    """ Represents an image  """
     
     __gsignals__ = {
         # "new-frame" and "lost-frame" are emitted when an ImageFrame
@@ -197,6 +199,11 @@ class ImageSource(Loadable):
         
         """
         return False
+    
+    
+    def copy_to_clipboard(self, clipboard):
+        """ Copies itself into the clipboard """
+        raise NotImplementedError
 
 
 class GFileImageSource(ImageSource):
@@ -223,3 +230,9 @@ class GFileImageSource(ImageSource):
     
     def matches_uri(self, uri):
         return self.gfile.get_uri() == uri
+    
+    
+    def copy_to_clipboard(self, clipboard):
+        """ Copies itself into the clipboard """
+        
+        raise NotImplementedError
