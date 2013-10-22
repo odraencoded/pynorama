@@ -656,16 +656,24 @@ the chosen mouse button")
         if factory:
             try:
                 settings_widget = factory.create_settings_widget(handler)
+            
+            except NotImplementedError:
+                logger.debug("Handler has no settings widget")
+                settings_widget = Gtk.Label(_("No settings avaiable"))
+                settings_widget.set_sensitive(False)
                 
             except Exception:
                 logger.log_error("Couldn't create settings widget")
                 logger.log_exception()
                 
-            else:
-                vbox.pack_end(settings_widget, True, True, 0)
-                settings_widget.show()
+                settings_widget = Gtk.Label(
+                    _("There was an error creating this dialog!")
+                )
                 
-        # Binding entry
+            vbox.pack_end(settings_widget, True, True, 0)
+            settings_widget.show()
+                
+        # Binding properties
         flags = GObject.BindingFlags
         handler.bind_property(
             "nickname", nickname_entry, "text",
