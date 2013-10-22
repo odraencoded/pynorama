@@ -448,35 +448,38 @@ class MetaMouseHandler(GObject.Object):
             # Quickly return empty base sets
             return base_set
         
-        
-        # If there are not handlers with "keys" keys we default to keys=0
-        try:
-            keys_set = self._keys_handlers[keys]
-            
-        except KeyError:
-            keys_set = self._keys_handlers.get(0, None)
-        
-        if keys_set:
-            result_set = base_set & keys_set
-            
-            # If there are not items in the base set that overlap with the
-            # Keys set, go back to the base set
-            if not result_set:
-                result_set = base_set
-        
-        # Overlapping the button set if any
-        if button is not None:
-            try:
-                button_handlers = self._button_handlers[button]
-            
-            except KeyError:
-                result_set = set()
-                
+        # First we create a set from the overlap between the base set and the
+        # set which contains handlers associated to "button"
+        if button is None:
+            pressed_set = base_set
+        else:
+            button_handlers = self._button_handlers.get(button, None)
+            if button_handlers:
+                pressed_set = base_set & button_handlers
             else:
-                result_set &= button_handlers
+                pressed_set = None
         
-        return result_set
-    
+        # If there are not handlers inside that we just return an empty set
+        # otherwise we overlap with the modifier keys
+        if pressed_set:
+            keys_set = self._keys_handlers.get(keys, None)
+            if keys_set:
+                overlapped_set = pressed_set & keys_set
+            else:
+                overlapped_set = None
+            
+            # If the overlapped set is empty and there are modifier keys
+            # pressed, we make a new overlapped set with the handlers that
+            # are not bound to modifier keys
+            if not overlapped_set and keys != 0:
+                keys_set = self._keys_handlers.get(0, None)
+                overlapped_set = pressed_set & keys_set
+            
+            # If this is None we return an empty set in the last line
+            if overlapped_set is not None:
+                return overlapped_set
+        
+        return set()
     
     def _basic_event_dispatch(
         self, adapter, event_handlers, function_name, *params
