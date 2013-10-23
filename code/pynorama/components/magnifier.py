@@ -338,11 +338,36 @@ class MagnifierPreferencesTab(extending.PreferencesTab):
     def _save_settings_cb(self, settings):
         """ Saves its settings """
         logger.debug("Saving magnifier preferences...")
+        utility.SetDictFromProperties(
+            self.magnifier, settings.data,
+            "base-radius", "incremental-radius",
+            "square-shape",
+            "draw-outline", "outline-thickness", "outline-scale",
+            "draw-background"
+        )
+        color_string = self.magnifier.outline_color.to_string()
+        settings.data["outline-color"] = color_string
     
     
     def _load_settings_cb(self, settings):
         """ Loads its settings """
         logger.debug("Loading magnifier preferences...")
+        utility.SetPropertiesFromDict(
+            self.magnifier, settings.data,
+            "base-radius", "incremental-radius",
+            "square-shape",
+            "draw-outline", "outline-thickness", "outline-scale",
+            "draw-background"
+        )
+        
+        try:
+            color_string = settings.data["outline-color"]
+        except KeyError:
+            pass
+        else:
+            color = self.magnifier.outline_color
+            color.parse(color_string)
+            self.magnifier.outline_color = color
 
 
 class HoverMagnifyingGlass(MouseHandler):
