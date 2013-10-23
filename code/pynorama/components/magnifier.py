@@ -133,6 +133,8 @@ class Magnifier(GObject.Object):
             )
             
             if square_shape:
+                # Rounding these speeds up clipping
+                x, y, radius = round(x), round(y), round(radius)
                 cr.rectangle(x - radius, y - radius, radius * 2, radius * 2)
                 
             else:
