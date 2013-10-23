@@ -182,8 +182,11 @@ class Magnifier(GObject.Object):
             
             if draw_background:
                 cr.save()
-                cr.scale(drawstate.magnification, drawstate.magnification)
-                cr.translate(*drawstate.translation)
+                
+                cr.translate(x, y)
+                cr.scale(magnification, magnification)
+                cr.translate(-x, -y)
+                
                 view.emit("draw-bg", cr, drawstate)
                 cr.restore()
             
