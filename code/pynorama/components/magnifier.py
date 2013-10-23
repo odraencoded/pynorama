@@ -53,14 +53,6 @@ class Magnifier(GObject.Object):
             self.connect("notify::" + a_property, self._changed_effect_cb)
     
     
-    def get_position(self):
-        return Point(*self.get_properties("position-x", "position-y"))
-    
-    
-    def set_position(self, value):
-        self.set_properties(position_x=value[0], position_y=value[1])
-    
-    
     def get_radius(self):
         base, incremental, magnification = self.get_properties(
             "base-radius", "incremental-radius", "magnification"
@@ -84,7 +76,7 @@ class Magnifier(GObject.Object):
     visible = GObject.Property(get_visible, type=bool, default=False)
     enabled = GObject.Property(type=bool, default=True)
     
-    position = GObject.Property(get_position, set_position, type=object) 
+    position = utility.PointProperty("position-x", "position-y")
     position_x = GObject.Property(type=int, default=0) 
     position_y = GObject.Property(type=int, default=0) 
     

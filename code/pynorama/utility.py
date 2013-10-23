@@ -385,6 +385,14 @@ def BindSame(source_property, dest_property,
     ]
 
 
+def PointProperty(property_x, property_y):
+    getter = lambda obj: Point(*obj.get_properties(property_x, property_y))
+    setter = lambda obj, value: obj.set_properties(
+        **{property_x: value[0], property_y: value[1]}
+    )
+    return GObject.Property(getter, setter, type=object)
+
+
 #-- GdkPixbuf to Cairo surface conversion down this line --#
 def SurfaceFromPixbuf(pixbuf):
     """Returns a cairo surface from a Gdk.Pixbuf"""
