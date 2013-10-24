@@ -176,7 +176,7 @@ class Magnifier(GObject.Object):
                     px = max(width_b, min(px, drawstate.width - width_b))
                     py = max(width_b, min(py, drawstate.height - width_b))
                 
-                cr.arc(px, py, width, 0, PI * 2)
+                cr.arc(px, py, width / 2, 0, PI * 2)
                 
             else:
                 # Rounding the values will result in making an integer
