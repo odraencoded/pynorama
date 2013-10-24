@@ -84,9 +84,10 @@ class Magnifier(GObject.Object):
     base_radius = GObject.Property(type=float, default=32)
     incremental_radius = GObject.Property(type=float, default=32)
     
-    square_shape = GObject.Property(type=bool, default=False)
-    
     magnification = GObject.Property(type=float, default=1)
+    
+    square_shape = GObject.Property(type=bool, default=False)
+    keep_inside = GObject.Property(type=bool, default=True)
     
     draw_outline = GObject.Property(type=bool, default=True)
     outline_thickness = GObject.Property(type=float, default=.5)
@@ -115,18 +116,22 @@ class Magnifier(GObject.Object):
         """ Callback for rendering the magnifier in a view """
         if self.visible:
             (
-                x, y,
+                px, py, keep_inside,
                 base_radius, incremental_radius, magnification,
                 square_shape, draw_outline, 
                 outline_thickness, outline_scale, outline_color,
                 draw_background
             ) = self.get_properties(
-                "position-x", "position-y",
+                "position-x", "position-y", "keep-inside",
                 "base-radius", "incremental-radius", "magnification",
                 "square-shape", "draw-outline",
                 "outline-thickness", "outline-scale", "outline-color",
                 "draw-background",
             )
+            
+            # Target coordinates
+            tx, ty = px, py
+            
             # Calculating radius
             radius = (
                 base_radius + incremental_radius * max(0, magnification - 1)
@@ -134,11 +139,21 @@ class Magnifier(GObject.Object):
             
             if square_shape:
                 # Rounding these speeds up clipping
-                x, y, radius = round(x), round(y), round(radius)
-                cr.rectangle(x - radius, y - radius, radius * 2, radius * 2)
+                radius = round(radius)
+                if keep_inside:
+                    px = max(radius, min(px, drawstate.width - radius))
+                    py = max(radius, min(py, drawstate.height - radius))
+                
+                px, py = round(px), round(py)
+                cr.rectangle(px - radius, py - radius, radius * 2, radius * 2)
                 
             else:
-                cr.arc(x, y, radius, 0, PI * 2)
+                if keep_inside:
+                    radius_b = radius * .6
+                    px = max(radius_b, min(px, drawstate.width - radius_b))
+                    py = max(radius_b, min(py, drawstate.height - radius_b))
+                    
+                cr.arc(px, py, radius, 0, PI * 2)
                 
             shape_path = cr.copy_path()
             
@@ -170,12 +185,12 @@ class Magnifier(GObject.Object):
             glass_zoom = normal_zoom * magnification
             # In order to use drawstate.transform() the tranlation is
             # calculated like this. This equals to
-            # translate(x, y); scale(magnification); translate(-x, -y)
+            # translate(px, py); scale(magnification); translate(-tx, -ty)
             # scale(drawstate.magnification); translate(*drawstate.translation)
             glass_offset = (
                 normal_offset
-                + Point(x, y).scale(1 / normal_zoom)
-                - Point(x, y).scale(1 / glass_zoom)
+                + Point(tx, ty).scale(1 / normal_zoom)
+                - Point(px, py).scale(1 / glass_zoom)
             )
             drawstate.set_magnification(glass_zoom)
             drawstate.set_offset(glass_offset)
@@ -183,9 +198,9 @@ class Magnifier(GObject.Object):
             if draw_background:
                 cr.save()
                 
-                cr.translate(x, y)
+                cr.translate(px, py)
                 cr.scale(magnification, magnification)
-                cr.translate(-x, -y)
+                cr.translate(-tx, -ty)
                 
                 view.emit("draw-bg", cr, drawstate)
                 cr.restore()
@@ -235,6 +250,11 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         
         # Shape controls
         square_check = Gtk.CheckButton(_("Square shape"))
+        keep_inside_check = Gtk.CheckButton(
+            _("Keep inside"),
+            tooltip_text=_("Keep the magnifying glass inside the window")
+        )
+        
         
         # Outline controls
         outline_check = Gtk.CheckButton(
@@ -280,6 +300,7 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         widgets.InitStack(self,
             radius_grid,
             square_check,
+            keep_inside_check,
             outline_check,
             outline_grid,
             background_check
@@ -290,6 +311,7 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
             ("base-radius", base_radius_adjust, "value"),
             ("incremental-radius", increment_adjust, "value"),
             ("square-shape", square_check, "active"),
+            ("keep-inside", keep_inside_check, "active"),
             ("draw-outline", outline_check, "active"),
             ("outline-thickness", thickness_adjust, "value"),
             ("outline-scale", thickness_scale, "active"),
@@ -344,7 +366,7 @@ class MagnifierPreferencesTab(extending.PreferencesTab):
         utility.SetDictFromProperties(
             self.magnifier, settings.data,
             "base-radius", "incremental-radius",
-            "square-shape",
+            "square-shape", "keep-inside",
             "draw-outline", "outline-thickness", "outline-scale",
             "draw-background"
         )
@@ -358,7 +380,7 @@ class MagnifierPreferencesTab(extending.PreferencesTab):
         utility.SetPropertiesFromDict(
             self.magnifier, settings.data,
             "base-radius", "incremental-radius",
-            "square-shape",
+            "square-shape", "keep-inside",
             "draw-outline", "outline-thickness", "outline-scale",
             "draw-background"
         )
