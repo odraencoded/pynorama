@@ -45,8 +45,8 @@ class Magnifier(GObject.Object):
         self.connect("notify::magnification", self._changed_magnification_cb)
         
         appearance_properties = [
-            "position-x", "position-y", "draw-outline",
-            "square-shape", "base-radius", "incremental-radius",
+            "position-x", "position-y", "draw-outline", "keep-inside",
+            "circle-shape", "base-radius", "incremental-radius",
             "outline-thickness", "outline-scale", "outline-color",
         ]
         for a_property in appearance_properties:
@@ -86,7 +86,7 @@ class Magnifier(GObject.Object):
     
     magnification = GObject.Property(type=float, default=1)
     
-    square_shape = GObject.Property(type=bool, default=False)
+    circle_shape = GObject.Property(type=bool, default=False)
     keep_inside = GObject.Property(type=bool, default=True)
     
     draw_outline = GObject.Property(type=bool, default=True)
@@ -118,13 +118,13 @@ class Magnifier(GObject.Object):
             (
                 px, py, keep_inside,
                 base_radius, incremental_radius, magnification,
-                square_shape, draw_outline, 
+                circle_shape, draw_outline, 
                 outline_thickness, outline_scale, outline_color,
                 draw_background
             ) = self.get_properties(
                 "position-x", "position-y", "keep-inside",
                 "base-radius", "incremental-radius", "magnification",
-                "square-shape", "draw-outline",
+                "circle-shape", "draw-outline",
                 "outline-thickness", "outline-scale", "outline-color",
                 "draw-background",
             )
@@ -137,8 +137,17 @@ class Magnifier(GObject.Object):
                 base_radius + incremental_radius * max(0, magnification - 1)
             )
             
-            if square_shape:
-                # Rounding these speeds up clipping
+            if circle_shape:
+                if keep_inside:
+                    radius_b = radius * .6
+                    px = max(radius_b, min(px, drawstate.width - radius_b))
+                    py = max(radius_b, min(py, drawstate.height - radius_b))
+                    
+                cr.arc(px, py, radius, 0, PI * 2)
+                
+            else:
+                # Rounding the values will result in making an integer
+                # rectangle path before the .clip() which speeds up rendering
                 radius = round(radius)
                 if keep_inside:
                     px = max(radius, min(px, drawstate.width - radius))
@@ -146,14 +155,6 @@ class Magnifier(GObject.Object):
                 
                 px, py = round(px), round(py)
                 cr.rectangle(px - radius, py - radius, radius * 2, radius * 2)
-                
-            else:
-                if keep_inside:
-                    radius_b = radius * .6
-                    px = max(radius_b, min(px, drawstate.width - radius_b))
-                    py = max(radius_b, min(py, drawstate.height - radius_b))
-                    
-                cr.arc(px, py, radius, 0, PI * 2)
                 
             shape_path = cr.copy_path()
             
@@ -249,7 +250,13 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         )
         
         # Shape controls
-        square_check = Gtk.CheckButton(_("Square shape"))
+        circle_check = Gtk.CheckButton(
+            _("Circle shaped"),
+            tooltip_text=_(
+                "Display a round magnifying glass instead of a"
+                " square one. The circular shape is slower."
+            )
+        )
         keep_inside_check = Gtk.CheckButton(
             _("Keep inside"),
             tooltip_text=_("Keep the magnifying glass inside the window")
@@ -299,7 +306,7 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         # Pack Everywinth
         widgets.InitStack(self,
             radius_grid,
-            square_check,
+            circle_check,
             keep_inside_check,
             outline_check,
             outline_grid,
@@ -310,7 +317,7 @@ class BackgroundPreferencesTabProxy(Gtk.Box):
         utility.Bind(tab.magnifier,
             ("base-radius", base_radius_adjust, "value"),
             ("incremental-radius", increment_adjust, "value"),
-            ("square-shape", square_check, "active"),
+            ("circle-shape", circle_check, "active"),
             ("keep-inside", keep_inside_check, "active"),
             ("draw-outline", outline_check, "active"),
             ("outline-thickness", thickness_adjust, "value"),
@@ -366,7 +373,7 @@ class MagnifierPreferencesTab(extending.PreferencesTab):
         utility.SetDictFromProperties(
             self.magnifier, settings.data,
             "base-radius", "incremental-radius",
-            "square-shape", "keep-inside",
+            "circle-shape", "keep-inside",
             "draw-outline", "outline-thickness", "outline-scale",
             "draw-background"
         )
@@ -380,7 +387,7 @@ class MagnifierPreferencesTab(extending.PreferencesTab):
         utility.SetPropertiesFromDict(
             self.magnifier, settings.data,
             "base-radius", "incremental-radius",
-            "square-shape", "keep-inside",
+            "circle-shape", "keep-inside",
             "draw-outline", "outline-thickness", "outline-scale",
             "draw-background"
         )
