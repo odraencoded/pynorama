@@ -353,7 +353,8 @@ def GetPropertiesDict(obj, *properties):
     return dict(zip(properties, obj.get_properties(*properties)))
 
 
-def Bind(source, *properties, bidirectional=False, synchronize=False):
+def Bind(source, *properties,
+         bidirectional=False, synchronize=False, invert=False):
     """ Bind GObject properties """
     
     flags = 0
@@ -361,7 +362,9 @@ def Bind(source, *properties, bidirectional=False, synchronize=False):
         flags |= GObject.BindingFlags.BIDIRECTIONAL
     if synchronize:
         flags |= GObject.BindingFlags.SYNC_CREATE
-    
+    if invert:
+        flags |= GObject.BindingFlags.INVERT_BOOLEAN
+        
     bind_property = source.bind_property
     return [
         bind_property(src_property, dest, dest_property, flags)
