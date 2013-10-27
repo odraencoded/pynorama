@@ -24,7 +24,7 @@ from gi.repository import Gdk, GObject, Gtk
 from gettext import gettext as _
 from . import utility, widgets, notifying, extending, organizing
 from .mousing import MOUSE_MODIFIER_KEYS
-from .extending import PreferencesTab
+from .extending import PreferencesTab, MouseHandlerFactory
 
 logger = notifying.Logger("preferences")
 
@@ -306,7 +306,7 @@ for the image viewer""")
         # Setup add handlers grid (it is used to add handlers)
         brand_liststore = Gtk.ListStore(object)
         
-        for a_brand in self._app.components["mouse-mechanism-brand"]:
+        for a_brand in self._app.components[MouseHandlerFactory.CATEGORY]:
             brand_liststore.append([a_brand])
         
         # Setup listview and selection
@@ -656,16 +656,24 @@ the chosen mouse button")
         if factory:
             try:
                 settings_widget = factory.create_settings_widget(handler)
+            
+            except NotImplementedError:
+                logger.debug("Handler has no settings widget")
+                settings_widget = Gtk.Label(_("No settings avaiable"))
+                settings_widget.set_sensitive(False)
                 
             except Exception:
                 logger.log_error("Couldn't create settings widget")
                 logger.log_exception()
                 
-            else:
-                vbox.pack_end(settings_widget, True, True, 0)
-                settings_widget.show()
+                settings_widget = Gtk.Label(
+                    _("There was an error creating this dialog!")
+                )
                 
-        # Binding entry
+            vbox.pack_end(settings_widget, True, True, 0)
+            settings_widget.show()
+                
+        # Binding properties
         flags = GObject.BindingFlags
         handler.bind_property(
             "nickname", nickname_entry, "text",
@@ -1027,7 +1035,7 @@ def SaveFromView(view, app_settings=None, view_settings=None):
 def LoadMouseMechanismsSettings(app, meta_mouse_handler, mechanisms_settings):
     """ Loads mouse settings from a dictionary """
     
-    mouse_factories = app.components["mouse-mechanism-brand"]
+    mouse_factories = app.components[MouseHandlerFactory.CATEGORY]
     add_mouse_mechanism = meta_mouse_handler.add
     for a_brand, some_mechanisms in mechanisms_settings.items():
         # Try to get the factory with a "a_brand" codename

@@ -29,6 +29,7 @@ MOUSE_EVENT_MASK = (
     EventMask.SCROLL_MASK |
     EventMask.SMOOTH_SCROLL_MASK |
     EventMask.ENTER_NOTIFY_MASK |
+    EventMask.LEAVE_NOTIFY_MASK |
     EventMask.POINTER_MOTION_MASK |
     EventMask.POINTER_MOTION_HINT_MASK
 )
@@ -48,6 +49,7 @@ PRIORITY_MOUSE_IDLE = GLib.PRIORITY_HIGH_IDLE + 15
 class MouseAdapter(GObject.GObject):
     """ Emits signals based on a widget mouse events """
     __gsignals__ = {
+        "cross" : (GObject.SIGNAL_RUN_FIRST, None, [object, bool]),
         "motion" : (GObject.SIGNAL_RUN_FIRST, None, [object, object]),
         "drag" : (GObject.SIGNAL_RUN_FIRST, None, [object, object, int]),
         "pression" : (GObject.SIGNAL_RUN_FIRST, None, [object, int]),
@@ -109,6 +111,7 @@ class MouseAdapter(GObject.GObject):
                     connect("button-release-event", self._button_release_cb),
                     connect("scroll-event", self._mouse_scroll_cb),
                     connect("enter-notify-event", self._mouse_enter_cb),
+                    connect("leave-notify-event", self._mouse_leave_cb),
                     connect("motion-notify-event", self._mouse_motion_cb),
                 ]
                 
@@ -201,10 +204,16 @@ class MouseAdapter(GObject.GObject):
                 self.emit("scroll", point, Point(xd, yd))
     
     
-    def _mouse_enter_cb(self, *data):
+    def _mouse_enter_cb(self, widget, data):
         self._motion_from_outside = 2
         if not self._pressure:
             self._pressure_from_outside = True
+        
+        self.emit("cross", Point(data.x, data.y), True)
+    
+    
+    def _mouse_leave_cb(self, widget, data):
+        self.emit("cross", Point(data.x, data.y), False)
     
     
     def _mouse_motion_cb(self, widget, data):
@@ -287,9 +296,10 @@ class MetaMouseHandler(GObject.Object):
         self._adapters_data = dict()
         # These are sets of different kinds of mouse handlers
         self._pression_handlers = set()
-        self._hovering_handlers = set()
+        self._moving_handlers = set()
         self._dragging_handlers = set()
         self._scrolling_handlers = set()
+        self._crossing_handlers = set()
         # This is a button/mouse handler set
         self._button_handlers = dict()
         # This is a key modifier/mouse handler set
@@ -398,17 +408,21 @@ class MetaMouseHandler(GObject.Object):
         if handler.handles(MouseEvents.Pressing):
             yield self._pression_handlers
             
-        if handler.handles(MouseEvents.Hovering):
-            yield self._hovering_handlers
+        if handler.handles(MouseEvents.Moving):
+            yield self._moving_handlers
             
         if handler.handles(MouseEvents.Dragging):
             yield self._dragging_handlers
+        
+        if handler.handles(MouseEvents.Crossing):
+            yield self._crossing_handlers
     
     
     def attach(self, adapter):
         """ Attach itself to a mouse adapter """
         if not adapter in self._adapters_data:
             signals = [
+                adapter.connect("cross", self._cross),
                 adapter.connect("motion", self._motion),
                 adapter.connect("pression", self._pression),
                 adapter.connect("scroll", self._scroll),
@@ -434,29 +448,38 @@ class MetaMouseHandler(GObject.Object):
             # Quickly return empty base sets
             return base_set
         
-        
-        # If there are not handlers with "keys" keys we default to keys=0        
-        try:
-            keys_set = self._keys_handlers[keys]
-            
-        except KeyError:
-            keys_set = self._keys_handlers.get(0, set())
-            
-        result_set = base_set & keys_set
-        
-        # Overlapping the button set if any
-        if button is not None:
-            try:
-                button_handlers = self._button_handlers[button]
-            
-            except KeyError:
-                result_set = set()
-                
+        # First we create a set from the overlap between the base set and the
+        # set which contains handlers associated to "button"
+        if button is None:
+            pressed_set = base_set
+        else:
+            button_handlers = self._button_handlers.get(button, None)
+            if button_handlers:
+                pressed_set = base_set & button_handlers
             else:
-                result_set &= button_handlers
+                pressed_set = None
         
-        return result_set
-    
+        # If there are not handlers inside that we just return an empty set
+        # otherwise we overlap with the modifier keys
+        if pressed_set:
+            keys_set = self._keys_handlers.get(keys, None)
+            if keys_set:
+                overlapped_set = pressed_set & keys_set
+            else:
+                overlapped_set = None
+            
+            # If the overlapped set is empty and there are modifier keys
+            # pressed, we make a new overlapped set with the handlers that
+            # are not bound to modifier keys
+            if not overlapped_set and keys != 0:
+                keys_set = self._keys_handlers.get(0, None)
+                overlapped_set = pressed_set & keys_set
+            
+            # If this is None we return an empty set in the last line
+            if overlapped_set is not None:
+                return overlapped_set
+        
+        return set()
     
     def _basic_event_dispatch(
         self, adapter, event_handlers, function_name, *params
@@ -488,22 +511,24 @@ class MetaMouseHandler(GObject.Object):
         )
     
     
+    def _cross(self, adapter, point, inside):
+        active_handlers = self._overlap_handler_sets(
+            self._crossing_handlers, adapter.keys
+        )
+        self._basic_event_dispatch(
+            adapter, active_handlers, "cross", point, inside
+        )
+    
+    
     def _motion(self, adapter, to_point, from_point):
         active_handlers = self._overlap_handler_sets(
-            self._hovering_handlers, adapter.keys,
+            self._moving_handlers, adapter.keys,
         )
         if active_handlers:
-            # If any button handlers are to be activated then this
-            # is not a propert "hovering" event
-            for a_button, a_button_set in self._button_handlers.items():
-                if a_button_set and adapter.is_pressed(a_button):
-                    break
-            else:
-                # This only happens when there are no buttons pressed or
-                # when the buttons pressed have no handlers bound to them
-                self._basic_event_dispatch(
-                    adapter, active_handlers, "hover", to_point, from_point
-                )
+            self._basic_event_dispatch(
+                adapter, active_handlers, "move",
+                to_point, from_point, adapter.is_pressed()
+            )
     
     
     def _pression(self, adapter, point, button):
@@ -644,14 +669,14 @@ class MouseHandlerBinding(GObject.Object):
 
 
 class MouseEvents:
-    Nothing   = 0b0000000
-    Moving    = 0b0000011
-    Hovering  = 0b0000001 # Movement without pressure
-    Pressing  = 0b0010110 # Pressure regardless of movement
-    Dragging  = 0b0001110 # Pressure and movement
-    Clicking  = 0b0010100
-    Scrolling = 0b0100000 # Handles either scrolling axes
-    Rolling   = 0b1100000 # Handles both scrolling axes
+    Nothing   = 0b00000000
+    Moving    = 0b00000001
+    Pressing  = 0b00010110 # Pressure regardless of movement
+    Dragging  = 0b00001110 # Pressure and movement
+    Clicking  = 0b00010100
+    Scrolling = 0b00100000 # Handles either scrolling axes
+    Rolling   = 0b01100000 # Handles both scrolling axes
+    Crossing  = 0b10000000 # Entering and exiting the widget
 
 
 class MouseHandler(GObject.Object):
@@ -695,6 +720,17 @@ class MouseHandler(GObject.Object):
         pass
     
     
+    def cross(self, widget, point, inside, data):
+        """ Handles the mouse entering or leaving the widget """
+        pass
+    
+    
+    def move(self, widget, to_point, from_point, pressed, data):
+        """ Handles the mouse moving around """
+        if not pressed:
+            self.hover(widget, to_point, from_point, data)
+    
+    
     def hover(self, widget, to_point, from_point, data):
         """ Handles the mouse just hovering around """
         pass
@@ -713,14 +749,14 @@ class MouseHandler(GObject.Object):
     def stop_dragging(self, widget, point, data):
         """ Finish dragging """
         pass
-    
-    
+
+
 class PivotMode:
     Mouse = 0
     Alignment = 1
     Fixed = 2
-    
-    
+
+
 class MouseHandlerPivot(GObject.Object):
     """ An utility class for mouse mechanisms which need a pivot point """
     def __init__(self, settings=None, **kwargs):

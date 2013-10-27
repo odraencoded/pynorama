@@ -743,7 +743,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
                 zoom, rotation,
                 self.hflip, self.vflip,
                 self.minify_filter, self.magnify_filter,
-                round_full_pixel_offset, round_sub_pixel_offset
+                self.round_full_pixel_offset, self.round_sub_pixel_offset
             ) = view.get_properties(
                 "magnification", "rotation",
                 "horizontal-flip", "vertical-flip",
@@ -751,7 +751,7 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
                 "round-full-pixel-offset", "round-sub-pixel-offset"
             )
             
-            self.magnification, self.rotation = zoom, rotation
+            self.rotation = rotation
             self.rad_rotation = radians(rotation)
             self.flip = self.hflip, self.vflip
             self.is_flipped = self.hflip or self.vflip
@@ -759,21 +759,9 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
             alloc = view.get_allocation()
             self.size = self.width, self.height = alloc.width, alloc.height
             
-            offset = view.offset
-            if(zoom > 1 and round_full_pixel_offset):
-                # Round pixel offset, removing pixel fractions from it
-                offset = round(offset)
-                
-            if(zoom != 1 and round_sub_pixel_offset):
-                # Round offset to match pixels shown on display using
-                # inverse magnification
-                
-                invzoom = 1 / zoom
-                invzoom_scale = Point(invzoom, invzoom)
-                offset = offset // invzoom_scale * invzoom_scale
-                
-            self.offset = offset
-            self.translation = -offset
+            self.real_offset = view.offset
+            self.set_magnification(zoom)
+            
             self.style = view.get_style_context()
         
         
@@ -804,6 +792,43 @@ class ImageView(Gtk.DrawingArea, Gtk.Scrollable):
                     -1 if self.hflip else 1,
                     -1 if self.vflip else 1
                 )
+        
+        
+        def set_magnification(self, zoom):
+            self.magnification = zoom
+            offset = self.real_offset
+            if(zoom > 1 and self.round_full_pixel_offset):
+                # Round pixel offset, removing pixel fractions from it
+                offset = round(offset)
+                
+            if(zoom != 1 and self.round_sub_pixel_offset):
+                # Round offset to match pixels shown on display using
+                # inverse magnification
+                
+                invzoom = 1 / zoom
+                invzoom_scale = Point(invzoom, invzoom)
+                offset = offset // invzoom_scale * invzoom_scale
+                
+            self.offset = offset
+            self.translation = -offset
+        
+        
+        def set_offset(self, offset):
+            self.real_offset = offset
+            if(self.magnification > 1 and self.round_full_pixel_offset):
+                # Round pixel offset, removing pixel fractions from it
+                offset = round(offset)
+                
+            if(self.magnification != 1 and self.round_sub_pixel_offset):
+                # Round offset to match pixels shown on display using
+                # inverse magnification
+                
+                invzoom = 1 / self.magnification
+                invzoom_scale = Point(invzoom, invzoom)
+                offset = offset // invzoom_scale * invzoom_scale
+                
+            self.offset = offset
+            self.translation = -offset
     
     
     def do_draw(self, cr):
@@ -877,11 +902,13 @@ class BaseFrame(GObject.Object):
         "changed": (GObject.SIGNAL_NO_HOOKS, None, []),
     }
     
+    
     def __init__(self):
         GObject.GObject.__init__(self)
         self.origin = 0, 0
         self.view = None
-        
+    
+    
     def draw(self, cr, drawstate):
         """Draws the frame contents
         
@@ -890,9 +917,10 @@ class BaseFrame(GObject.Object):
         
         """
         raise NotImplementedError
-        
+    
     origin = GObject.property(type=object)
     rectangle = GObject.property(type=object)
+    
     @GObject.property
     def placed(self):
         return self.view is not None
@@ -901,20 +929,36 @@ class BaseFrame(GObject.Object):
     def set_rectangle_from_size(self, w, h):
         """Utility method for setting a symmetric .rectangle"""
         self.rectangle = Rectangle(-w // 2, -h // 2, w, h)
-        
-    def render_surface(self, cr, drawstate, surface, offset):
-        """Utility method for rendering a cairo surface"""
-        cr.set_source_surface(surface, *offset)
+    
+    
+    def render_pattern(self, cr, drawstate, pattern):
+        cr.set_source(pattern)
         
         # Setting the interpolation filter based on zoom
         zoom = drawstate.magnification
         if zoom != 1:
             interp_filter = drawstate.get_filter_for_magnification(zoom)
-            pattern = cr.get_source()
             pattern.set_filter(interp_filter)
-            
+        
         cr.paint()
     
+    
+    def render_surface(self, cr, drawstate, surface, offset):
+        """Utility method for rendering a cairo surface"""
+        cr.set_source_surface(surface, *offset)
+        pattern = cr.get_source()
+        
+        # Setting the interpolation filter based on zoom
+        zoom = drawstate.magnification
+        if zoom != 1:
+            interp_filter = drawstate.get_filter_for_magnification(zoom)
+            pattern.set_filter(interp_filter)
+        
+        cr.paint()
+        
+        return pattern
+
+
 class ImageFrame(BaseFrame):
     """Base class for frames containing an ImageSource"""
     
@@ -923,53 +967,36 @@ class ImageFrame(BaseFrame):
         """Creates a new frame with the indicated image source"""
         BaseFrame.__init__(self)
         
-        self._source = None
-        self.__missing_icon_surface = None
+        self.__missing_icon_pattern = None
         
         # .data contains any data set by .source
         self.data = None
         self.source = source
+        
+        source.emit("new-frame", self)
+        source.connect("finished-loading", self.check_source)
+        self.check_source()
         
         
     def draw_image_source(self, cr, drawstate):
         """Derived classes should implement this instead of .draw"""
         raise NotImplementedError
     
+    
     def draw_missing_image(self, cr, drawstate):
         """Draws a missing image icon into the frame"""
-        self.render_surface(
-            cr, drawstate, self.__missing_icon_surface,
-            (self.rectangle.left, self.rectangle.top)
-        )
+        self.render_pattern(cr, drawstate, self.__missing_icon_pattern)
+    
     
     #~ Signal handlers ~#
     def do_destroy(self):
         if self.source:
             self.source.emit("lost-frame", self)
     
+    
     def do_placed(self):
         self.check_source()
-        
     
-    # Source property
-    def _get_source(self):
-        return self._source
-    
-    def _set_source(self, value):
-        if self._source != value:
-            if self._source:
-                self._source.emit("lost-frame", self)
-            
-            self.data = None
-            self._source = value
-            if self._source:
-                self._source.emit("new-frame", self)
-                self._source.connect("finished-loading", self.check_source)
-                self.check_source()
-                
-            self.notify("source")
-    
-    source = GObject.property(_get_source, _set_source, type=object)
     
     def check_source(self, *whatever):
         """Checks the .source status
@@ -996,17 +1023,24 @@ class ImageFrame(BaseFrame):
             # self.placed == has a .view
             if self.placed:
                 # Setup the missing error icon
-                if self.__missing_icon_surface is None:
+                if self.__missing_icon_pattern is None:
                     icon_pixbuf = self.view.render_icon(
                         Gtk.STOCK_MISSING_IMAGE, Gtk.IconSize.DIALOG
                     )
                     icon_surface = SurfaceFromPixbuf(icon_pixbuf)
-                    self.__missing_icon_surface = icon_surface
+                    icon_pattern = cairo.SurfacePattern(icon_surface)
+                    
+                    self.__missing_icon_pattern = icon_pattern
                 else:
-                    icon_surface = self.__missing_icon_surface
+                    icon_pattern = self.__missing_icon_pattern
+                    icon_surface = icon_pattern.get_surface()
                     
                 width = icon_surface.get_width()
                 height = icon_surface.get_height()
+                
+                icon_pattern.set_matrix(
+                    cairo.Matrix(x0=width // 2, y0=height // 2)
+                )
             
             else:
                 width, height = 0, 0
@@ -1017,50 +1051,75 @@ class ImageFrame(BaseFrame):
 class SurfaceSourceImageFrame(ImageFrame):
     """ImageFrame for ImageSources exposing a .surface attribute"""
     
+    def __init__(self, *args, **kwargs):
+        ImageFrame.__init__(self, *args, **kwargs)
+        
+        self._surface_pattern = None
+        self.source.connect("finished-loading", self._finished_loading_cb)
+    
+    def _finished_loading_cb(self, *whatever):
+        self._surface_pattern = None
+        
+    
     def draw_image_source(self, cr, drawstate):
         """Renders an ImageSource with a .surface into the frame"""
         
-        rectangle = self.rectangle
-        self.render_surface(
-            cr, drawstate, self.source.surface,
-            (rectangle.left, rectangle.top)
-        )
+        if self._surface_pattern is None:
+            rectangle = self.rectangle
+            self._surface_pattern = self.render_surface(
+                cr, drawstate, self.source.surface,
+                (rectangle.left, rectangle.top)
+            )
+        else:
+            self.render_pattern(cr, drawstate, self._surface_pattern)
 
 
 class AnimatedPixbufSourceFrame(ImageFrame):
     def __init__(self, source):
         ImageFrame.__init__(self, source)
-        self._surface = None
         self._animation_iter = None
-        self._current_frame_surface = None
+        self._current_frame_pattern = None
         self._animate_signal = None
-        
+    
+    
     def do_placed(self):
         animation = self.source.pixbuf_animation
         
-        if animation.is_static_image():
-            pixbuf = animation.get_static_image()
-            self._current_frame_surface = SurfaceFromPixbuf(pixbuf)
-            
-        else:
-            self._animation_iter = animation.get_iter(None)
-            self._schedule_animation_advance()
+        if animation:
+            if animation.is_static_image():
+                pixbuf = animation.get_static_image()
+                pattern = cairo.SurfacePattern(SurfaceFromPixbuf(pixbuf))
+                pattern.set_matrix(cairo.Matrix(
+                    x0=pixbuf.get_width() // 2, y0=pixbuf.get_height() // 2
+                ))
+                
+                self._current_frame_pattern = pattern
+                
+            else:
+                self._animation_iter = animation.get_iter(None)
+                self._schedule_animation_advance()
         
+        ImageFrame.do_placed(self)
+    
+    
     def do_destroy(self):
         # Remove any pending _advance_animation signal handler
         if self._animate_signal:
             GLib.source_remove(self._animate_signal)
     
+    
     def draw_image_source(self, cr, drawstate):
-        if not self._current_frame_surface:
+        if self._current_frame_pattern is None:
             frame_pixbuf = self._animation_iter.get_pixbuf()
-            self._current_frame_surface = SurfaceFromPixbuf(frame_pixbuf)
+            frame_surface = SurfaceFromPixbuf(frame_pixbuf)
         
-        rectangle = self.rectangle
-        self.render_surface(
-            cr, drawstate, self._current_frame_surface,
-            (rectangle.left, rectangle.top)
-        )
+            rectangle = self.rectangle
+            self._current_frame_pattern  = self.render_surface(
+                cr, drawstate, frame_surface,
+                (rectangle.left, rectangle.top)
+            )
+        else:
+            self.render_pattern(cr, drawstate, self._current_frame_pattern)
     
     
     def _schedule_animation_advance(self):
@@ -1070,8 +1129,9 @@ class AnimatedPixbufSourceFrame(ImageFrame):
                 animation_delay, self._advance_animation
             )
     
+    
     def _advance_animation(self):
         self._animation_iter.advance(None)
-        self._current_frame_surface = None
+        self._current_frame_pattern = None
         self._schedule_animation_advance()
         self.emit("changed")

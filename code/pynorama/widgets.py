@@ -31,11 +31,18 @@ NOTEBOOK_PADDING = (8, 15, 12, 15)
 #-- custom widgets down this line --#
 class PointScale(Gtk.DrawingArea):
     """ A widget like a Gtk.HScale and Gtk.VScale together. """
-    def __init__(self, hrange, vrange, square=False):
-        Gtk.DrawingArea.__init__(self)
+    def __init__(self, hrange=None, vrange=None, square=False, **kwargs):
+        self.dragging = False
+        self.__hrange = self.__vrange = None
+        self.hrange_signal = self.vrange_signal = None
+        
+        kwargs.setdefault("square", square)
+        kwargs.setdefault("hrange", hrange)
+        kwargs.setdefault("vrange", vrange)
+        Gtk.DrawingArea.__init__(self, **kwargs)
+        
         self.set_size_request(50, 50)
-        self.square = square
-        if square:
+        if self.square:
             self.padding = 0
             self.mark_width = 32
             self.mark_height = 32
@@ -45,11 +52,6 @@ class PointScale(Gtk.DrawingArea):
             self.mark_width = 8
             self.mark_height = 8
             
-        self.dragging = False
-        self.__hrange = self.__vrange = None
-        self.hrange_signal = self.vrange_signal = None
-        self.set_hrange(hrange)
-        self.set_vrange(vrange)
         self.add_events(
             EventMask.BUTTON_PRESS_MASK |
             EventMask.BUTTON_RELEASE_MASK |
@@ -159,22 +161,22 @@ class PointScale(Gtk.DrawingArea):
         
         t, l = vpadding, hpadding
         r, b = w - hpadding, h - vpadding
-                
+        
         hrange = self.get_hrange()
         if hrange:
             lx, ux = hrange.get_lower(), hrange.get_upper()
             vx = hrange.get_value()
-            x = (r - l - 1) * (vx / (ux - lx) - lx) + l
+            x = l + (vx - lx) / (ux - lx) * (r - l - 1)
         else:
-            x = w / 2
+            x = l + (r - l - 1) / 2
             
         vrange = self.get_vrange()
         if vrange:
             ly, uy = vrange.get_lower(), vrange.get_upper()
             vy = vrange.get_value()
-            y = (b - t - 1) * (vy / (uy - ly) - ly) + l
+            y = t + (vy - ly) / (uy - ly) * (b - t - 1)
         else:
-            y = h / 2
+            y = t + (b - t - 1) / 2
         
         style = self.get_style_context()
         
@@ -285,6 +287,7 @@ class PointScale(Gtk.DrawingArea):
     
     hrange = GObject.property(get_hrange, set_hrange, type=Gtk.Adjustment)
     vrange = GObject.property(get_vrange, set_vrange, type=Gtk.Adjustment)
+    square = GObject.Property(type=bool, default=False)
 
 
 #-- widget creation macros down this line --#
