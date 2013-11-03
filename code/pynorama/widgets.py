@@ -19,6 +19,7 @@
 from gi.repository import Gdk, GObject, Gtk
 from gi.repository.Gdk import EventMask
 import math
+import traceback
 
 # Spacing values that should be used by widgets
 HORIZONTAL_SPACING = 16
@@ -28,7 +29,45 @@ VERTICAL_SPACING = 8
 DIALOG_PADDING = (15,) * 4
 NOTEBOOK_PADDING = (8, 15, 12, 15)
 
+
 #-- custom widgets down this line --#
+class ExceptionView(Gtk.ScrolledWindow):
+    """ Shows an exception in a textbox """
+    def __init__(self, **kwargs):
+        Gtk.ScrolledWindow.__init__(self, **kwargs)
+        
+        self._text_view = _text_view = Gtk.TextView(editable=False)
+        self.add(_text_view)
+        
+        # Appearance
+        self.set_shadow_type(Gtk.ShadowType.IN)
+        
+        # Adds a padding around the text
+        PADDING = 4
+        _text_view.set_border_window_size(Gtk.TextWindowType.TOP, PADDING)
+        _text_view.set_border_window_size(Gtk.TextWindowType.LEFT, PADDING)
+        _text_view.set_border_window_size(Gtk.TextWindowType.RIGHT, PADDING)
+        _text_view.set_border_window_size(Gtk.TextWindowType.BOTTOM, PADDING)
+        
+        self.connect("notify::exception", self._changed_exception_cb)
+        self._changed_exception_cb()
+    
+    
+    exception = GObject.Property(type=object)
+    
+    
+    def _changed_exception_cb(self, *whatever):
+        """ Updates the text with exception info """
+        exc = self.exception
+        if exc:
+            text_list = traceback.format_exception(None, exc, None)
+            text = "\n".join(text_list)
+        else:
+            text = ""
+            
+        self._text_view.get_buffer().set_text(text)
+
+
 class PointScale(Gtk.DrawingArea):
     """ A widget like a Gtk.HScale and Gtk.VScale together. """
     def __init__(self, hrange=None, vrange=None, square=False, **kwargs):
