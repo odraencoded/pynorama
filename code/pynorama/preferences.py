@@ -42,15 +42,25 @@ class Dialog(Gtk.Dialog):
         # Create tabs
         self.tabs = tabs = Gtk.Notebook()
         for a_tab in self.app.components[extending.PreferencesTab.CATEGORY]:
+            a_tab_label = a_tab.create_label(self)
             try:
                 a_tab_label = a_tab.create_label(self)
-                a_proxy = a_tab.create_proxy(self, a_tab_label)
-                a_tab_pad = widgets.PadNotebookContent(a_proxy)
-                tabs.append_page(a_tab_pad, a_tab_label)
-            except Exception:
+                a_tab_widget = a_tab.create_proxy(self, a_tab_label)
+            except Exception as a_problem:
+                # Create replacement widget showing the exception
+                exception_label = widgets.LoneLabel(
+                    _("There was an error creating this tab")
+                )
+                exception_view = widgets.ExceptionView(exception=a_problem)
+                a_tab_widget = widgets.Stack(
+                    exception_label,
+                    exception_view,
+                    expand=exception_view
+                )
+                
                 name = None
                 try:
-                    name = str(a_tab.label)
+                    name = a_tab.label
                 except Exception:
                     try:
                         codename = str(a_tab.codename)
@@ -67,14 +77,22 @@ class Dialog(Gtk.Dialog):
                         )
                         name = codename
                 
+                # Log error and replace tab label
                 if name:
                     logger.log_error(
                         "Failed to create tab '{name}'".format(name=name)
                     )
+                    a_tab_label = Gtk.Label(name, visible=True)
                 else:
                     logger.log_error("Failed to create some tab")
-                    
+                    a_tab_label = Gtk.Label(_("???"), visible=True)
+                
                 logger.log_exception()
+                
+            finally:
+                a_tab_pad = widgets.PadNotebookContent(a_tab_widget)
+                tabs.append_page(a_tab_pad, a_tab_label)
+                
             
         # Pack tabs into dialog
         padded_tabs = widgets.PadDialogContent(tabs)
@@ -198,12 +216,9 @@ class ViewPreferencesTabProxy(Gtk.Box):
 class ViewPreferencesTab(PreferencesTab):
     CODENAME = "view-tab"
     def __init__(self):
-        PreferencesTab.__init__(self, ViewPreferencesTab.CODENAME)
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("View")
+        PreferencesTab.__init__(
+            self, ViewPreferencesTab.CODENAME, label=_("View")
+        )
     
     create_proxy = ViewPreferencesTabProxy
 
@@ -576,13 +591,9 @@ for the image viewer""")
 class MousePreferencesTab(PreferencesTab):
     CODENAME = "mouse-tab"
     def __init__(self):
-        PreferencesTab.__init__(self, MousePreferencesTab.CODENAME)
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("Mouse")
-    
+        PreferencesTab.__init__(
+            self, MousePreferencesTab.CODENAME, label=_("Mouse")
+        )
     
     create_proxy = MousePreferencesTabProxy
 

@@ -111,7 +111,7 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
     CODENAME = "background-tab"
     def __init__(self, app):
         extending.PreferencesTab.__init__(
-            self, BackgroundPreferencesTab.CODENAME
+            self, BackgroundPreferencesTab.CODENAME, label=_("Background")
         )
         # Set default colors
         self.color = Gdk.RGBA(0, 0, 0 ,1)
@@ -140,11 +140,6 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
         )[-1]
         settings.connect("save", self._save_settings_cb)
         settings.connect("load", self._load_settings_cb)
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("Background")
     
     
     def get_enabled(self):

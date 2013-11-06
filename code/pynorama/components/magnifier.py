@@ -423,7 +423,7 @@ class MagnifierPreferencesTab(extending.PreferencesTab):
     CODENAME = "magnifier-tab"
     def __init__(self, app):
         extending.PreferencesTab.__init__(
-            self, MagnifierPreferencesTab.CODENAME
+            self, MagnifierPreferencesTab.CODENAME, label=_("Magnifier")
         )
         self.magnifier = Magnifier()
         
@@ -433,11 +433,6 @@ class MagnifierPreferencesTab(extending.PreferencesTab):
         )[-1]
         settings.connect("save", self._save_settings_cb)
         settings.connect("load", self._load_settings_cb)
-    
-    
-    @GObject.Property
-    def label(self):
-        return _("Magnifier")
     
     
     def create_proxy(self, dialog, label):

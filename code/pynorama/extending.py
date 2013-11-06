@@ -298,26 +298,25 @@ class FileOpener(GObject.Object, Component):
 
 
 class PreferencesTab(GObject.Object, Component):
-    """ Represents a tab in the application preferences dialog
-    
-    
-    """
+    """ Represents a tab in the application preferences dialog """
     
     CATEGORY = "preferences-tab"
     
-    def __init__(self, codename):
-        GObject.Object.__init__(self)
+    def __init__(self, codename, **kwargs):
         Component.__init__(self, codename)
+        GObject.Object.__init__(self, **kwargs)
     
-    @GObject.Property
-    def label(self):
-        """ A string label for this tab """
-        raise NotImplementedError
+    
+    label = GObject.Property(type=str)
     
     
     def create_label(self, dialog):
         """ A Gtk.Widget to used as label for this tab """
-        return Gtk.Label(self.label)
+        result = Gtk.Label()
+        self.bind_property(
+            "label", result, "label", GObject.BindingFlags.SYNC_CREATE
+        )
+        return result
     
     
     def create_proxy(self, dialog, label):
