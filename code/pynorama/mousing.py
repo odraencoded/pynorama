@@ -259,7 +259,7 @@ class MetaMouseHandler(GObject.Object):
     def __init__(self):
         GObject.Object.__init__(self)
         
-        self._handlers_data = dict()
+        self._bindings = dict()
         self._adapters_data = dict()
         # These are sets of different kinds of mouse handlers
         self._pression_handlers = set()
@@ -274,41 +274,41 @@ class MetaMouseHandler(GObject.Object):
     
     
     def __getitem__(self, handler):
-        return self._handlers_data[handler]
+        return self._bindings[handler]
     
     
     def add(self, handler, button=0, keys=0):
         """ Adds a handler to be handled """
-        if not handler in self._handlers_data:
-            handler_data = MouseHandlerBinding()
-            handler_data.connect(
+        if not handler in self._bindings:
+            binding = MouseHandlerBinding()
+            binding.connect(
                 "notify::button",
-                self._changed_handler_data_button, handler
+                self._changed_binding_button_cb, handler
             )
-            handler_data.connect(
+            binding.connect(
                 "notify::keys",
-                self._changed_handler_data_key, handler
+                self._changed_binding_key_cb, handler
             )
+            self._bindings[handler] = binding
             
-            self._handlers_data[handler] = handler_data
             for a_handler_set in self._get_handler_sets(handler):
                 a_handler_set.add(handler)
             
             if button:
-                handler_data.button = button
-            handler_data.keys = keys
+                binding.button = button
+            binding.keys = keys
             
             self.emit("handler-added", handler)
             
-            return handler_data
+            return binding
     
     
     def remove(self, handler):
         """ Removes a handler to be handled """
-        handler_data = self._handlers_data.pop(handler, None)
-        if handler_data:
+        binding = self._bindings.pop(handler, None)
+        if binding:
             for an_adapter_data in self._adapters_data.values():
-                an_adapter_data.handlers_data.pop(handler, None)
+                an_adapter_data.bindings.pop(handler, None)
             
             for handler_set in self._get_handler_sets(handler):
                 handler_set.discard(handler)
@@ -316,20 +316,20 @@ class MetaMouseHandler(GObject.Object):
             self._remove_handler_from_sets_dict(self._button_handlers, handler)
             self._remove_handler_from_sets_dict(self._keys_handlers, handler)
             
-        handler_data.emit("removed")
+        binding.emit("removed")
         self.emit("handler-removed", handler)
     
     
     def get_handlers(self):
         """ Returns an iterator for the currently added handlers """
-        yield from self._handlers_data.keys()
+        yield from self._bindings.keys()
     
     
-    def _changed_handler_data_button(self, handler_data, spec, handler):
+    def _changed_binding_button_cb(self, binding, spec, handler):
         self._remove_handler_from_sets_dict(self._button_handlers, handler)
         
         # Add handler to its button set
-        button = handler_data.button
+        button = binding.button
         try:
             button_set = self._button_handlers[button]
             
@@ -339,11 +339,11 @@ class MetaMouseHandler(GObject.Object):
         button_set.add(handler)
     
     
-    def _changed_handler_data_key(self, handler_data, spec, handler):
+    def _changed_binding_key_cb(self, binding, spec, handler):
         self._remove_handler_from_sets_dict(self._keys_handlers, handler)
         
         # Add handler to its keys set
-        keys = handler_data.keys
+        keys = binding.keys
         try:
             keys_set = self._keys_handlers[keys]
         
@@ -458,18 +458,18 @@ class MetaMouseHandler(GObject.Object):
         if event_handlers:
             widget = adapter.widget
             handler_params = (widget, ) + params
-            handlers_data = self._adapters_data[adapter].handlers_data
+            bindings = self._adapters_data[adapter].bindings
             
             for a_handler in event_handlers:
                 function = getattr(a_handler, function_name)
             
                 # This is the custom data returned by the handler
-                a_handler_data = handlers_data.get(a_handler, None)
-                a_handler_data = function(
-                    *(handler_params + (a_handler_data,))
+                a_binding = bindings.get(a_handler, None)
+                a_binding = function(
+                    *(handler_params + (a_binding,))
                 )
-                if a_handler_data:
-                    handlers_data[a_handler] = a_handler_data
+                if a_binding:
+                    bindings[a_handler] = a_binding
     
     
     def _scroll(self, adapter, point, direction):
@@ -583,7 +583,7 @@ class MouseAdapterData:
         self.signals = signals
         
         # Data returned by a handler method
-        self.handlers_data = dict()
+        self.bindings = dict()
         
         # A set of handlers that start(ed)_dragging but didn't finish_dragging
         self.handlers_dragging = set()
@@ -660,8 +660,8 @@ class MouseHandler(GObject.Object):
     # The base of the totem pole
     def __init__(self, **kwargs):
         GObject.Object.__init__(self, **kwargs)
-        self.events = MouseEvents.Nothing
         
+        self.events = MouseEvents.Nothing
         # These are set by the app.
         self.factory = None # The factory that made the handler
     
@@ -669,9 +669,11 @@ class MouseHandler(GObject.Object):
     nickname = GObject.Property(type=str)
     
     def handles(self, event_type):
-        return self.events & event_type == event_type \
-               if event_type != MouseEvents.Nothing \
-               else not bool(self.events)
+        return (
+            self.events & event_type == event_type
+            if event_type != MouseEvents.Nothing
+            else not bool(self.events)
+        )
     
     
     @property
