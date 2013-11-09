@@ -482,12 +482,27 @@ class MagnifierPreferencesTab(extending.PreferencesTab):
             self.magnifier.outline_color = color
 
 
-class HoverMagnifyingGlass(MouseHandler):
-    def __init__(self, magnifier_context):
+class MoveMagnifyingGlass(MouseHandler):
+    def __init__(self, drag, magnifier_context):
         MouseHandler.__init__(self)
         
         self.context = magnifier_context
-        self.events = MouseEvents.Moving | MouseEvents.Crossing
+        
+        if drag:
+            self.events = MouseEvents.Pressing
+        else:
+            self.events = MouseEvents.Moving | MouseEvents.Crossing
+    
+    
+    def press(self, view, point, data):
+        inside = (
+            point.x >= 0 and point.y >= 0 and
+            point.x < view.get_allocated_width() and 
+            point.y < view.get_allocated_height()
+        )
+        self.context.get_magnifier(view).set_properties(
+            position=point, enabled=inside
+        )
     
     
     def cross(self, view, point, inside, data):
@@ -557,21 +572,29 @@ class ScrollMagnifyingGlass(MouseHandler):
 
 
 class MoveMagnifyingGlassFactory(extending.MouseHandlerFactory):
-    CODENAME = "move-magnifying-glass"
-    def __init__(self, magnifier_context):
-        extending.MouseHandlerFactory.__init__(
-            self, MoveMagnifyingGlassFactory.CODENAME
-        )
+    MOVE_CODENAME = "move-magnifying-glass"
+    POINT_CODENAME = "drag-magnifying-glass"
+    def __init__(self, drag, magnifier_context):
+        if drag:
+            codename = MoveMagnifyingGlassFactory.POINT_CODENAME
+        else:
+            codename = MoveMagnifyingGlassFactory.MOVE_CODENAME
+            
+        extending.MouseHandlerFactory.__init__(self, codename)
+        
+        self.drag = drag
         self.context = magnifier_context
     
     
     @GObject.Property
     def label(self):
-        return _("Move Magnifying Glass")
+        return _(
+            "Drag Magnifying Glass" if self.drag else "Hover Magnifying Glass"
+        )
     
     
     def create_default(self):
-        return HoverMagnifyingGlass(self.context)
+        return MoveMagnifyingGlass(self.drag, self.context)
     
     
     @staticmethod
@@ -580,7 +603,7 @@ class MoveMagnifyingGlassFactory(extending.MouseHandlerFactory):
     
     
     def load_settings(self, settings):
-        return MoveMagnifyingGlassFactory(self.context)
+        return MoveMagnifyingGlass(self.drag, self.context)
 
 
 class ScrollMagnifyingGlassSettingsWidget(Gtk.Box):
@@ -687,7 +710,8 @@ class MagnifierPackage(extending.ComponentPackage):
         add_component = app.components.add
         magnifier_tab = MagnifierPreferencesTab(app)
         mouse_factories = (
-            MoveMagnifyingGlassFactory(magnifier_tab),
+            MoveMagnifyingGlassFactory(True, magnifier_tab),
+            MoveMagnifyingGlassFactory(False, magnifier_tab),
             ScrollMagnifyingGlassFactory(magnifier_tab)
         )
         
