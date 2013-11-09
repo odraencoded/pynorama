@@ -37,10 +37,11 @@ class Magnifier(GObject.Object):
         kwargs.setdefault("outline-color", Gdk.RGBA(0, 0, 0 ,1))
         
         GObject.Object.__init__(self, **kwargs)
-        self.view_connector = utility.SignalHandlerConnector(
-            self, "view",
-            draw_fg=self._draw_fg_cb,
-            destroy=self._view_destroyed_cb
+        self.view_connector = utility.GPropertySignalsConnector(
+            self, "view", **{
+                "draw-fg": self._draw_fg_cb,
+                "destroy": self._view_destroyed_cb
+            }
         )
         
         self.connect("notify::enabled", self._changed_enabled_cb)

@@ -149,54 +149,68 @@ class Point(namedtuple("Point", ("x", "y"))):
         return self[0] ** 2 + self[1] ** 2
 
 
-class SignalHandlerConnector:
-    def __init__(self, source, source_property, **kwargs):
-        self.source = source
-        self.source_property = source_property
-        self.signal_handlers = kwargs
-        
-        self._notify_signal_id = source.connect(
-            "notify::" + source_property, self._changed_target_cb
-        )
-        
-        self.target = source.get_property(source_property)
-        
-        self._target_signal_ids = None
-        self.reconnect()
-    
-    
-    def disconnect(self):
-        if self.target and self._target_signal_ids:
-            for a_signal_id in self._target_signal_ids:
-                self.target.disconnect(a_signal_id)
-            self._target_signal_ids = None
-        
-    
-    def reconnect(self):
-        if self.target and not self._target_signal_ids:
-            self._target_signal_ids = [
-                self.target.connect(a_signal, a_handler)
-                for a_signal, a_handler in self.signal_handlers.items()
-            ]
-        
-        
-    def destroy(self):
-        self.disconnect()
-        self.source.disconnect(self._notify_signal_id)
-        del self.source, self.target, self.signal_handlers
-    
-    
-    def _changed_target_cb(self, *whatever):
-        new_target = self.source.get_property(self.source_property)
-        if self.target != new_target:
-            self.disconnect()
-            self.target = new_target
-            self.reconnect()
-
-
 Point.Zero = Point(0, 0)
 Point.Center = Point(.5, .5)
 Point.One = Point(1, 1)
+
+
+class GPropertySignalsConnector:
+    """ Monitors a GObject property to disconnect and reconnect signal
+    handlers related to that property whenever it's modified
+    
+    """
+    
+    def __init__(self, target_object, target_property, **kwargs):
+        self.target_object = target_object
+        self.target_property = target_property
+        self.signal_handlers = kwargs
+        
+        self._notify_signal_id = target_object.connect(
+            "notify::" + target_property, self._changed_target_cb
+        )
+        
+        self.target = target_object.get_property(target_property)
+        
+        self._target_signal_ids = None
+        self.connect()
+    
+    
+    def disconnect(self):
+        """ Disconnect signals handlers connected in .connect() """
+        if self.target and self._target_signal_ids is not None:
+            disconnect_signal_handler = self.target.disconnect
+            for a_signal_id in self._target_signal_ids:
+                disconnect_signal_handler(a_signal_id)
+            self._target_signal_ids = None
+        
+    
+    def connect(self):
+        """ Connect signal handlers from .handler_object to .target_object's
+        .target_property.
+        
+        """
+        if self.target and self._target_signal_ids is None:
+            connect_signal_handler = self.target.connect
+            self._target_signal_ids = tuple(
+                connect_signal_handler(a_signal, a_handler)
+                for a_signal, a_handler in self.signal_handlers.items()
+            )
+        
+        
+    def destroy(self):
+        """ Stops connecting signal handlers """
+        
+        self.disconnect()
+        self.target_object.disconnect(self._notify_signal_id)
+    
+    
+    def _changed_target_cb(self, *whatever):
+        new_target = self.target_object.get_property(self.target_property)
+        if self.target is not new_target:
+            self.disconnect()
+            self.target = new_target
+            self.connect()
+
 
 class Rectangle(namedtuple("Rectangle", ("left", "top", "width", "height"))):
     @property
