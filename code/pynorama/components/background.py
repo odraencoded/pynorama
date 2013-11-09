@@ -223,7 +223,7 @@ class BackgroundPreferencesTab(extending.PreferencesTab):
             self._connect_view(view)
             view.queue_draw()
         else:
-            self._view_signals[window.view] = None
+            self._view_signals[view] = None
     
     
     def _changed_enabled_cb(self, *whatever):
