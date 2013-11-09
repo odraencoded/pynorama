@@ -21,6 +21,7 @@ from gettext import gettext as _
 from . import utility, widgets
 from .utility import Point
 
+# Mask of events added to a widget attached to a MouseAdapater
 MOUSE_EVENT_MASK = (
     EventMask.KEY_PRESS_MASK |
     EventMask.KEY_RELEASE_MASK |
@@ -62,14 +63,19 @@ class MouseAdapter(GObject.GObject):
     def __init__(self, widget=None):
         GObject.GObject.__init__(self)
         
+        # The modifier keys in place
+        self.keys = 0
+        
         self._current_point = self._from_point = None
+        
+        # A dictionary of mouse buttons:pressure values, the pressure value
+        # is 1 when a button is pressed and 2 after the idle delayed motion
+        # callback that dispatches most events. It is never set to 0.
         self._pressure = dict()
         self._widget = None
         
         self._delayed_motion = utility.IdlyMethod(self._delayed_motion_cb)
         self._delayed_motion.priority = PRIORITY_MOUSE_IDLE
-        self._widget_handler_ids = None
-        self._ice_cubes = 0
         # If the mouse pointer goes outside the widget this is set to 2.
         # While it is greater than zero the "motion" signal won't be emitted.
         # Basically, this means it takes two pointer coordinates samples
@@ -77,60 +83,26 @@ class MouseAdapter(GObject.GObject):
         self._motion_from_outside = 2
         self._pressure_from_outside = True
         
+        # This thing connects the signals of .widget
+        utility.GPropertySignalsConnector(
+            self, "widget", **{
+                "key-press-event": self._key_press_cb,
+                "key-release-event": self._key_release_cb,
+                "button-press-event": self._button_press_cb,
+                "button-release-event": self._button_release_cb,
+                "scroll-event": self._mouse_scroll_cb,
+                "enter-notify-event": self._mouse_enter_cb,
+                "leave-notify-event": self._mouse_leave_cb,
+                "motion-notify-event": self._mouse_motion_cb
+            }
+        )
+        self.connect("notify::widget", self._widget_changed_cb)
+        
         if widget:
-            self.set_widget(widget)
+            self.widget = widget
     
     
-    def get_widget(self):
-        """ Returns the widget whose signals are being adapted """
-        return self._widget
-    
-    def set_widget(self, widget):
-        """ Sets the widget whose signals should be adapted """
-        if self._widget != widget:
-            if self._widget:
-                # Reset adapter state
-                self._pressure.clear()
-                
-                for a_handler_id in self._widget_handler_ids:
-                    self._widget.disconnect(a_handler_id)
-                self._widget_handler_ids = None
-                self._delayed_motion.cancel_queue()
-            
-            self._widget = widget
-            self._delayed_motion.args = [widget]
-            
-            if widget:
-                # Connect things
-                widget.add_events(MOUSE_EVENT_MASK)
-                connect = widget.connect
-                self._widget_handler_ids = [
-                    connect("key-press-event", self._key_press_cb),
-                    connect("key-release-event", self._key_release_cb),
-                    connect("button-press-event", self._button_press_cb),
-                    connect("button-release-event", self._button_release_cb),
-                    connect("scroll-event", self._mouse_scroll_cb),
-                    connect("enter-notify-event", self._mouse_enter_cb),
-                    connect("leave-notify-event", self._mouse_leave_cb),
-                    connect("motion-notify-event", self._mouse_motion_cb),
-                ]
-                
-    widget = GObject.Property(get_widget, set_widget, type=Gtk.Widget)
-    keys = GObject.Property(type=int, default=0)
-    
-    # icy-wut-i-did-thaw
-    @property
-    def is_frozen(self):
-        """ Whether signals are being emitted """
-        return self._ice_cubes > 0
-        
-    def freeze(self):
-        """ Stops signal emission until it's been thawed """
-        self._ice_cubes += 1
-        
-    def thaw(self):
-        """ Continue emitting signals """
-        self._ice_cubes -= 1
+    widget = GObject.Property(type=Gtk.Widget)
     
     
     def is_pressed(self, button=None):
@@ -138,7 +110,9 @@ class MouseAdapter(GObject.GObject):
         Otherwise, returns whether that specific button is pressed.
         
         The button should be an integer from Gdk enumerations
+        
         """
+        
         return bool(
             self._pressure if button is None
             else self._pressure.get(button, 0)
@@ -153,6 +127,17 @@ class MouseAdapter(GObject.GObject):
             self.keys = modifier_keys
     
     
+    def _widget_changed_cb(self, *whatever):
+        widget = self.widget
+        
+        self._pressure.clear()
+        self._delayed_motion.cancel_queue()
+        self._delayed_motion.args = (widget,)
+        
+        if widget:
+            widget.add_events(MOUSE_EVENT_MASK)
+    
+    
     def _key_press_cb(self, widget, data, *other_data):
         self._update_keys(data.state)
     
@@ -164,44 +149,42 @@ class MouseAdapter(GObject.GObject):
     def _button_press_cb(self, widget, data):
         self._pressure.setdefault(data.button, 1)
         self._update_keys(data.state)
-        if not self.is_frozen:
-            point = Point(data.x, data.y)
-            self.emit("pression", point, data.button)
+        
+        # Emit pression signal
+        point = Point(data.x, data.y)
+        self.emit("pression", point, data.button)
     
     
     def _button_release_cb(self, widget, data):
         self._update_keys(data.state)
         if data.button in self._pressure:
-            if not self.is_frozen:
-                button_pressure = self._pressure.get(data.button, 0)
-                if button_pressure:
-                    point = Point(data.x, data.y)
-                    if button_pressure == 2:
-                        self.emit("stop-dragging", point, data.button)
-                    
-                    self.emit("click", point, data.button)
-                
+            button_pressure = self._pressure[data.button]
+            
+            # Emit signals
+            point = Point(data.x, data.y)
+            if button_pressure == 2:
+                self.emit("stop-dragging", point, data.button)
+            self.emit("click", point, data.button)
+            
             del self._pressure[data.button]
     
     
     def _mouse_scroll_cb(self, widget, data):
         self._update_keys(data.state)
-        if not self.is_frozen:
-            point = Point(data.x, data.y)
-            # I don't have one of those cool mice with smooth scrolling
-            got_delta, xd, yd = data.get_scroll_deltas()
-            if not got_delta:
-                # So I'm not sure this is how it maps
-                got_direction, direction = data.get_scroll_direction()
-                if got_direction:
-                    xd, yd = [
-                        (0, -1), (0, 1),
-                        (-1, 0), (1, 0)
-                    ][int(data.direction)] # it is [Up, right, down, left]
-                    got_delta = True
-            
-            if got_delta:
-                self.emit("scroll", point, Point(xd, yd))
+        # I don't have one of those cool mice with smooth scrolling
+        got_delta, xd, yd = data.get_scroll_deltas()
+        if not got_delta:
+            # So I'm not sure this is how it maps
+            got_direction, direction = data.get_scroll_direction()
+            if got_direction:
+                xd, yd = (
+                    (0, -1), (0, 1),
+                    (-1, 0), (1, 0)
+                )[int(data.direction)] # it is [Up, right, down, left]
+                got_delta = True
+        
+        if got_delta:
+            self.emit("scroll", Point(data.x, data.y), Point(xd, yd))
     
     
     def _mouse_enter_cb(self, widget, data):
@@ -241,43 +224,27 @@ class MouseAdapter(GObject.GObject):
         
         """
         
-        if not self.is_frozen:
-            # You got to love tuple comparation
-            if self._from_point != self._current_point:
-                if not self._pressure_from_outside:
-                    for button, pressure in self._pressure.items():
-                        if pressure == 1:
-                            self._pressure[button] = 2
-                            self.emit(
-                                "start-dragging",
-                                self._current_point,
-                                button
-                            )
-                        
-                        if pressure:
-                            self.emit(
-                                "pression",
-                                self._current_point,
-                                button
-                            )
-                        
-                if not self._motion_from_outside:
-                    self.emit(
-                        "motion",
-                        self._current_point,
-                        self._from_point
-                    )
-                    
-                for button, pressure in self._pressure.items():
-                    if pressure == 2:
-                        self.emit(
-                            "drag",
-                            self._current_point,
-                            self._from_point,
-                            button
-                        )
+        to_point = self._current_point
+        from_point = self._from_point
+        pressure_dict = self._pressure
         
-        self._from_point = self._current_point
+        if from_point != to_point:
+            if not self._pressure_from_outside:
+                for button, pressure in pressure_dict.items():
+                    if pressure == 1:
+                        pressure_dict[button] = 2
+                        self.emit("start-dragging", to_point, button)
+                    
+                    self.emit("pression", to_point, button)
+                    
+            if not self._motion_from_outside:
+                self.emit("motion", to_point, from_point)
+                
+            for button, pressure in pressure_dict.items():
+                if pressure == 2:
+                    self.emit("drag", to_point, from_point, button)
+        
+        self._from_point = to_point
 
 
 class MetaMouseHandler(GObject.Object):
@@ -481,12 +448,15 @@ class MetaMouseHandler(GObject.Object):
         
         return set()
     
-    def _basic_event_dispatch(
-        self, adapter, event_handlers, function_name, *params
-    ):
+    def _basic_event_dispatch(self,
+                              adapter,
+                              event_handlers,
+                              function_name,
+                              *params):
+        
         # This is an abomination made because all event methods do this
         if event_handlers:
-            widget = adapter.get_widget()
+            widget = adapter.widget
             handler_params = (widget, ) + params
             handlers_data = self._adapters_data[adapter].handlers_data
             
