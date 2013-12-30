@@ -974,7 +974,9 @@ class ImageFrame(BaseFrame):
         self.source = source
         
         source.emit("new-frame", self)
-        source.connect("finished-loading", self.check_source)
+        self.__source_loaded_signal = source.connect(
+            "finished-loading", self.check_source
+        )
         self.check_source()
         
         
@@ -991,6 +993,7 @@ class ImageFrame(BaseFrame):
     #~ Signal handlers ~#
     def do_destroy(self):
         if self.source:
+            self.source.disconnect(self.__source_loaded_signal)
             self.source.emit("lost-frame", self)
     
     
@@ -1055,11 +1058,7 @@ class SurfaceSourceImageFrame(ImageFrame):
         ImageFrame.__init__(self, *args, **kwargs)
         
         self._surface_pattern = None
-        self.source.connect("finished-loading", self._finished_loading_cb)
     
-    def _finished_loading_cb(self, *whatever):
-        self._surface_pattern = None
-        
     
     def draw_image_source(self, cr, drawstate):
         """Renders an ImageSource with a .surface into the frame"""
@@ -1106,6 +1105,7 @@ class AnimatedPixbufSourceFrame(ImageFrame):
         # Remove any pending _advance_animation signal handler
         if self._animate_signal:
             GLib.source_remove(self._animate_signal)
+        ImageFrame.do_destroy(self)
     
     
     def draw_image_source(self, cr, drawstate):
