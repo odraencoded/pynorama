@@ -19,6 +19,7 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
 from gi.repository import Gio, GObject
+import weakref
 
 class DataError(Exception):
     ''' For exceptions due to the current state of the data loaded '''
@@ -91,6 +92,8 @@ class Memory(GObject.GObject):
     def __init__(self):
         GObject.GObject.__init__(self)
         
+        self.observed_stuff = weakref.WeakSet()
+        
         self.requested_stuff = set()
         self.unused_stuff = set()
         self.enlisted_stuff = set()
@@ -104,6 +107,9 @@ class Memory(GObject.GObject):
     
     def observe_stuff(self, stuff):
         for a_thing in stuff:
+            assert a_thing not in self.observed_stuff
+            self.observed_stuff.add(a_thing)
+            
             a_thing.connect("notify::uses", self._uses_changed)
             a_thing.connect("notify::lists", self._lists_changed)
     
