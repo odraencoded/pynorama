@@ -456,6 +456,7 @@ class OpeningContext(GObject.Object):
         GObject.Object.__init__(self)
         
         self.sessions = []
+        self._results_completion_signals = dict()
         self.open_sessions = set()
         # A set of sessions that aren't finished yet
         self.finished = False
@@ -563,9 +564,8 @@ class OpeningContext(GObject.Object):
             self._check_finished(session)
         else:
             self.incomplete_results.add(results)
-            results.connect(
-                "completed",
-                self._results_completed_cb,
+            self._results_completion_signals[results] = results.connect(
+                "completed", self._results_completed_cb,
                 ("file", gfile, session)
             )
     
@@ -578,9 +578,8 @@ class OpeningContext(GObject.Object):
             self._check_finished(session)
         else:
             self.incomplete_results.add(results)
-            results.connect(
-                "completed",
-                self._results_completed_cb,
+            self._results_completion_signals[results] = results.connect(
+                "completed", self._results_completed_cb,
                 ("uri", uri, session)
             )
     
@@ -674,6 +673,8 @@ class OpeningContext(GObject.Object):
     def _results_completed_cb(self, results, data):
         """ Handle for opening results that complete asynchronously """
         self.incomplete_results.remove(results)
+        # breaking reference cycle created by signal handlers
+        results.disconnect(self._results_completion_signals.pop(results))
         source_type, source, session = data
         self.emit("opened::" + source_type, results, source)
         self._check_finished(session)
