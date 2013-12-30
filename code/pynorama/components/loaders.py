@@ -90,8 +90,9 @@ class PixbufFileImageSource(loading.GFileImageSource):
         stream = self.gfile.read(None)
         
         self.status = Status.Loading
-        load_async = GdkPixbuf.Pixbuf.new_from_stream_async
-        self.pixbuf = load_async(stream, self.cancellable, self._loaded, None)
+        GdkPixbuf.Pixbuf.new_from_stream_async(
+            stream, self.cancellable, self._loaded, None
+        )
     
     
     def _loaded(self, me, result, *data):
@@ -201,8 +202,7 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
         stream = self.gfile.read(None)
         
         self.status = Status.Loading
-        load_async = GdkPixbuf.PixbufAnimation.new_from_stream_async
-        self.animation = load_async(
+        GdkPixbuf.PixbufAnimation.new_from_stream_async(
             stream, self.cancellable, self._loaded, None
         )
     
