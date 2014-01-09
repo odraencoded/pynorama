@@ -1372,7 +1372,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         can_minify = self.autozoom_can_minify
         can_magnify = self.autozoom_can_magnify
         if frame and (can_minify or can_magnify):
-            rectangle = frame.rectangle
+            rectangle = frame.rectangle.spin(math.radians(self.view.rotation))
             new_zoom = self.view.zoom_for_size(
                 (rectangle.width, rectangle.height), self.autozoom_mode
             )
