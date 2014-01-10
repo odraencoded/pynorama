@@ -451,9 +451,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self._refresh_index = utility.IdlyMethod(self._refresh_index)
         self._refresh_transform = utility.IdlyMethod(self._refresh_transform)
         
-        # If the user changes the zoom set by .autozoom, 
+        # If the user changes the magnification after its set by .autozoom, 
         # then .autozoom isn't called after rotating or resizing the imageview
         self._autozoom_zoom_modified = False
+        # This is the rectangle of the frame that has been autozoomed.
+        # It is used when reapplying the zoom after the window is resized
+        # in order to changing the zoom because the current image changed and
+        # so the image size due to the user panning the view
+        self._autozoom_locked_rectangle = None
         self._focus_loaded_handler_id = None
         self._old_focused_image = None
         self.opening_context = None
@@ -1365,25 +1370,34 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.set_view_rotation(0)
     
     
-    def autozoom(self):
+    def autozoom(self, rectangle=None):
         ''' Zooms automatically! '''
         
-        frame = self.avl.focus_frame
         can_minify = self.autozoom_can_minify
         can_magnify = self.autozoom_can_magnify
-        if frame and (can_minify or can_magnify):
-            rectangle = frame.rectangle.spin(math.radians(self.view.rotation))
-            new_zoom = self.view.zoom_for_size(
-                (rectangle.width, rectangle.height), self.autozoom_mode
-            )
-            
-            will_minify_zoom = can_minify and new_zoom > 1
-            will_magnify_zoom = can_magnify and new_zoom < 1
-            if will_minify_zoom or will_magnify_zoom:
-                self.view.magnification = new_zoom
-                self._autozoom_zoom_modified = False
-            else:
-                self.view.magnification = 1
+        view = self.view
+        if can_minify or can_magnify:
+            if rectangle is None:
+                frame = self.avl.focus_frame
+                if frame:
+                    rectangle = frame.rectangle
+                
+            if rectangle is not None:
+                rotated_rectangle = rectangle.spin(math.radians(view.rotation))
+                new_zoom = view.zoom_for_size(
+                    (rotated_rectangle.width, rotated_rectangle.height),
+                    self.autozoom_mode
+                )
+                
+                will_minify_zoom = can_minify and new_zoom > 1
+                will_magnify_zoom = can_magnify and new_zoom < 1
+                if will_minify_zoom or will_magnify_zoom:
+                    view.magnification = new_zoom
+                    self._autozoom_zoom_modified = False
+                    self._autozoom_locked_rectangle = rectangle
+                else:
+                    # Should this be here?
+                    view.magnification = 1
     
     
     def toggle_keep_above(self, *data):
@@ -1950,7 +1964,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     def _reapply_autozoom(self, *data):
         if self.autozoom_enabled and not self._autozoom_zoom_modified:
-            self.autozoom()
+            self.autozoom(self._autozoom_locked_rectangle)
     
     def _changed_autozoom(self, *data):
         if self.autozoom_enabled:
@@ -1961,6 +1975,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     def _changed_magnification(self, widget, data=None):
         self._autozoom_zoom_modified = True
+        self._autozoom_locked_rectangle = None
     
     
     ui_description = '''\
