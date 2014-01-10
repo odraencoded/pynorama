@@ -365,7 +365,7 @@ class HoverAndDragHandlerFactory(extending.MouseHandlerFactory):
     
     @GObject.Property
     def label(self):
-        return _("Drag to Pan" if self.drag else "Move Mouse to Pan")
+        return _("Panning: Drag" if self.drag else "Panning: Hover")
     
     
     def create_default(self):
@@ -423,7 +423,7 @@ class SpinHandlerFactory(extending.MouseHandlerFactory):
         
     @GObject.Property
     def label(self):
-        return _("Drag to Spin")
+        return _("Spinning: Drag")
         
         
     @staticmethod
@@ -459,7 +459,7 @@ class StretchHandlerFactory(extending.MouseHandlerFactory):
         
     @GObject.Property
     def label(self):
-        return _("Drag to Stretch")
+        return _("Zooming: Drag")
     
     
     @staticmethod
@@ -557,7 +557,7 @@ class ScrollHandlerFactory(extending.MouseHandlerFactory):
         
     @GObject.Property
     def label(self):
-        return _("Scroll to Pan")
+        return _("Panning: Scroll Whell")
         
     
     @staticmethod
@@ -640,7 +640,7 @@ class ZoomHandlerFactory(extending.MouseHandlerFactory):
     
     @GObject.Property
     def label(self):
-        return _("Scroll to Zoom")
+        return _("Zooming: Scroll Wheel")
     
     
     @staticmethod
@@ -714,7 +714,7 @@ class GearHandlerFactory(extending.MouseHandlerFactory):
         
     @GObject.Property
     def label(self):
-        return _("Scroll to Spin")
+        return _("Spinning: Scroll Wheel")
     
     
     @staticmethod

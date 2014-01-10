@@ -588,9 +588,10 @@ class MoveMagnifyingGlassFactory(extending.MouseHandlerFactory):
     
     @GObject.Property
     def label(self):
-        return _(
-            "Drag Magnifying Glass" if self.drag else "Hover Magnifying Glass"
-        )
+        if self.drag:
+            return _("Magnifying Glass: Drag")
+        else:
+            return _("Magnifying Glass: Hover")
     
     
     def create_default(self):
@@ -686,7 +687,7 @@ class ScrollMagnifyingGlassFactory(extending.MouseHandlerFactory):
     
     @GObject.Property
     def label(self):
-        return _("Scroll to Change Magnifying Glass")
+        return _("Magnifying Glass Zoom: Scroll Wheel")
     
     
     def create_default(self):
