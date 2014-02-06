@@ -76,6 +76,8 @@ If there is no configure script, you can create it using
 
 And then use the autotools command above to install Pynorama.
 
+Use the code/run.py script to run the program without installing it.
+
 ### License
 
 Pynorama is licensed under the GNU General Public License 3.
