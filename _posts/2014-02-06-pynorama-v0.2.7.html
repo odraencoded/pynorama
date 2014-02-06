@@ -1,0 +1,93 @@
+---
+layout: post
+author: Leonardo Augusto Pereira
+title: Pynorama Version 0.2.7
+description: Pynorama version 0.2.7 release notes and change log
+---
+<p>The
+<a href="https://github.com/odraencoded/pynorama/releases/tag/v0.2.7">
+0.2.7 version of Pynorama</a> has been released.
+
+<p>In this version some bugs have been fixed, and a few notable features have
+been added, in particular, pynorama now has magnifier! It's drawn over the
+images being viewed and magnifies them.
+
+<article id="v0-2-7-changelog" class="change-log">
+	<h3 class="change-version">Version 0.2.7 Changelog</h2>
+	
+	<ul class="change-list">
+	<li>
+		<h6 class="summary">
+			Extensible preferences tabs
+		</h6>
+		<div class="details">
+			<p>The tabs in the preferences dialog have been made extensible.
+			That means an addon script can now add its own preferences tab to
+			the dialog, which is kind of nice. Too bad there are no addons
+			for the image viewer.
+		</div>
+	<li>
+		<h6 class="summary">
+			Customizable background
+		</h6>
+		<div class="details">
+			<p>The background colour of the image viewer can now be customized.
+			Users can set either a flat color can be set or choose two colors
+			for a checkered pattern.
+		</div>
+	<li>
+		<h6 class="summary">
+			Magnifying glass
+		</h6>
+		<div class="details">
+			<p>A <i>magnifying glass</i> has been added to the image viewer. It can
+			be used to have different level of magnification in a small part
+			of the window.
+			<p>Three mouse mechanisms have been added to allow it to be
+			controlled with the mouse. There is no way to control the
+			magnifying glass with the keyboard so far but that will change one
+			day, maybe.
+		</div>
+	<li>
+		<h6 class="summary">
+			Bug-fixed: Auto-zoom mis-re-applied
+		</h6>
+		<div class="details">
+			<p>A bug has been fixed that caused <i>auto-zoom</i> feature to not
+			work well with the <i>image strip layout</i> or other possible
+			layouts that allowed the user to change the focused image through
+			panning.
+			
+			<p>Previously, resizing the window after panning through the images
+			after setting the auto-zoom on a image would reapply the auto-zoom
+			for this new image. Now, the auto-zoom calculates a zoom level
+			using the size of the image that was the focus image when it was
+			turned on.
+			
+			<p>It's hard to explain, either way it's been fixed!
+		</div>
+	<li>
+		<h6 class="summary">
+			A memory leak has been fixed
+		</h6>
+		<div class="details">
+			<p>Honestly, I can't remember whether the memory leak existed in
+			the previous version or I created it after that but I'm reporting
+			it either way so it appears I'm actually being busy.
+		</div>
+	<li>
+		<h6 class="summary">
+			Massive refactoring
+		</h6>
+		<div class="details">
+			<p>Most of the program code has been divided into new files. This
+			might help organizing it, or not. I'm not sure whether it will
+			affect the capabilities of the program itself.
+			<p>Being busy.
+		</div>
+	</ul>
+</article>
+
+<p>If you want more information about the changes you might want to check the
+<a href="https://github.com/odraencoded/pynorama/compare/v0.2.6...v0.2.7">
+0.2.6 to 0.2.7 commit log</a>.
