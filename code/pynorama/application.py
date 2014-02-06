@@ -41,7 +41,7 @@ applogger = notifying.Logger("app")
 sys.excepthook = applogger.log_exception_info
 
 class ImageViewer(Gtk.Application):
-    Version = "v0.2.6"
+    Version = "v0.2.7"
     
     DataDirectory = "resources"
     PreferencesDirectory = "preferences"

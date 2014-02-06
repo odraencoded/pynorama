@@ -1,4 +1,4 @@
-AC_INIT([pynorama], [0.2.6])
+AC_INIT([pynorama], [0.2.7])
 AM_INIT_AUTOMAKE([foreign])
 
 AM_PATH_PYTHON([3.3])
