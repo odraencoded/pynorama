@@ -124,7 +124,7 @@ class Point(namedtuple("Point", ("x", "y"))):
         return Point(self[0] * (-1 if h else 1), self[1] * (-1 if v else 1))
     
     def swap(self):
-        return Point(self[0], self[1])
+        return Point(self[1], self[0])
     
     def spin(self, r):
         x, y  = self
