@@ -87,12 +87,17 @@ class PixbufFileImageSource(loading.GFileImageSource):
             
         self.cancellable = Gio.Cancellable()
         
-        stream = self.gfile.read(None)
-        
-        self.status = Status.Loading
-        GdkPixbuf.Pixbuf.new_from_stream_async(
-            stream, self.cancellable, self._loaded, None
-        )
+        try:
+            stream = self.gfile.read(None)
+        except GLib.GError as gerror:
+            self.status = Status.Bad
+            self.error = gerror
+            self.emit("finished-loading", self.error)
+        else:
+            self.status = Status.Loading
+            GdkPixbuf.Pixbuf.new_from_stream_async(
+                stream, self.cancellable, self._loaded, None
+            )
     
     
     def _loaded(self, me, result, *data):
@@ -103,7 +108,8 @@ class PixbufFileImageSource(loading.GFileImageSource):
             self.surface = utility.SurfaceFromPixbuf(pixbuf)
 
         except GLib.GError as gerror:
-            # If cancellable is None, that means loading was cancelled
+            # .unload() sets cancellable to None, so if it's None we assume
+            # the loading has been cancelled and the error is because of that
             if self.cancellable:
                 self.location &= ~Location.Memory
                 self.status = Status.Bad
@@ -199,12 +205,17 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
             
         self.cancellable = Gio.Cancellable()
         
-        stream = self.gfile.read(None)
-        
-        self.status = Status.Loading
-        GdkPixbuf.PixbufAnimation.new_from_stream_async(
-            stream, self.cancellable, self._loaded, None
-        )
+        try:
+            stream = self.gfile.read(None)
+        except GLib.GError as gerror:
+            self.status = Status.Bad
+            self.error = gerror
+            self.emit("finished-loading", self.error)
+        else:
+            self.status = Status.Loading
+            GdkPixbuf.PixbufAnimation.new_from_stream_async(
+                stream, self.cancellable, self._loaded, None
+            )
     
     
     def _loaded(self, me, result, *data):
@@ -213,7 +224,8 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
             async_finish = GdkPixbuf.PixbufAnimation.new_from_stream_finish
             self.pixbuf_animation = async_finish(result)
         except GLib.GError as gerror:
-            # If cancellable is None, that means loading was cancelled
+            # .unload() sets cancellable to None, so if it's None we assume
+            # the loading has been cancelled and the error is because of that
             if self.cancellable:
                 self.location &= ~Location.Memory
                 self.status = Status.Bad
