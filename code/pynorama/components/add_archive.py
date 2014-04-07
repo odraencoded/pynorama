@@ -54,7 +54,10 @@ class ZipOpener(FileOpener):
         path = gfile.get_path()
         try:
             with zipfile.ZipFile(path) as a_zipfile:
-                directory = tempfile.mkdtemp(prefix="pynorama.", suffix=os.sep)
+                directory = tempfile.mkdtemp(
+                    suffix=os.sep,
+                    dir=context.cache_directory
+                )
                 a_zipfile.extractall(directory)
                 # Momoizing append_file and join_path
                 append_file = results.files.append

@@ -18,20 +18,32 @@
     You should have received a copy of the GNU General Public License
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. '''
 
-import gc, math, random, os, sys
+# Standard imports
+import gc
+import math
+import os
+import sys
+import random
+import tempfile
+from tempfile import TemporaryDirectory
+
+# GUI imports
 from gi.repository import Gtk, Gdk, Gio, GObject
 import cairo
 from gettext import gettext as _
 
+# Package imports
 from . import extending, notifying, utility, widgets, mousing, preferences
 from . import viewing, organizing, loading, opening
 from .viewing import ZoomMode
 
+# Components imports
 from . import components
 from .components import *
 components.import_addons()
 
 DND_URI_LIST, DND_IMAGE = range(2)
+CACHE_DIRECTORY_PREFIX = "pynorama-cache-"
 
 # Log stuff
 uilogger = notifying.Logger("interface")
@@ -45,6 +57,7 @@ class ImageViewer(Gtk.Application):
     
     DataDirectory = "resources"
     PreferencesDirectory = "preferences"
+    CacheDirectory = None
     
     __gsignals__ = {
         "new-window": (GObject.SIGNAL_RUN_FIRST, None, [object]),
@@ -99,7 +112,8 @@ class ImageViewer(Gtk.Application):
         self.memory.connect("thing-unused", self.queue_memory_check)
         self.memory.connect("thing-unlisted", self.queue_memory_check)
         
-        
+        # Create base directory for cache
+        self.cache_directory = TemporaryDirectory("", CACHE_DIRECTORY_PREFIX)
         self.opener = opening.OpeningHandler(self)
         
         Gtk.Window.set_default_icon_name("pynorama")
@@ -119,6 +133,7 @@ class ImageViewer(Gtk.Application):
     
     def do_shutdown(self):
         preferences.SaveFromApp(self)
+        self.cache_directory.cleanup()
         Gtk.Application.do_shutdown(self)
     
     
@@ -1612,7 +1627,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         """
         if not self.opening_context:
             uilogger.debug("Creating new opening context")
-            new_context = opening.OpeningContext()
+            new_context = opening.OpeningContext(self.app)
             new_context.__added_already = False
             new_context.__go_to_uri = None
             new_context.connect("finished", self._opening_context_finished_cb)

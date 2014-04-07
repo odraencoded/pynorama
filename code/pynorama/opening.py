@@ -452,7 +452,7 @@ class OpeningContext(GObject.Object):
     }
     
     
-    def __init__(self):
+    def __init__(self, app):
         GObject.Object.__init__(self)
         
         self.sessions = []
@@ -472,7 +472,8 @@ class OpeningContext(GObject.Object):
         self.open_next = utility.IdlyMethod(self.open_next)
         
         self.connect("notify::keep-open", self._notify_keep_open_cb)
-    
+        
+        self.cache_directory = app.cache_directory.name
     
     # Whether to keep the context "unfinished" even if the criteria to
     # finish it is true
