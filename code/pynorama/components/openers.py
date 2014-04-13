@@ -53,35 +53,40 @@ class DirectoryOpener(FileOpener):
         return _("Directory")
     
     
-    def open_file(self, context, results, gfile):
+    def open_file(self, context, results, source):
         """ Opens a directory file and yields its contents """
         
-        gfile.enumerate_children_async(
+        source.gfile.enumerate_children_async(
             opening.STANDARD_GFILE_INFO_STRING,
             0,
             GLib.PRIORITY_DEFAULT,
             None,
             self._enumerate_children_async_cb,
-            (context, results)
+            (context, results, source)
         )
     
     
     def _enumerate_children_async_cb(self, gfile, async_result, data):
-        context, results = data
+        context, results, source = data
+        gfile = source.gfile
         try:
             gfile_enumerator = gfile.enumerate_children_finish(async_result)
         except Exception as e:
             results.errors.append(e)
         else:
             get_child_for_display_name = gfile.get_child_for_display_name
-            append_file = results.files.append
-            file_info_cache = results.file_info_cache
+            append_source = results.sources.append
+            file_source = opening.GFileFileSource
+            
             for a_file_info in gfile_enumerator:
                 try:
                     child_name = a_file_info.get_display_name()
                     a_child_file = get_child_for_display_name(child_name)
-                    append_file(a_child_file)
-                    file_info_cache[a_child_file] = a_file_info
+                    a_file_source = file_source(
+                        a_child_file, name=child_name, parent=source
+                    )
+                    a_file_source.info = a_file_info
+                    append_source(a_file_source)
                     
                 except Exception as e:
                     results.errors.append(e)
@@ -135,17 +140,13 @@ class PixbufOpener(SelectionOpener, FileOpener):
         return _("GdkPixbuf Images")
     
     
-    def open_file(self, context, results, gfile):
+    def open_file(self, context, results, source):
         try:
-            new_image = loaders.PixbufFileImageSource(
-                gfile,
-                opening_context=context
-            )
+            new_image = loaders.PixbufFileImageSource(source)
         except Exception as e:
             results.errors.append(e)
         else:
             results.images.append(new_image)
-            
         results.complete()
     
     

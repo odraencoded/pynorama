@@ -1531,7 +1531,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
             newest_session = opening_context.get_new_session()
             newest_session.search_siblings = search_siblings
-            newest_session.add(openers=openers, uris=uri_list)
+            newest_session.add_openers(openers)
+            newest_session.add_sources(map(opening.URIFileSource, uri_list))
             opening_context.__go_to_uri = uri_list[0] if go_to_first else None
     
     
@@ -1580,6 +1581,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 opening_context.__go_to_uri = file_list[0].get_uri()
             else:
                 opening_context.__go_to_uri = None
+    
     
     def paste(self, clipboard=None):
         """ Pastes something from a clipboard """
@@ -1690,7 +1692,8 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 title_fmt = _("“{name}” [“{fullname}”] - Pynorama")
                 
             new_title = title_fmt.format(
-                              name=image.name, fullname=image.fullname)
+                name=image.name, fullname=image.fullname
+            )
             self.set_title(new_title)
             
         else:

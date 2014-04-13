@@ -25,8 +25,9 @@
 
 """
 
+import os
+from collections import deque, defaultdict
 from gi.repository import Gdk, Gio, GLib, GObject, Gtk
-from collections import deque
 from . import utility, notifying
 from .extending import FileOpener, SelectionOpener
 
@@ -52,15 +53,14 @@ class OpeningHandler(GObject.Object):
         GObject.Object.__init__(self, **kwargs)
     
     
-    def open_file(self, context, session, gfile, gfile_info):
-        """ Tries to open a Gio.File with an appropriate FileOpener """
+    def open_file(self, context, session, source):
+        """ Tries to open a FileSource with an appropriate FileOpener """
         results = OpeningResults()
-        guessed_opener = self.guess_file_opener(context, session, gfile_info)
-        
+        guessed_opener = self.guess_file_opener(context, session, source.info)
         if guessed_opener:
             results.opener = guessed_opener
             try:
-                guessed_opener.open_file(context, results, gfile)
+                guessed_opener.open_file(context, results, source)
             except Exception as e:
                 results.errors.append(e)
                 results.complete()
@@ -68,7 +68,7 @@ class OpeningHandler(GObject.Object):
         else:
             results.complete()
         
-        context.set_file_results(session, gfile, results)
+        session.set_source_results(source, results)
     
     
     def open_selection(self, selection_data):
@@ -171,8 +171,7 @@ class OpeningHandler(GObject.Object):
         self.emit("new-context", context)
         
         context.connect("new-session", self._new_session_cb)
-        context.connect("loaded-file-info", self._loaded_file_info_cb)
-        context.connect("open-next::file", self._open_next_file_cb)
+        context.connect("open-next::gfile", self._open_next_gfile_cb)
         context.connect("open-next::uri", self._open_next_uri_cb)
         if album is not None:
             context.connect(
@@ -215,7 +214,7 @@ class OpeningHandler(GObject.Object):
         It adds images to an album and 
         
         """
-        files = []
+        sources = []
         images = []
         errors = []
         
@@ -226,16 +225,21 @@ class OpeningHandler(GObject.Object):
             # FIXME: This method doesn't work if there are images and files
             # results, which never actually happens in the app because
             # search_files is only true when there is only one file to open
+            # XXX: Also it's a hardcoded mess
             for a_key, some_results in session.results.items():
-                if some_results:
-                    errors.extend(some_results.errors)
-                    if some_results.files:
-                        files.append((a_key, some_results.files))
-                        
-                    elif some_results.images:
+                if not some_results:
+                    continue
+                
+                errors.extend(some_results.errors)
+                if some_results.sources:
+                    sources.append((a_key, some_results.sources))
+                    
+                elif a_key.type == GFileFileSource.TYPE:
+                    if some_results.images:
                         try:
-                            a_parent_key = a_key.get_parent()
-                            a_parent_uri = a_parent_key.get_uri()
+                            gfile = a_key.gfile
+                            a_parent_gfile = gfile.get_parent()
+                            a_parent_uri = a_parent_gfile.get_uri()
                         except (TypeError, AttributeError):
                             # Nevermind, key was not a GFile
                             pass
@@ -244,7 +248,7 @@ class OpeningHandler(GObject.Object):
                             logger.log_exception()
                         else:
                             if a_parent_uri not in parent_uris:
-                                parent_files.append(a_parent_key)
+                                parent_files.append(a_parent_gfile)
                                 parent_uris.add(a_parent_uri)
             
             logger.debug("Found %s parent(s)" % len(parent_files))
@@ -255,7 +259,9 @@ class OpeningHandler(GObject.Object):
                 
                 siblings_session = context.get_new_session()
                 siblings_session.add_openers(parent_openers)
-                siblings_session.add_files(parent_files)
+                siblings_session.add_sources(
+                    map(GFileFileSource, parent_files)
+                )
             
         else: # not session.search_siblings
             # TODO: Remove files in sessions created to search sibling
@@ -264,13 +270,13 @@ class OpeningHandler(GObject.Object):
                 if some_results:
                     images.extend(some_results.images)
                     errors.extend(some_results.errors)
-                    if some_results.files:
-                        files.append((key, some_results.files))
+                    if some_results.sources:
+                        sources.append((key, some_results.sources))
         
         
         logger.debug(
-            "Depth %d session results: %d images, %d files, %d errors" % (
-                session.depth, len(images), len(files), len(errors)
+            "Depth %d session results: %d images, %d sources, %d errors" % (
+                session.depth, len(images), len(sources), len(errors)
             )
         )
         for an_error in errors:
@@ -280,12 +286,11 @@ class OpeningHandler(GObject.Object):
         album.extend(images)
         
         # TODO: New URIs handling, error handling, no opener found handling
-        if files:
+        if sources:
             # TODO: Implement warning dialogs
             continue_opening = True
-            if len(files) >= self.warning_file_count_threshold:
+            if len(sources) >= self.warning_file_count_threshold:
                 logger.log("File count exceeded warning threshold")
-                continue_opening = False
             
             if session.depth >= self.warning_depth_threshold:
                 if len(images) > self.warning_image_count_threshold:
@@ -297,10 +302,10 @@ class OpeningHandler(GObject.Object):
                     logger.debug("Going deeper; Too few images in results")
                 
             if continue_opening:
-                self._continue_opening(context, session, files)
+                self._continue_opening(context, session, sources)
     
     
-    def _continue_opening(self, context, session, files):
+    def _continue_opening(self, context, session, sources):
         # If the session was created to open the siblings of
         # another session, the its child session will have the
         # same openers as the session it was created for.
@@ -310,60 +315,63 @@ class OpeningHandler(GObject.Object):
         else:
             openers = self.app.components[FileOpener.CATEGORY]
         
-        for key, some_files in files:
+        for parent_source, some_sources in sources:
             logger.debug(
                 "Starting depth %d session with %d files" % (
-                    session.depth + 1, len(some_files),
+                    session.depth + 1, len(some_sources),
                 )
             )
-            new_session = context.get_new_session(session, key)
-            
-            new_session.add(files=some_files, openers=openers)
+            new_session = context.get_new_session(session, parent_source)
+            new_session.add_openers(openers)
+            new_session.add_sources(some_sources)
     
     
     def _new_session_cb(self, context, session, *etc):
         """ Connect handlers for a new opening session """
-        session.connect("added::file", self._added_file_cb, context)
+        session.connect("added::gfile", self._added_gfile_cb, context)
         session.connect("added::uri", self._added_uri_cb, context)
     
     
-    def _added_file_cb(self, session, files, context):
-        """
-        Queries file info of files added to a session and starts
-        opening them if any of the files already has its information
+    def _added_gfile_cb(self, session, sources, context):
+        """ Queries file info of files added to a session and starts
+            opening them if any of the files already has its information """
         
-        """
-        
-        files_to_enqueue = []
-        for a_file in files:
-            if context.query_missing_info(a_file):
-                files_to_enqueue.append(a_file)
+        sources_to_enqueue = []
+        for a_source in sources:
+            if a_source.fill_missing_info(STANDARD_GFILE_INFO):
+                sources_to_enqueue.append(a_source)
+            else:
+                # XXX: too lazy to look up better way to disconnect on callback
+                signal_id_list = []
+                signal_id_list.append(a_source.connect(
+                    "loaded-file-info",
+                    self._loaded_file_info_cb,
+                    session, context, signal_id_list
+                ))
                 
-        context.enqueue_files(session, files_to_enqueue)
+        context.enqueue_sources(session, sources_to_enqueue)
     
     
-    def _added_uri_cb(self, session, uris, context):
-        """
-        Removes URIs whose protocol is file:slashes and adds them as
-        files instead
+    def _added_uri_cb(self, session, sources, context):
+        """ Removes local URIs(file://)
+            and adds them back as GFiles instead. """
         
-        """
-        
-        new_file_for_uri = Gio.File.new_for_uri
-        converted_files = []
-        for i in range(len(uris)):
-            j = i - len(converted_files)
-            an_uri = uris[j]
+        local_uris = []
+        for i in range(len(sources)):
+            j = i - len(local_uris)
+            an_uri = sources[j].uri
             if an_uri.lower().startswith("file:"):
                 # Probably, all local URIs start with file: and then
                 # some slashes... probably...
-                a_converted_file = new_file_for_uri(an_uri)
-                converted_files.append(a_converted_file)
-                del uris[j]
+                local_uris.append(an_uri)
+                del sources[j]
         
-        session.add_files(converted_files)
-        # If there are any non-local URIs, then we will open them
-        context.enqueue_uris(session, uris)
+        # Generators, yo!
+        files = map(GFileFileSource, map(Gio.File.new_for_uri, local_uris))
+        session.add_sources(files)
+        
+        # Enqueue remaining non-local URIs to be opened
+        context.enqueue_sources(session, sources)
     
     
     def _create_filter_info(self, context, gfile_info):
@@ -377,19 +385,16 @@ class OpeningHandler(GObject.Object):
         return result
     
     
-    def _loaded_file_info_cb(self, context, gfile, *etc):
+    def _loaded_file_info_cb(self, source, session, context, signal_id_list):
         """ Enqueues a file that has got its file info to be opened """
-        gfile_list = [gfile]
-        for a_session in context.open_sessions:
-            if gfile in a_session.files_set:
-                context.enqueue_files(a_session, gfile_list)
+        context.enqueue_sources(session, (source,))
+        source.disconnect(signal_id_list[0])
     
     
-    def _open_next_file_cb(self, context, session, gfile):
+    def _open_next_gfile_cb(self, context, session, source):
         """ Opens a Gio.File from a context's opening queue """
         
-        gfile_info = context.file_info_cache[gfile]
-        self.open_file(context, session, gfile, gfile_info)
+        self.open_file(context, session, source)
     
     
     def _open_next_uri_cb(self, context, session, uri):
@@ -444,9 +449,7 @@ class OpeningContext(GObject.Object):
     __gsignals__ = {
         "new-session" : (GObject.SIGNAL_ACTION, None, [object]),
         "finished-session" : (GObject.SIGNAL_ACTION, None, [object]),
-        "opened" : (GObject.SIGNAL_DETAILED, None, [object, object]),
-        # Valid details for the above signals are ::file and ::uri
-        "loaded_file_info": (GObject.SIGNAL_RUN_LAST, None, [object, object]),
+        # The detail part is the opened source .type attribute
         "open-next": (GObject.SIGNAL_DETAILED, None, [object, object]),
         "finished": (GObject.SIGNAL_ACTION, None, []),
     }
@@ -456,19 +459,15 @@ class OpeningContext(GObject.Object):
         GObject.Object.__init__(self)
         
         self.sessions = []
-        self._results_completion_signals = dict()
         self.open_sessions = set()
         # A set of sessions that aren't finished yet
         self.finished = False
         # Whether the context is finished
         self._keep_open_counter = 0
         # Freezes the context so that it doesn't emit a "finished" signal
-        self.file_info_cache = {}
-        # A cache of GFileInfo objects
         
         self.opening_queue = deque()
-        self.incomplete_results = set()
-        self.files_being_queried = set()
+        
         self.open_next = utility.IdlyMethod(self.open_next)
         
         self.connect("notify::keep-open", self._notify_keep_open_cb)
@@ -506,11 +505,11 @@ class OpeningContext(GObject.Object):
             self.notify("keep-open")
     
     
-    def get_new_session(self, parent=None, source=None):
+    def get_new_session(self, parent=None, parent_source=None):
         """ Gets the latest non-finished opening session """
         assert not self.finished
         
-        new_session = OpeningSession(parent, source)
+        new_session = OpeningSession(parent, parent_source)
         self.sessions.append(new_session)
         self.open_sessions.add(new_session)
         new_session.connect("finished", self._session_finished_cb)
@@ -519,23 +518,11 @@ class OpeningContext(GObject.Object):
         return new_session
     
     
-    def enqueue_files(self, session, files):
+    def enqueue_sources(self, session, sources):
         """ Queues files to be opened """
         assert not self.finished
         
-        self.opening_queue.extend(
-            ("file", session, a_file) for a_file in files
-        )
-        self.open_next.queue()
-    
-    
-    def enqueue_uris(self, session, uris):
-        """ Queues uris to be opened """ 
-        assert not self.finished
-        
-        self.opening_queue.extend(
-            ("uri", session, an_uri) for an_uri in uris
-        )
+        self.opening_queue.extend((session, a_source) for a_source in sources)
         self.open_next.queue()
     
     
@@ -557,96 +544,6 @@ class OpeningContext(GObject.Object):
             self.emit("finished")
     
     
-    def set_file_results(self, session, gfile, results):
-        """ Set the results for trying to open a file """
-        session.results[gfile] = results
-        if results.completed:
-            self.emit("opened::file", results, gfile)
-            self._check_finished(session)
-        else:
-            self.incomplete_results.add(results)
-            self._results_completion_signals[results] = results.connect(
-                "completed", self._results_completed_cb,
-                ("file", gfile, session)
-            )
-    
-    
-    def set_uri_results(self, session, uri, results):
-        """ Set the results for trying to open an uri """
-        session.results[uri] = results
-        if results.completed:
-            self.emit("opened::uri", results, uri)
-            self._check_finished(session)
-        else:
-            self.incomplete_results.add(results)
-            self._results_completion_signals[results] = results.connect(
-                "completed", self._results_completed_cb,
-                ("uri", uri, session)
-            )
-    
-    
-    def query_file_info(self, gfile, *attributes):
-        try:
-            stored_info = self.file_info_cache[gfile]
-        except KeyError:
-            self.file_info_cache[gfile] = stored_info = Gio.GFileInfo()
-            missing_info = frozenset(attributes)
-        else:
-            missing_info = {
-                k for k in attributes if not stored_info.has_attribute(k)
-            }
-        
-        if missing_info:
-            new_info = gfile.query_info(
-                ",".join(missing_info), # comma separated attributes
-                Gio.FileQueryInfoFlags.NONE,
-                None,
-            )
-            new_info.copy_into(stored_info)
-            
-        return stored_info
-    
-    
-    def query_missing_info(self, gfile):
-        """ 
-        Queries for a gfile's file info for attributes missing from the
-        file info cache that are in the STANDARD_GFILE_INFO list
-        
-        This may trigger an async IO operation.
-        
-        Returns None if there are file info attributes missing, otherwise
-        returns the GFileInfo object from the cache
-        
-        """
-        
-        try:
-            stored_info = self.file_info_cache[gfile]
-        except KeyError:
-            missing_info = frozenset(STANDARD_GFILE_INFO)
-        else:
-            missing_info = {
-                k for k in STANDARD_GFILE_INFO
-                        if not stored_info.has_attribute(k)
-            }
-        
-        if missing_info:
-            # There are attributes missing, so we are going to query them
-            if gfile not in self.files_being_queried:
-                gfile.query_info_async(
-                    ",".join(missing_info), # comma separated attributes
-                    Gio.FileQueryInfoFlags.NONE,
-                    GLib.PRIORITY_LOW,
-                    None,
-                    self._queried_missing_info_cb,
-                    None
-                )
-                self.files_being_queried.add(gfile)
-                
-            return None
-        else:
-            return stored_info
-    
-    
     def open_next(self):
         """
         Emits an "open-next" signal for a file that has its missing info
@@ -654,31 +551,14 @@ class OpeningContext(GObject.Object):
         """
         
         try:
-            kind, session, next_item = self.opening_queue.popleft()
+            session, next_item = self.opening_queue.popleft()
         except IndexError: # There are no files in the queue!
             return False
         
-        self.emit("open-next::" + kind, session, next_item)
-        
+        self.emit("open-next::" + next_item.type, session, next_item)
         self.open_next.queue()
         
         return True
-    
-    
-    def _check_finished(self, session):
-        result_keys = session.results.keys()
-        if not self.incomplete_results and result_keys >= session.files_set:
-            session.finish()
-    
-    
-    def _results_completed_cb(self, results, data):
-        """ Handle for opening results that complete asynchronously """
-        self.incomplete_results.remove(results)
-        # breaking reference cycle created by signal handlers
-        results.disconnect(self._results_completion_signals.pop(results))
-        source_type, source, session = data
-        self.emit("opened::" + source_type, results, source)
-        self._check_finished(session)
     
     
     def _session_finished_cb(self, session):
@@ -705,31 +585,6 @@ class OpeningContext(GObject.Object):
         if not self.keep_open and not self.open_sessions:
             logger.debug("Opening context unfrozen and closing")
             self.finish()
-    
-    
-    def _queried_missing_info_cb(self, gfile, result, *etc):
-        """
-        Handler for the async GFileInfo query triggered by .query_missing_info
-        
-        """
-        try:
-            new_info = gfile.query_info_finish(result)
-        except GLib.Error:
-            raise Exception
-        
-        # Put new info into cache somehow
-        try:
-            stored_info = self.file_info_cache[gfile]
-        except KeyError:
-            self.file_info_cache[gfile] = stored_info = new_info
-        else:
-            new_info.copy_into(stored_info)
-        self.files_being_queried.remove(gfile)
-        
-        # If this returns not None we have all the info, otherwise
-        # a new query will be created for that missing info
-        if self.query_missing_info(gfile):
-            self.emit("loaded-file-info", gfile, stored_info)
 
 
 class OpeningSession(GObject.Object):
@@ -746,12 +601,13 @@ class OpeningSession(GObject.Object):
     
     __gsignals__ = {
         "added" : (GObject.SIGNAL_DETAILED, None, [object]),
+        "opened" : (GObject.SIGNAL_DETAILED, None, [object, object]),
         "finished" : (GObject.SIGNAL_ACTION, None, []),
     }
-    def __init__(self, parent, source):
+    def __init__(self, parent, parent_source):
         GObject.Object.__init__(self)
         
-        self.source = source
+        self.parent_source = parent_source
         self.parent_session = parent
         self.children_sessions = []
         if self.parent_session is None:
@@ -775,10 +631,10 @@ class OpeningSession(GObject.Object):
         self.for_siblings_of_session = None
         
         self.results = {}
-        
-        self.files, self.uris = [], []
-        self.files_set, self.uris_set = set(), set()
-        self.openers = []
+        self._results_completion_signals = {}
+        self.incomplete_results = set()
+        self.sources_missing_results = set()
+        self.sources, self.openers = [], []
     
     
     def finish(self):
@@ -788,36 +644,29 @@ class OpeningSession(GObject.Object):
         self.emit("finished")
     
     
-    def add(self, files=None, uris=None, openers=None):
+    def add(self, sources=None, openers=None):
         if openers:
             self.add_openers(openers)
-        if uris:
-            self.add_uris(uris)
-            
         if files:
-            self.add_files(files)
+            self.add_sources(files)
     
     
-    def add_files(self, files):
-        """ Adds Gio.File objects to be opened in this session """
+    def add_sources(self, sources):
+        """ Adds FileSources objects to be opened in this session """
         assert not self.finished
         
-        file_list = list(files)
-        if file_list:
-            self.emit("added::file", file_list)
-            self.files.extend(file_list)
-            self.files_set.update(file_list)
-    
-    
-    def add_uris(self, uris):
-        """ Adds URI strings to be opened in this session """
-        assert not self.finished
-        
-        uri_list = list(uris)
-        if uri_list:
-            self.emit("added::uri", uri_list)
-            self.uris.extend(uri_list)
-            self.uris_set.update(uri_list)
+        new_sources = list(sources)
+        if new_sources:
+            source_types = defaultdict(list)
+            for a_source in new_sources:
+                source_types[a_source.type].append(a_source)
+            
+            for a_source_type, some_sources in source_types.items():
+                self.emit("added::" + a_source_type, some_sources)
+                # some_sources are added after the signal is emitted
+                # so that handlers can modify its contents
+                self.sources.extend(some_sources)
+                self.sources_missing_results.update(some_sources)
     
     
     def add_clipboards(self, clipboards):
@@ -833,6 +682,34 @@ class OpeningSession(GObject.Object):
     def add_openers(self, openers):
         """ Add openers to open stuff in this session """
         self.openers.extend(openers)
+    
+    
+    def set_source_results(self, source, results):
+        """ Set the results for trying to open a file """
+        self.results[source] = results
+        self.sources_missing_results.discard(source)
+        if results.completed:
+            self.emit("opened::" + source.type, results, source)
+            self._check_finished()
+        else:
+            self.incomplete_results.add(results)
+            self._results_completion_signals[results] = results.connect(
+                "completed", self._results_completed_cb, source
+            )
+    
+    
+    def _results_completed_cb(self, results, source):
+        """ Handle for opening results that complete asynchronously """
+        self.incomplete_results.remove(results)
+        # breaking reference cycle created by signal handlers
+        results.disconnect(self._results_completion_signals.pop(results))
+        self.emit("opened::" + source.type, results, source)
+        self._check_finished()
+    
+    
+    def _check_finished(self):
+        if not (self.incomplete_results or self.sources_missing_results):
+            self.finish()
 
 
 class OpeningResults(GObject.Object):
@@ -851,12 +728,8 @@ class OpeningResults(GObject.Object):
         self.opener = None
         # The opener that triggered these results
         
-        self.images, self.files, self.uris = [], [], []
-        # Lists of images, files and uris that were "opened" by the opener
-        
-        self.file_info_cache = {}
-        # A dictionary of GFile and GFileInfo pairs, for openers that
-        # query file metadata, settings this can speed up the whole process
+        self.images, self.sources = [], []
+        # Lists of images and data sources that were "opened" by the opener
         
         self.errors = []
         # A list of exceptions that have occurred while opening something
@@ -864,30 +737,22 @@ class OpeningResults(GObject.Object):
     
     def __iadd__(self, other):
         self.images += other.images
-        self.files += other.files
-        self.uris += other.uris
+        self.sources += other.sources
         self.errors += other.errors
-        for key, other_cache in other.file_info_cache.items():
-            try:
-                my_cache = self.file_info_cache[key]
-            except KeyError:
-                self.file_info_cache[key] = other_cache
-            else:
-                other_cache.copy_into(my_cache)
         
         return self
     
     
     def __str__(self):
-        return "<OpeningResults: %d image(s), %d file(s), %d error(s)>" % (
-            len(self.images), len(self.files), len(self.errors)
+        return "<OpeningResults: %d image(s), %d sources(s), %d error(s)>" % (
+            len(self.images), len(self.sources), len(self.errors)
         )
     
     
     @property
     def empty(self):
         """ Returns whether there is any output contained in these results """
-        return not(self.files or self.uris or self.images or self.errors)
+        return not(self.sources or self.images or self.errors)
     
     
     def complete(self):
@@ -904,6 +769,125 @@ class OpeningResults(GObject.Object):
         if not self.completed:
             self.completed = True
             self.emit("completed")
+
+
+class FileSource:
+    def __init__(self, type, name, parent=None, pathname=None):
+        self.type = type
+        self.name = name
+        self.pathname = pathname
+        self.parent = parent
+    
+    def get_fullname(self, sep=os.sep):
+        if self.pathname:
+            return self.pathname
+        else:
+            ancestry = [self.name]
+            parent = self.parent
+            while parent is not None:
+                if parent.pathname:
+                    ancestry.append(parent.pathname)
+                    break
+                else:
+                    ancestry.append(parent.name)
+                
+                parent = parent.parent
+            
+        return sep.join(name for name in reversed(ancestry) if name)
+
+
+class GFileFileSource(GObject.Object, FileSource):
+    TYPE = "gfile"
+    
+    __gsignals__ = {
+        "loaded-file-info": (GObject.SIGNAL_RUN_LAST, None, []),
+    }
+    
+    def __init__(self, gfile, name=None, parent=None):
+        GObject.Object.__init__(self)
+        
+        self.gfile = gfile
+        self.info = None
+        self.being_queried = False
+        self.missing_info = None
+        
+        FileSource.__init__(self, GFileFileSource.TYPE, name, parent)
+        
+        self._fill_missing_name = name is None
+        if name is None:
+            self.pathname = gfile.get_parse_name()
+            self.missing_info = {"standard::display-name",}
+    
+    
+    def fill_missing_info(self, info_keys):
+        if self.info is None:
+            missing_info = set(info_keys)
+        else:
+            missing_info = {
+                a_key for a_key in info_keys
+                      if not self.info.has_attribute(a_key)
+            }
+        
+        if self.missing_info:
+            missing_info.update(self.missing_info)
+            self.missing_info = None
+        
+        if missing_info:
+            # There are attributes missing, so we are going to query them
+            if not self.being_queried:
+                self.gfile.query_info_async(
+                    ",".join(missing_info), # comma separated attributes
+                    Gio.FileQueryInfoFlags.NONE,
+                    GLib.PRIORITY_LOW,
+                    None,
+                    self._queried_missing_info_cb,
+                    None
+                )
+                self.being_queried = False
+            else:
+                # Store missing info so it can be queried later
+                self.missing_info = missing_info
+                
+            return None
+        else:
+            return self.info
+    
+    
+    def _queried_missing_info_cb(self, gfile, result, *etc):
+        self.being_queried = False
+        
+        try:
+            new_info = gfile.query_info_finish(result)
+        except GLib.Error:
+            raise Exception
+        
+        # Put new info into cache somehow
+        if self.info is None:
+            self.info = stored_info = new_info
+        else:
+            new_info.copy_into(self.info)
+        
+        if self._fill_missing_name:
+            self.name = self.info.get_display_name()
+            self._fill_missing_name = False
+        
+        # If this returns not None we have all the info, otherwise
+        # a new query will be created for that missing info
+        if self.missing_info:
+            self.fill_missing_info(self.missing_info)
+        else:
+            self.emit("loaded-file-info")
+
+
+class URIFileSource(FileSource):
+    TYPE ="uri"
+    
+    def __init__(self, uri, name=None, parent=None):
+        self.uri = uri
+        if name is None:
+            name = uri
+        
+        FileSource.__init__(self, URIFileSource.TYPE, name, parent)
 
 
 class FileOpenerGroup:

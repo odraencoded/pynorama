@@ -74,8 +74,8 @@ class PixbufDataImageSource(loading.ImageSource):
 
 
 class PixbufFileImageSource(loading.GFileImageSource):
-    def __init__(self, gfile, **kwargs):
-        loading.GFileImageSource.__init__(self, gfile, **kwargs)
+    def __init__(self, file_source, **kwargs):
+        loading.GFileImageSource.__init__(self, file_source, **kwargs)
         
         self.status = Status.Good
         self.cancellable = None

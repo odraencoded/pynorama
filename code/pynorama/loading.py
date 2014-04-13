@@ -172,13 +172,13 @@ class ImageSource(Loadable):
     
     def __init__(self):
         Loadable.__init__(self)
+        self.name = self.fullename = ""
         
         self.error = None
         self.pixbuf = None
         self.animation = None
         self.metadata = None
-        
-        self.fullname, self.name = "", ""
+        self.file_source = None
     
     
     def __str__(self):
@@ -213,23 +213,12 @@ class ImageSource(Loadable):
 
 
 class GFileImageSource(ImageSource):
-    def __init__(self, gfile, opening_context=None):
+    def __init__(self, file_source):
         super().__init__()
-        self.gfile = gfile
-        
-        if opening_context is not None:
-            info = opening_context.query_file_info(
-                gfile, "standard::display-name",
-            )
-        else:
-            info = gfile.query_info(
-                "standard::display-name",
-                Gio.FileQueryInfoFlags.NONE,
-                None
-            )
-            
-        self.name = info.get_display_name()
-        self.fullname = self.gfile.get_parse_name()
+        self.file_source = file_source
+        self.name = self.file_source.name
+        self.fullname = self.file_source.get_fullname()
+        self.gfile = gfile = file_source.gfile
         
         self.location = Location.Disk if gfile.is_native() else Location.Distant
     

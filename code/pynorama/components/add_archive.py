@@ -48,9 +48,10 @@ class ZipOpener(FileOpener):
         return _("Zipfile Archives")
     
     
-    def open_file(self, context, results, gfile):
+    def open_file(self, context, results, source):
         """ Opens a directory file and yields its contents """
         
+        gfile = source.gfile
         path = gfile.get_path()
         try:
             with zipfile.ZipFile(path) as a_zipfile:
@@ -59,11 +60,17 @@ class ZipOpener(FileOpener):
                     dir=context.cache_directory
                 )
                 a_zipfile.extractall(directory)
+                directory_gfile = Gio.File.new_for_path(directory)
+                zip_result = opening.GFileFileSource(
+                    directory_gfile, "", parent=source
+                )
+                results.sources.append(zip_result)
+                '''
                 # Momoizing append_file and join_path
-                append_file = results.files.append
+                append_file = results.sources.append
                 for a_name in a_zipfile.namelist():
                     a_filename = join_path(directory, a_name)
-                    append_file(Gio.File.new_for_path(a_filename))
+                    append_file(Gio.File.new_for_path(a_filename))'''
         finally:
             results.complete()
 
