@@ -182,12 +182,9 @@ class PixbufAnimationFileOpener(FileOpener):
         return _("GdkPixbuf Animations")
     
     
-    def open_file(self, context, results, gfile):
+    def open_file(self, context, results, source):
         try:
-            new_image = loaders.PixbufAnimationFileImageSource(
-                gfile,
-                opening_context=context
-            )
+            new_image = loaders.PixbufAnimationFileImageSource(source)
         except Exception as e:
             results.errors.append(e)
         else:
@@ -215,7 +212,7 @@ class URIListSelectionOpener(SelectionOpener):
     def open_selection(self, results, selection):
         uris = selection.get_uris()
         if uris:
-            results.uris.extend(uris)
+            results.sources.extend(map(opening.URIFileSource, uris))
         results.complete()
 
 
@@ -250,9 +247,9 @@ class TextSelectionOpener(SelectionOpener):
         text = selection.get_text()
         
         parse_result = urlparse(text)
-        if parse_result.scheme and parse_result.path \
-                and (parse_result.netloc or parse_result.scheme == "file"):
-            results.uris.append(text)
+        if (parse_result.scheme and parse_result.path
+                and (parse_result.netloc or parse_result.scheme == "file")):
+            results.sources.append(opening.URIFileSource(text))
         else:
             # Expanding "~"
             text = os_path.expanduser(text)
@@ -260,7 +257,7 @@ class TextSelectionOpener(SelectionOpener):
                 # Wildly assuming this is a valid filename
                 # just because it starts with a slash
                 text = "file://" + os_path.normcase(os_path.normcase(text))
-                results.uris.append(text)
+                results.sources.append(opening.URIFileSource(text))
             
         results.complete()
 
