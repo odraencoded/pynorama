@@ -397,7 +397,7 @@ class OpeningHandler(GObject.Object):
         self.open_file(context, session, source)
     
     
-    def _open_next_uri_cb(self, context, session, uri):
+    def _open_next_uri_cb(self, context, session, source):
         """ Opens an URI string from a context's opening queue """
         
         # TODO: Implement some sort of URI opener here
@@ -406,12 +406,12 @@ class OpeningHandler(GObject.Object):
         if opener:
             pass
         else:
-            # GFile with URI fallback
-            converted_file = Gio.File.new_for_uri(uri)
-            results.files.append(converted_file)
+            # TODO: Fallback to cacheing the URI into a file
+            converted_file = Gio.File.new_for_uri(source.uri)
+            results.sources.append(GFileFileSource(converted_file))
             results.complete()
             
-            context.set_uri_results(session, uri, results)
+            session.set_source_results(source, results)
     
     
     def _clipboard_targets_request_cb(self, clipboard, selection, results):
@@ -778,22 +778,43 @@ class FileSource:
         self.pathname = pathname
         self.parent = parent
     
+    
+    def ressembles(self, other):
+        return self._ressembles(other) or other._ressembles(self)
+    
+    
+    def get_ancestors(self):
+        """ Yields this source ancestors from nearest to farthest """
+        parent = self.parent
+        while parent is not None:
+            yield parent
+            parent = parent.parent
+  
+  
     def get_fullname(self, sep=os.sep):
         if self.pathname:
             return self.pathname
         else:
             ancestry = [self.name]
-            parent = self.parent
-            while parent is not None:
-                if parent.pathname:
-                    ancestry.append(parent.pathname)
+            for ancestor in self.get_ancestors():
+                if ancestor.pathname:
+                    ancestry.append(ancestor.pathname)
                     break
                 else:
-                    ancestry.append(parent.name)
-                
-                parent = parent.parent
+                    ancestry.append(ancestor.name)
             
         return sep.join(name for name in reversed(ancestry) if name)
+    
+    
+    def ressembles_ancestor(self, possible_ancestor):
+        return any(
+            an_ancestor.ressembles(possible_ancestor)
+            for an_ancestor in self.get_ancestors()
+        )
+    
+    
+    def _ressembles(self):
+        return False
 
 
 class GFileFileSource(GObject.Object, FileSource):
@@ -877,6 +898,18 @@ class GFileFileSource(GObject.Object, FileSource):
             self.fill_missing_info(self.missing_info)
         else:
             self.emit("loaded-file-info")
+    
+    
+    def _ressembles(self, other):
+        if hasattr(other, "gfile"):
+            if self.gfile.equal(other.gfile):
+                return True
+        
+        if hasattr(other, "uri"):
+            if self.gfile.get_uri() == other.uri:
+                return True
+        
+        return False
 
 
 class URIFileSource(FileSource):
@@ -888,6 +921,18 @@ class URIFileSource(FileSource):
             name = uri
         
         FileSource.__init__(self, URIFileSource.TYPE, name, parent)
+    
+    
+    def _ressembles(self, other):
+        if hasattr(other, "gfile"):
+            if self.uri == other.gfile.get_uri():
+                return True
+        
+        if hasattr(other, "uri"):
+            if self.uri == other.uri:
+                return True
+        
+        return False
 
 
 class FileOpenerGroup:

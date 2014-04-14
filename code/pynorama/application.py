@@ -127,7 +127,7 @@ class ImageViewer(Gtk.Application):
     def do_open(self, files, file_count, hint):
         some_window = self.get_window()
         single_file = file_count == 1
-        some_window.open_files(files, search_siblings=single_file)
+        some_window.open_gfiles(files, search_siblings=single_file)
         some_window.present()
     
     
@@ -1491,22 +1491,33 @@ class ViewerWindow(Gtk.ApplicationWindow):
             focus.copy_to_clipboard(clipboard)
     
     
-    def open_uris(self,
-                  uris,
-                  openers=None,
-                  replace=False,
-                  search_siblings=False,
-                  go_to_first=True):
-        """
-        Opens a set of URIs and adds their results to this window album
+    # Methods that relay to .open_sources
+    def open_filepaths(self, paths, **kwargs):
+        """ Opens images from file paths into this window """
+        self.open_gfiles(map(Gio.File, paths), **kwargs)
+    
+    
+    def open_gfiles(self, gfiles, **kwargs):
+        """ Opens images from Gio.Files into this window """
+        self.open_sources(map(opening.GFileFileSource, gfiles), **kwargs)
+    
+    
+    def open_uris(self, uris, **kwargs):
+        """ Opens images from URIs into this window """
+        self.open_sources(map(opening.URIFileSource, uris), **kwargs)
         
-        """
+    
+    def open_sources(self, sources,
+                     openers=None, replace=False,
+                     search_siblings=False, go_to_first=True):
+        """ Opens FileSources from an iterable and adds
+            their results to the window's album """
         
-        uri_list = list(uris)
-        if uri_list:
+        source_list = list(sources)
+        if source_list:
             # Logging just because
-            uilogger.log("Opening %d URI(s)" % len(uri_list))
-            uilogger.debug_list(uri_list)
+            uilogger.log("Opening %d source(s)" % len(source_list))
+            uilogger.debug_list(source_list)
             uilogger.debug("Parameters")
             uilogger.debug_dict({
                 "Replace": replace,
@@ -1529,58 +1540,15 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 self.app.opener.handle(opening_context, album=self.album)
                 opening_context.__added_already = True
             
-            newest_session = opening_context.get_new_session()
-            newest_session.search_siblings = search_siblings
-            newest_session.add_openers(openers)
-            newest_session.add_sources(map(opening.URIFileSource, uri_list))
-            opening_context.__go_to_uri = uri_list[0] if go_to_first else None
-    
-    
-    def open_files(self,
-                  files,
-                  openers=None,
-                  replace=False,
-                  search_siblings=False,
-                  go_to_first=True):
-        """
-        Opens a set of GFiles and adds their results to this window album
-        
-        """
-        
-        file_list = list(files)
-        if file_list:
-            # Logging just because
-            uilogger.log("Opening %d GFile(s)" % len(file_list))
-            uilogger.debug_list(a_file.get_uri() for a_file in file_list)
-            uilogger.debug("Parameters")
-            uilogger.debug_dict({
-                "Replace": replace,
-                "Sibling Search": search_siblings,
-                "Go to First": go_to_first
-            })
-            
-            if openers is None:
-                uilogger.debug("All openers included")
-                openers = self.app.components["file-opener"]
-            else:
-                uilogger.debug("Selected openers")
-                uilogger.debug_list(openers)
-            
-            if replace:
-                del self.album[:]
-            
-            opening_context = self.get_opening_context()
-            if not opening_context.__added_already:
-                self.app.opener.handle(opening_context, album=self.album)
-                opening_context.__added_already = True
-            
-            newest_session = opening_context.get_new_session()
-            newest_session.search_siblings = search_siblings
-            newest_session.add(openers=openers, files=file_list)
             if go_to_first:
-                opening_context.__go_to_uri = file_list[0].get_uri()
+                opening_context.__go_to_source = source_list[0]
             else:
-                opening_context.__go_to_uri = None
+                opening_context.__go_to_source = None
+            
+            opening_session = opening_context.get_new_session()
+            opening_session.search_siblings = search_siblings
+            opening_session.add_openers(openers)
+            opening_session.add_sources(source_list)
     
     
     def paste(self, clipboard=None):
@@ -1622,16 +1590,14 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def get_opening_context(self):
-        """
-        Returns this window OpeningContext creating one
-        if it doesn't already exists.
+        """ Returns an opening.OpeningContext that
+            can be used to open images in this window """
         
-        """
         if not self.opening_context:
             uilogger.debug("Creating new opening context")
             new_context = opening.OpeningContext(self.app)
             new_context.__added_already = False
-            new_context.__go_to_uri = None
+            new_context.__go_to_source = None
             new_context.connect("finished", self._opening_context_finished_cb)
             self.opening_context = new_context
             
@@ -1639,7 +1605,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def show_layout_dialog(self, *data):
-        ''' Shows a dialog with the layout settings widget '''
+        """ Shows a dialog with the layout settings widget """
         
         if self.layout_dialog:
             self.layout_dialog.present()
@@ -1734,10 +1700,12 @@ class ViewerWindow(Gtk.ApplicationWindow):
         image.lists += 1
         self._refresh_index.queue()
         
-        if self.opening_context and self.opening_context.__go_to_uri:
-            if image.matches_uri(self.opening_context.__go_to_uri):
+        context = self.opening_context
+        if context and context.__go_to_source:
+            source = image.file_source
+            if source and source.ressembles(context.__go_to_source):
                 uilogger.debug("Going to image matching opening context URI")
-                self.opening_context.__go_to_uri = None
+                self.opening_context.__go_to_source = None
                 self.avl.go_image(image)
             
         elif self.avl.focus_image is None:
@@ -1840,18 +1808,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     
     def _completed_drop_results_cb(self, results, *etc):
-        """
-        Callback for the opening results of a drag'n'drop "complete" signal
+        """ Callback for the opening results of
+            a drag'n'drop "complete" signal """
         
-        """
-        if results.uris:
-            uilogger.log("Found URIs in drop")
-            is_single_uri = len(results.uris) == 1
+        # TODO: Find a way to make this logic modular
+        if results.sources:
+            uilogger.log("Found files in drop")
+            is_single_source = len(results.sources) == 1
             is_trigger = not self.get_opening_context().__added_already
-            self.open_uris(
-                results.uris, 
+            self.open_sources(
+                results.sources,
                 replace=is_trigger,
-                search_siblings=is_single_uri
+                search_siblings=is_single_source
             )
         
         if results.images:
@@ -1876,9 +1844,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
         Callback for the opening results of a paste "complete" signal
         
         """
-        if results.uris:
-            uilogger.log("Found URIs in paste")
-            self.open_uris(results.uris)
+        if results.sources:
+            uilogger.log("Found files in paste")
+            self.open_sources(results.sources)
         
         if results.images:
             uilogger.log("Found images in paste")
@@ -1904,43 +1872,61 @@ class ViewerWindow(Gtk.ApplicationWindow):
         
         uilogger.log("Opening context finished")
         avl = self.avl
-        if avl.focus_image is None:
+        if avl.focus_image is None and len(avl.album) > 0:
             avl.album.sort()
-            try:
-                first_image = avl.album[0]
-            except IndexError:
-                pass
-            else:
+            
+            # Figures out whether to go to a certain image automatically
+            focus_image = None
+            
+            # The first image whose source is descendant of the target source
+            target_source = context.__go_to_source
+            if target_source:
+                for image in avl.album:
+                    source = image.file_source
+                    if source and source.ressembles_ascestor(target_source):
+                        focus_image = image
+                        break
+            
+            # The very first image of the album
+            if focus_image is None:
                 uilogger.debug("No focus image, going to first image.")
-                avl.go_image(first_image)
+                focus_image = avl.album[0]
+            
+            if focus_image:
+                avl.go_image(focus_image)
         
         self.opening_context = None
     
     
     def _open_dialog_open_cb(self, uris, openers, *etc):
+        """ Callback for the open image dialog "open" button """
         opening_context = self.get_opening_context()
+        
+        # If something was opened with this context before the open button
+        # was pressed, then we wouldn't want to replace that
         replace = not opening_context.__added_already
+        
+        # Search for sibling files when only one file is selected
         search_siblings = replace and len(uris) == 1
+        
         self.open_uris(
-            uris,
-            openers=openers,
-            replace=replace,
-            search_siblings=search_siblings
+            uris, openers=openers,
+            replace=replace, search_siblings=search_siblings
          )
     
     
     def _open_dialog_add_cb(self, uris, openers, *etc):
+        """ Callback for the open image dialog "add" button """
         opening_context = self.get_opening_context()
         self.open_uris(uris, openers=openers)
         return True
     
     
     def _open_dialog_destroy_cb(self, open_dialog):
-        """
-        Let the opening context emit the "finished" signal after the open
-        dialog is destroyed.
+        """ Let the opening context emit the "finished" signal
+            after the open dialog is destroyed.
+            This reverts what was done when the dialog was created """
         
-        """
         context = self.get_opening_context()
         try:
             ctx_dialog = context.__open_dialog
