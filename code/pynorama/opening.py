@@ -234,7 +234,7 @@ class OpeningHandler(GObject.Object):
                 if some_results.sources:
                     sources.append((a_key, some_results.sources))
                     
-                elif a_key.type == GFileFileSource.TYPE:
+                elif a_key.kind == GFileFileSource.KIND:
                     if some_results.images:
                         try:
                             gfile = a_key.gfile
@@ -449,7 +449,7 @@ class OpeningContext(GObject.Object):
     __gsignals__ = {
         "new-session" : (GObject.SIGNAL_ACTION, None, [object]),
         "finished-session" : (GObject.SIGNAL_ACTION, None, [object]),
-        # The detail part is the opened source .type attribute
+        # The detail part is the opened source .kind attribute
         "open-next": (GObject.SIGNAL_DETAILED, None, [object, object]),
         "finished": (GObject.SIGNAL_ACTION, None, []),
     }
@@ -555,7 +555,7 @@ class OpeningContext(GObject.Object):
         except IndexError: # There are no files in the queue!
             return False
         
-        self.emit("open-next::" + next_item.type, session, next_item)
+        self.emit("open-next::" + next_item.kind, session, next_item)
         self.open_next.queue()
         
         return True
@@ -659,7 +659,7 @@ class OpeningSession(GObject.Object):
         if new_sources:
             source_types = defaultdict(list)
             for a_source in new_sources:
-                source_types[a_source.type].append(a_source)
+                source_types[a_source.kind].append(a_source)
             
             for a_source_type, some_sources in source_types.items():
                 self.emit("added::" + a_source_type, some_sources)
@@ -689,7 +689,7 @@ class OpeningSession(GObject.Object):
         self.results[source] = results
         self.sources_missing_results.discard(source)
         if results.completed:
-            self.emit("opened::" + source.type, results, source)
+            self.emit("opened::" + source.kind, results, source)
             self._check_finished()
         else:
             self.incomplete_results.add(results)
@@ -703,7 +703,7 @@ class OpeningSession(GObject.Object):
         self.incomplete_results.remove(results)
         # breaking reference cycle created by signal handlers
         results.disconnect(self._results_completion_signals.pop(results))
-        self.emit("opened::" + source.type, results, source)
+        self.emit("opened::" + source.kind, results, source)
         self._check_finished()
     
     
@@ -772,8 +772,8 @@ class OpeningResults(GObject.Object):
 
 
 class FileSource:
-    def __init__(self, type, name, parent=None, pathname=None):
-        self.type = type
+    def __init__(self, kind, name, parent=None, pathname=None):
+        self.kind = kind
         self.name = name
         self.pathname = pathname
         self.parent = parent
@@ -818,7 +818,7 @@ class FileSource:
 
 
 class GFileFileSource(GObject.Object, FileSource):
-    TYPE = "gfile"
+    KIND = "gfile"
     
     __gsignals__ = {
         "loaded-file-info": (GObject.SIGNAL_RUN_LAST, None, []),
@@ -832,7 +832,7 @@ class GFileFileSource(GObject.Object, FileSource):
         self.being_queried = False
         self.missing_info = None
         
-        FileSource.__init__(self, GFileFileSource.TYPE, name, parent)
+        FileSource.__init__(self, GFileFileSource.KIND, name, parent)
         
         self._fill_missing_name = name is None
         if name is None:
@@ -913,14 +913,14 @@ class GFileFileSource(GObject.Object, FileSource):
 
 
 class URIFileSource(FileSource):
-    TYPE ="uri"
+    KIND ="uri"
     
     def __init__(self, uri, name=None, parent=None):
         self.uri = uri
         if name is None:
             name = uri
         
-        FileSource.__init__(self, URIFileSource.TYPE, name, parent)
+        FileSource.__init__(self, URIFileSource.KIND, name, parent)
     
     
     def _ressembles(self, other):
