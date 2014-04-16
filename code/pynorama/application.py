@@ -194,7 +194,12 @@ class ImageViewer(Gtk.Application):
         
         #~ Create and add the file filters to the file chooser dialog ~#
         # Add the Supported Files filter
-        file_openers = self.components["file-opener"]
+        all_openers = self.components[extending.Opener.CATEGORY]
+        gfile_guesser = self.components[
+            extending.OpenerGuesser.CATEGORY,
+            openers.GFileOpenerGuesser.CODENAME
+        ]
+        file_openers = list(gfile_guesser.filter(all_openers))
         supported_files_group = opening.FileOpenerGroup(
             _("Supported Files"),
             file_openers
@@ -223,6 +228,10 @@ class ImageViewer(Gtk.Application):
                 chosen_openers = [file_openers_filters[chosen_filter]]
             except KeyError:
                 chosen_openers = supported_files_group.file_openers
+            
+            # Reverse these because in .components the most important are
+            # the last but the result of this method should be the opposite
+            chosen_openers = list(reversed(chosen_openers))
             
             try:
                 # Figure out what callback to call
@@ -1504,7 +1513,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     def open_uris(self, uris, **kwargs):
         """ Opens images from URIs into this window """
-        self.open_sources(map(opening.URIFileSource, uris), **kwargs)
+        self.open_sources(map(opening.URISource, uris), **kwargs)
         
     
     def open_sources(self, sources,
@@ -1527,7 +1536,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             
             if openers is None:
                 uilogger.debug("All openers included")
-                openers = self.app.components["file-opener"]
+                openers = self.app.components[extending.Opener.CATEGORY]
             else:
                 uilogger.debug("Selected openers")
                 uilogger.debug_list(openers)
@@ -1598,6 +1607,11 @@ class ViewerWindow(Gtk.ApplicationWindow):
             new_context = opening.OpeningContext(self.app)
             new_context.__added_already = False
             new_context.__go_to_source = None
+            new_context.guessers = dict(
+                (guesser.kind, guesser)
+                for guesser
+                in self.app.components[extending.OpenerGuesser.CATEGORY]
+            )
             new_context.connect("finished", self._opening_context_finished_cb)
             self.opening_context = new_context
             
@@ -1883,7 +1897,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             if target_source:
                 for image in avl.album:
                     source = image.file_source
-                    if source and source.ressembles_ascestor(target_source):
+                    if source and source.ressembles_ancestor(target_source):
                         focus_image = image
                         break
             

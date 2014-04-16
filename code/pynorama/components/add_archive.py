@@ -30,17 +30,16 @@ from os.path import join as join_path
 
 from gi.repository import Gio, GObject
 
-from pynorama.extending import FileOpener
+from pynorama.extending import Opener
 from pynorama import extending, opening
+from pynorama.components import openers
 
-class ZipOpener(FileOpener):
+class ZipOpener(Opener, openers.GFileOpener):
     CODENAME = "zip"
     
     def __init__(self):
-        FileOpener.__init__(self,
-            ZipOpener.CODENAME,
-            mime_types={"application/zip"}
-        )
+        Opener.__init__(self, ZipOpener.CODENAME, opening.GFileSource.KIND)
+        openers.GFileOpener.__init__(self, mime_types={"application/zip"})
     
     
     @GObject.Property
@@ -48,7 +47,7 @@ class ZipOpener(FileOpener):
         return _("Zipfile Archives")
     
     
-    def open_file(self, context, results, source):
+    def open_file_source(self, context, results, source):
         """ Opens a directory file and yields its contents """
         
         gfile = source.gfile
@@ -61,7 +60,7 @@ class ZipOpener(FileOpener):
                 )
                 a_zipfile.extractall(directory)
                 directory_gfile = Gio.File.new_for_path(directory)
-                zip_result = opening.GFileFileSource(
+                zip_result = opening.GFileSource(
                     directory_gfile, "", parent=source
                 )
                 results.sources.append(zip_result)
@@ -78,6 +77,6 @@ class ZipOpener(FileOpener):
 class ArchiveOpeners(extending.ComponentPackage):
     def add_on(self, app):
         components = app.components
-        components.add(FileOpener.CATEGORY, ZipOpener())
+        components.add(Opener.CATEGORY, ZipOpener())
 
 extending.LoadedComponentPackages["archive-openers"] = ArchiveOpeners()

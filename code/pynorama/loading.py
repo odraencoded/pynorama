@@ -216,7 +216,7 @@ class GFileImageSource(ImageSource):
     def __init__(self, file_source):
         super().__init__()
         self.file_source = file_source
-        self.name = self.file_source.name
+        self.name = self.file_source.get_name()
         self.fullname = self.file_source.get_fullname()
         self.gfile = gfile = file_source.gfile
         

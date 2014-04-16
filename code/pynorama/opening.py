@@ -29,7 +29,7 @@ import os
 from collections import deque, defaultdict
 from gi.repository import Gdk, Gio, GLib, GObject, Gtk
 from . import utility, notifying
-from .extending import FileOpener, SelectionOpener
+from .extending import Opener
 
 logger = notifying.Logger("opening")
 
@@ -53,14 +53,14 @@ class OpeningHandler(GObject.Object):
         GObject.Object.__init__(self, **kwargs)
     
     
-    def open_file(self, context, session, source):
+    def open_file_source(self, context, session, source):
         """ Tries to open a FileSource with an appropriate FileOpener """
         results = OpeningResults()
-        guessed_opener = self.guess_file_opener(context, session, source.info)
+        guessed_opener = self.guess_source_opener(context, session, source)
         if guessed_opener:
             results.opener = guessed_opener
             try:
-                guessed_opener.open_file(context, results, source)
+                guessed_opener.open_file_source(context, results, source)
             except Exception as e:
                 results.errors.append(e)
                 results.complete()
@@ -110,24 +110,19 @@ class OpeningHandler(GObject.Object):
         return results
     
     
-    def guess_file_opener(self, context, session, gfile_info):
-        """
-        Returns a FileOpener within the context that appears to be compatible
-        with the file type specified by the file info
+    def guess_source_opener(self, context, session, source):
+        """ Returns an Opener within the context that appears
+            to be compatible with the source
+            
+            Returns None if it can't be guessed """
         
-        Returns None if it can't be guessed
-        
-        """
-        
-        # The context openers are iterated in reverse because the openers
-        # added last have higher priority and may "override" how certain
-        # types of files are opened
-        
-        gfile_filter_info = self._create_filter_info(context, gfile_info)
-        for an_opener in reversed(session.openers):
-            a_file_filter = an_opener.get_file_filter()
-            if a_file_filter.filter(gfile_filter_info):
-                return an_opener
+        guesser = context.guessers.get(source.kind, None)
+        if guesser:
+            result = guesser.guess(source, guesser.filter(session.openers))
+            if result is None:
+                return guesser.fallback
+            else:
+                return result
         else:
             return None
     
@@ -234,7 +229,7 @@ class OpeningHandler(GObject.Object):
                 if some_results.sources:
                     sources.append((a_key, some_results.sources))
                     
-                elif a_key.kind == GFileFileSource.KIND:
+                elif a_key.kind == GFileSource.KIND:
                     if some_results.images:
                         try:
                             gfile = a_key.gfile
@@ -255,12 +250,13 @@ class OpeningHandler(GObject.Object):
             if parent_files:
                 logger.debug_list(f.get_uri() for f in parent_files)
                 
-                parent_openers = self.app.components[PARENT_OPENER_CATEGORY]
-                
+                parent_openers = list(
+                    reversed(self.app.components[PARENT_OPENER_CATEGORY])
+                )
                 siblings_session = context.get_new_session()
                 siblings_session.add_openers(parent_openers)
                 siblings_session.add_sources(
-                    map(GFileFileSource, parent_files)
+                    map(GFileSource, parent_files)
                 )
             
         else: # not session.search_siblings
@@ -313,7 +309,7 @@ class OpeningHandler(GObject.Object):
         if session.for_siblings_of_session:
             openers = session.for_siblings_of_session.openers
         else:
-            openers = self.app.components[FileOpener.CATEGORY]
+            openers = list(reversed(self.app.components[Opener.CATEGORY]))
         
         for parent_source, some_sources in sources:
             logger.debug(
@@ -367,22 +363,11 @@ class OpeningHandler(GObject.Object):
                 del sources[j]
         
         # Generators, yo!
-        files = map(GFileFileSource, map(Gio.File.new_for_uri, local_uris))
+        files = map(GFileSource, map(Gio.File.new_for_uri, local_uris))
         session.add_sources(files)
         
         # Enqueue remaining non-local URIs to be opened
         context.enqueue_sources(session, sources)
-    
-    
-    def _create_filter_info(self, context, gfile_info):
-        """ Returns a Gtk.FileFilterInfo for filtering FileOpeners """
-        flags = Gtk.FileFilterFlags
-        result = Gtk.FileFilterInfo()
-        result.contains = flags.DISPLAY_NAME | flags.MIME_TYPE
-        result.display_name = gfile_info.get_display_name()
-        result.mime_type = gfile_info.get_content_type()
-        
-        return result
     
     
     def _loaded_file_info_cb(self, source, session, context, signal_id_list):
@@ -393,25 +378,12 @@ class OpeningHandler(GObject.Object):
     
     def _open_next_gfile_cb(self, context, session, source):
         """ Opens a Gio.File from a context's opening queue """
-        
-        self.open_file(context, session, source)
+        self.open_file_source(context, session, source)
     
     
     def _open_next_uri_cb(self, context, session, source):
         """ Opens an URI string from a context's opening queue """
-        
-        # TODO: Implement some sort of URI opener here
-        results = OpeningResults()
-        opener = None
-        if opener:
-            pass
-        else:
-            # TODO: Fallback to cacheing the URI into a file
-            converted_file = Gio.File.new_for_uri(source.uri)
-            results.sources.append(GFileFileSource(converted_file))
-            results.complete()
-            
-            session.set_source_results(source, results)
+        self.open_file_source(context, session, source)
     
     
     def _clipboard_targets_request_cb(self, clipboard, selection, results):
@@ -789,8 +761,17 @@ class FileSource:
         while parent is not None:
             yield parent
             parent = parent.parent
-  
-  
+    
+    
+    def get_name(self):
+        if self.name:
+            return self.name
+        elif self.name == "" and self.parent:
+            return self.parent.get_name()
+        else:
+            return ""
+    
+    
     def get_fullname(self, sep=os.sep):
         if self.pathname:
             return self.pathname
@@ -817,7 +798,7 @@ class FileSource:
         return False
 
 
-class GFileFileSource(GObject.Object, FileSource):
+class GFileSource(GObject.Object, FileSource):
     KIND = "gfile"
     
     __gsignals__ = {
@@ -832,7 +813,7 @@ class GFileFileSource(GObject.Object, FileSource):
         self.being_queried = False
         self.missing_info = None
         
-        FileSource.__init__(self, GFileFileSource.KIND, name, parent)
+        FileSource.__init__(self, GFileSource.KIND, name, parent)
         
         self._fill_missing_name = name is None
         if name is None:
@@ -912,15 +893,18 @@ class GFileFileSource(GObject.Object, FileSource):
         return False
 
 
-class URIFileSource(FileSource):
+class URISource(FileSource):
     KIND ="uri"
     
     def __init__(self, uri, name=None, parent=None):
         self.uri = uri
-        if name is None:
-            name = uri
         
-        FileSource.__init__(self, URIFileSource.KIND, name, parent)
+        FileSource.__init__(self, URISource.KIND, name, parent)
+        if name is None:
+            uri_split = uri.rsplit("/", maxsplit=1)
+            if len(uri_split) == 2:
+                self.pathname = uri
+                self.name = uri_split[1]
     
     
     def _ressembles(self, other):

@@ -91,6 +91,11 @@ class ComponentMap:
             yield from self._components.values()
         
         
+        def __reversed__(self):
+            for key in reversed(self._components):
+                yield self._components[key]
+        
+        
         def __len__(self):
             """ Returns the number of compoenents in this category """
             return len(self._components)
@@ -215,86 +220,49 @@ class MouseHandlerFactory(Component, GObject.Object):
         raise NotImplementedError
 
 
-class SelectionOpener(GObject.Object, Component):
-    """ An interface to open images from Gtk.SelectionData """
+class OpenerGuesser(Component):
+    """ Guesses an appropriate Opener for an type of FileSource """
+    CATEGORY = "opener-guesser"
     
-    CATEGORY = "selection-opener"
-    
-    def __init__(self, codename, targets=None):
-        GObject.Object.__init__(self)
+    def __init__(self, codename, kind, fallback=None):
+        """ kind must be the .kind of FileSource this opener guesses.
+            fallback is an Opener that might be used if .guess returns None """
         Component.__init__(self, codename)
-        
-        # A set of targets from a selection that 
-        # this opener should be able to open
-        
-        if targets:
-            self.set_targets_from_strings(targets)
-        else:
-            self.atom_targets = set()
+        self.kind = kind
+        self.fallback = fallback
     
     
-    def set_targets_from_strings(self, targets):
-        """ Sets this SelectionOpener targets from a list of strings """
-        self.atom_targets = set(Gdk.Atom.intern(t, False) for t in targets)
-    
-    
-    def open_selection(self, selection, results):
-        """ Opens a Gdk.Selection """
+    def guess(self, source, openers):
+        """ Returns the most appropriate Opener from openers
+            for the given source or None if none is found """
         raise NotImplementedError
+    
+    
+    def filter(self, openers):
+        """ Yields openers that can be used by this guesser """
+        yield from filter(lambda opener: self.kind in opener.kinds, openers)
 
 
-class FileOpener(GObject.Object, Component):
-    """ An interface to open files for the image viewer.
+class Opener(GObject.Object, Component):
+    """ Opens a FileSource """
+    CATEGORY = "opener"
     
-    File openers yield image sources or other files which are then
-    opened by other file openers.
-    
-    """
-    
-    CATEGORY = "file-opener"
-    
-    def __init__(self, codename, extensions=None, mime_types=None):
-        """ Initializes a file opener for certain extensions and mime_types """
-        
+    def __init__(self, codename, *kinds):
         GObject.Object.__init__(self)
         Component.__init__(self, codename)
-        
-        # These two variables are used to guess which 
-        # file opener should open which file
-        self.extensions = extensions if extensions is not None else set()
-        """ A set of common extensions for this file opener supported files """
-        
-        self.mime_types = mime_types if mime_types is not None else set()
-        """ A set of mime_types for this file opener supported files """
-        
-        self.show_on_dialog = True
-        """ Whether to show this file opener in the "Open image" dialog """
-        
-        self._file_filter = None
+        self.kinds = kinds
+    
+    
+    def open_file_source(self, context, results, source):
+        """ Opens a given FileSource from an
+            OpeningContext and fills the OpeningResults """
+        raise NotImplementedError
+    
     
     @GObject.Property
     def label(self):
         """ A label to be displayed in the GUI """
         raise NotImplementedError
-    
-    
-    def open_file(self, context, results, gfile):
-        """ Opens a GFile from context and adds its contents to the results """
-        raise NotImplementedError
-    
-    
-    def get_file_filter(self):
-        """ Returns a file filter for this file opener """
-        if not self._file_filter:
-            self._file_filter = file_filter = Gtk.FileFilter()
-            file_filter.set_name(self.label)
-            
-            for an_extension in self.extensions:
-                file_filter.add_pattern("*." + an_extension)
-            for a_mime_type in self.mime_types:
-                file_filter.add_mime_type(a_mime_type)
-                
-        return self._file_filter
 
 
 class PreferencesTab(GObject.Object, Component):

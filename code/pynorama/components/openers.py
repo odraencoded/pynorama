@@ -25,26 +25,132 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
 
+import tempfile
 from gettext import gettext as _
 from os import path as os_path
 from urllib.parse import urlparse
 
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk
 
-from pynorama.extending import FileOpener, SelectionOpener
 from pynorama import extending, opening
+from pynorama.extending import Opener, OpenerGuesser
+from pynorama.opening import GFileSource, URISource
 from . import loaders
 
-class DirectoryOpener(FileOpener):
+class SelectionOpener:
+    """ An interface to open images from Gtk.SelectionData """
+    
+    def __init__(self, targets=None):
+        # A set of targets from a selection that 
+        # this opener should be able to open
+        
+        if targets:
+            self.set_targets_from_strings(targets)
+        else:
+            self.atom_targets = set()
+    
+    
+    def set_targets_from_strings(self, targets):
+        """ Sets this SelectionOpener targets from a list of strings """
+        self.atom_targets = set(Gdk.Atom.intern(t, False) for t in targets)
+
+
+class GFileOpener:
+    """ An interface to open files for the image viewer.
+    
+    File openers yield image sources or other files which are then
+    opened by other file openers.
+    
+    """
+    
+    def __init__(self, extensions=None, mime_types=None):
+        """ Initializes a file opener for certain extensions and mime_types """
+        
+        # These two variables are used to guess which 
+        # file opener should open which file
+        self.extensions = extensions if extensions is not None else set()
+        """ A set of common extensions for this file opener supported files """
+        
+        self.mime_types = mime_types if mime_types is not None else set()
+        """ A set of mime_types for this file opener supported files """
+        
+        self.show_on_dialog = True
+        """ Whether to show this file opener in the "Open image" dialog """
+        
+        self._file_filter = None
+    
+    
+    def get_file_filter(self):
+        """ Returns a file filter for this file opener """
+        if not self._file_filter:
+            self._file_filter = file_filter = Gtk.FileFilter()
+            file_filter.set_name(self.label)
+            
+            for an_extension in self.extensions:
+                file_filter.add_pattern("*." + an_extension)
+            for a_mime_type in self.mime_types:
+                file_filter.add_mime_type(a_mime_type)
+                
+        return self._file_filter
+
+
+class GFileOpenerGuesser(OpenerGuesser):
+    CODENAME = "gfile"
+    def __init__(self):
+        OpenerGuesser.__init__(self,
+                               GFileOpenerGuesser.CODENAME,
+                               GFileSource.KIND)
+    
+    
+    def guess(self, source, openers):
+        # The context openers are iterated in reverse because the openers
+        # added last have higher priority and may "override" how certain
+        # types of files are opened
+        
+        gfile_info = source.info
+        
+        flags = Gtk.FileFilterFlags
+        gfile_filter_info = Gtk.FileFilterInfo()
+        gfile_filter_info.contains = flags.DISPLAY_NAME | flags.MIME_TYPE
+        gfile_filter_info.display_name = gfile_info.get_display_name()
+        gfile_filter_info.mime_type = gfile_info.get_content_type()
+        
+        for an_opener in openers:
+            if an_opener.get_file_filter().filter(gfile_filter_info):
+                return an_opener
+        else:
+            return None
+
+
+# TODO define this interface
+class URIOpener:
+    """ An interfaces to open images from URIs """
+    def __init__(self):
+        pass
+
+
+# really only being used for the fallback now
+class URIOpenerGuesser(OpenerGuesser):
+    CODENAME = "uri"
+    def __init__(self):
+        OpenerGuesser.__init__(self,
+                               URIOpenerGuesser.CODENAME,
+                               URISource.KIND)
+    
+    
+    def guess(self, source, openers):
+        # TODO implement this
+        return None
+
+
+class DirectoryOpener(Opener, GFileOpener):
     """ Opens directories and yields the files inside them """
     
     CODENAME = "directory"
     
     def __init__(self):
-        FileOpener.__init__(self,
-            DirectoryOpener.CODENAME,
-            mime_types={"inode/directory"}
-        )
+        Opener.__init__(self, DirectoryOpener.CODENAME, GFileSource.KIND)
+        GFileOpener.__init__(self, mime_types={"inode/directory"})
         self.show_on_dialog = False
     
     
@@ -53,7 +159,7 @@ class DirectoryOpener(FileOpener):
         return _("Directory")
     
     
-    def open_file(self, context, results, source):
+    def open_file_source(self, context, results, source):
         """ Opens a directory file and yields its contents """
         
         source.gfile.enumerate_children_async(
@@ -76,7 +182,7 @@ class DirectoryOpener(FileOpener):
         else:
             get_child_for_display_name = gfile.get_child_for_display_name
             append_source = results.sources.append
-            file_source = opening.GFileFileSource
+            file_source = opening.GFileSource
             
             for a_file_info in gfile_enumerator:
                 try:
@@ -105,7 +211,7 @@ class DirectoryOpener(FileOpener):
         enumerator.close_finish(async_result)
 
 
-class PixbufOpener(SelectionOpener, FileOpener):
+class PixbufOpener(Opener, SelectionOpener, GFileOpener):
     """
     Opens image files supported by the GdkPixbuf library
     
@@ -124,15 +230,12 @@ class PixbufOpener(SelectionOpener, FileOpener):
             for an_extension in a_format.get_extensions():
                 extensions.add(an_extension)
         
-        FileOpener.__init__(self, 
-            PixbufOpener.CODENAME, 
-            extensions, 
-            mime_types
+        Opener.__init__(
+            self, PixbufOpener.CODENAME,
+            GFileSource.KIND
         )
-        SelectionOpener.__init__(self,
-            PixbufOpener.CODENAME,
-            mime_types
-        )
+        GFileOpener.__init__(self, extensions, mime_types)
+        SelectionOpener.__init__(self, mime_types)
     
     
     @GObject.Property
@@ -140,13 +243,15 @@ class PixbufOpener(SelectionOpener, FileOpener):
         return _("GdkPixbuf Images")
     
     
-    def open_file(self, context, results, source):
-        try:
-            new_image = loaders.PixbufFileImageSource(source)
-        except Exception as e:
-            results.errors.append(e)
-        else:
-            results.images.append(new_image)
+    def open_file_source(self, context, results, source):
+        if source.KIND == GFileSource.KIND:
+            try:
+                new_image = loaders.PixbufFileImageSource(source)
+            except Exception as e:
+                results.errors.append(e)
+            else:
+                results.images.append(new_image)
+        
         results.complete()
     
     
@@ -162,7 +267,7 @@ class PixbufOpener(SelectionOpener, FileOpener):
         results.complete()
 
 
-class PixbufAnimationFileOpener(FileOpener):
+class PixbufAnimationFileOpener(Opener, GFileOpener):
     """ Opens animated image files supported by the GdkPixbuf library """
     
     # ...is what I'd like to say. But there is no way to check the
@@ -170,11 +275,11 @@ class PixbufAnimationFileOpener(FileOpener):
     CODENAME = "gdk-pixbuf-animation"
     
     def __init__(self):
-        FileOpener.__init__(self,
-            PixbufAnimationFileOpener.CODENAME,
-            {".gif"},
-            {"image/gif"}
+        Opener.__init__(
+            self,PixbufAnimationFileOpener.CODENAME,
+            GFileSource.KIND
         )
+        GFileOpener.__init__(self, {".gif"}, {"image/gif"})
     
     
     @GObject.Property
@@ -182,7 +287,7 @@ class PixbufAnimationFileOpener(FileOpener):
         return _("GdkPixbuf Animations")
     
     
-    def open_file(self, context, results, source):
+    def open_file_source(self, context, results, source):
         try:
             new_image = loaders.PixbufAnimationFileImageSource(source)
         except Exception as e:
@@ -191,6 +296,114 @@ class PixbufAnimationFileOpener(FileOpener):
             results.images.append(new_image)
             
         results.complete()
+
+
+class URICacheFallbackOpener(Opener, URIOpener):
+    """ Downloads URIs into the cache and returns GFiles to open them """
+    CODENAME = "uri-cache"
+    
+    def __init__(self):
+        Opener.__init__(self,
+                        URICacheFallbackOpener.CODENAME,
+                        GFileSource.KIND)
+        URIOpener.__init__(self)
+    
+    
+    @GObject.Property
+    def label(self):
+        return _("GdkPixbuf Animations")
+    
+    
+    def open_file_source(self, context, results, source):
+        state = URICacheFallbackOpener.CachingState(context, results, source)
+        
+        # Get extension from URI
+        suffix = ""
+        dot_split = source.uri.rsplit(".", maxsplit=1)
+        if dot_split:
+            after_dot_split = dot_split[-1]
+            if "/" not in after_dot_split:
+                suffix = "." + after_dot_split
+        
+        state.cache_path = tempfile.mkstemp(
+                           dir=context.cache_directory,
+                           suffix=suffix)[1]
+        
+        state.files = [
+            Gio.File.new_for_uri(source.uri),
+            Gio.File.new_for_path(state.cache_path)
+        ]
+        state.cancellables = [Gio.Cancellable(), Gio.Cancellable()]
+        
+        state.files[0].read_async(
+            GLib.PRIORITY_DEFAULT,
+            state.cancellables[0],
+            self._async_cb,
+            (True, state)
+        )
+        state.files[1].append_to_async(
+            Gio.FileCreateFlags.REPLACE_DESTINATION,
+            GLib.PRIORITY_DEFAULT,
+            state.cancellables[1],
+            self._async_cb,
+            (False, state)
+        )
+    
+    
+    class CachingState:
+        def __init__(self, context, results, source):
+            self.context = context
+            self.results = results
+            self.source = source
+            self.streams = [None, None]
+            self.cancelled = False
+    
+    
+    def _async_cb(self, gfile, result, data):
+        uri_version, state = data
+        this, other = (0, 1) if uri_version else (1, 0)
+        
+        try:
+            if uri_version:
+                stream = gfile.read_finish(result)
+            else:
+                stream = gfile.append_to_finish(result)
+        except Exception as e:
+            if not state.cancelled:
+                state.cancelled = True
+                state.cancellables[other].cancel()
+                
+                state.results.errors.append(e)
+                state.results.complete()
+        else:
+            state.streams[this] = stream
+            if state.streams[other]:
+                state.splice_cancellable = Gio.Cancellable()
+                state.streams[1].splice_async(
+                    state.streams[0],
+                    (Gio.OutputStreamSpliceFlags.CLOSE_SOURCE |
+                     Gio.OutputStreamSpliceFlags.CLOSE_TARGET),
+                    GLib.PRIORITY_LOW,
+                    state.splice_cancellable,
+                    self._splice_cb,
+                    state
+                )
+                uri_stream = state.streams[0]
+        finally:
+            state.cancellables[this] = None
+    
+    
+    def _splice_cb(self, stream, result, state):
+        try:
+            stream.splice_finish(result)
+        except Exception as e:
+            if not state.cancelled:
+                state.results.errors.append(e)
+        else:
+            result = GFileSource(state.files[1], "", parent=state.source)
+            state.results.sources.append(result)
+        finally:
+            state.results.complete()
 
 
 class URIListSelectionOpener(SelectionOpener):
@@ -212,7 +425,7 @@ class URIListSelectionOpener(SelectionOpener):
     def open_selection(self, results, selection):
         uris = selection.get_uris()
         if uris:
-            results.sources.extend(map(opening.URIFileSource, uris))
+            results.sources.extend(map(opening.URISource, uris))
         results.complete()
 
 
@@ -249,7 +462,7 @@ class TextSelectionOpener(SelectionOpener):
         parse_result = urlparse(text)
         if (parse_result.scheme and parse_result.path
                 and (parse_result.netloc or parse_result.scheme == "file")):
-            results.sources.append(opening.URIFileSource(text))
+            results.sources.append(opening.URISource(text))
         else:
             # Expanding "~"
             text = os_path.expanduser(text)
@@ -257,7 +470,7 @@ class TextSelectionOpener(SelectionOpener):
                 # Wildly assuming this is a valid filename
                 # just because it starts with a slash
                 text = "file://" + os_path.normcase(os_path.normcase(text))
-                results.sources.append(opening.URIFileSource(text))
+                results.sources.append(opening.URISource(text))
             
         results.complete()
 
@@ -267,23 +480,32 @@ class BuiltInOpeners(extending.ComponentPackage):
     @staticmethod
     def add_on(app):
         components = app.components
+        uri_guesser = URIOpenerGuesser()
+        uri_guesser.fallback = URICacheFallbackOpener()
+        guessers = (
+            GFileOpenerGuesser(),
+            uri_guesser
+        )
+        for a_guesser in guessers:
+            components.add(OpenerGuesser.CATEGORY, a_guesser)
+            
         pixbuf_opener = PixbufOpener()
         directory_opener = DirectoryOpener()
-        file_openers = (
+        source_openers = (
             directory_opener, # Opens directories
             pixbuf_opener, # Opens images
             PixbufAnimationFileOpener(), # Opens animations
         )
-        for an_opener in file_openers:
-            components.add(FileOpener.CATEGORY, an_opener)
-        
+        for an_opener in source_openers:
+            components.add(Opener.CATEGORY, an_opener)
+        '''
         selection_openers = (
             pixbuf_opener, # Opens images
             URIListSelectionOpener(), # Opens uri lists
             TextSelectionOpener() # Tries to parse text into uris
         )
         for an_opener in selection_openers:
-            components.add(SelectionOpener.CATEGORY, an_opener)
+            components.add(SelectionOpener.CATEGORY, an_opener)'''
         components.add(opening.PARENT_OPENER_CATEGORY, directory_opener)
 
 extending.LoadedComponentPackages["openers"] = BuiltInOpeners
