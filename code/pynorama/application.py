@@ -1724,7 +1724,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         context = self.opening_context
         if context and context.__go_to_source:
             source = image.file_source
-            if source and source.ressembles(context.__go_to_source):
+            if source and source.resembles(context.__go_to_source):
                 uilogger.debug("Going to image matching opening context URI")
                 self.opening_context.__go_to_source = None
                 self.avl.go_image(image)
@@ -1919,7 +1919,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
             if target_source:
                 for image in avl.album:
                     source = image.file_source
-                    if source and source.ressembles_ancestor(target_source):
+                    if source and source.resembles_ancestor(target_source):
                         focus_image = image
                         break
             

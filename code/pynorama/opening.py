@@ -795,8 +795,8 @@ class FileSource:
         self.parent = parent
     
     
-    def ressembles(self, other):
-        return self._ressembles(other) or other._ressembles(self)
+    def resembles(self, other):
+        return self._resembles(other) or other._resembles(self)
     
     
     def get_ancestors(self):
@@ -831,14 +831,14 @@ class FileSource:
         return sep.join(name for name in reversed(ancestry) if name)
     
     
-    def ressembles_ancestor(self, possible_ancestor):
+    def resembles_ancestor(self, possible_ancestor):
         return any(
-            an_ancestor.ressembles(possible_ancestor)
+            an_ancestor.resembles(possible_ancestor)
             for an_ancestor in self.get_ancestors()
         )
     
     
-    def _ressembles(self):
+    def _resembles(self):
         return False
 
 
@@ -925,7 +925,7 @@ class GFileSource(GObject.Object, FileSource):
             self.emit("loaded-file-info")
     
     
-    def _ressembles(self, other):
+    def _resembles(self, other):
         if hasattr(other, "gfile"):
             if self.gfile.equal(other.gfile):
                 return True
@@ -951,7 +951,7 @@ class URISource(FileSource):
                 self.name = uri_split[1]
     
     
-    def _ressembles(self, other):
+    def _resembles(self, other):
         if hasattr(other, "gfile"):
             if self.uri == other.gfile.get_uri():
                 return True
