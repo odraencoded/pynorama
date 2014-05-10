@@ -403,15 +403,15 @@ class ImageViewer(Gtk.Application):
         if self.memory.unlisted_stuff or self.memory.unused_stuff:
             while self.memory.unlisted_stuff:
                 unlisted_thing = self.memory.unlisted_stuff.pop()
-                if unlisted_thing.is_loading or unlisted_thing.on_memory:
+                if unlisted_thing.status & loading.Status.LOADED != 0:
                     unlisted_thing.unload()
                     logger.debug(notifying.Lines.Unloaded(unlisted_thing))
                     
             while self.memory.unused_stuff:
                 unused_thing = self.memory.unused_stuff.pop()
                 # Do not unload things that are not on disk (like pastes)
-                if unused_thing.on_disk:
-                    if unused_thing.is_loading or unused_thing.on_memory:
+                if unused_thing.reloadable:
+                    if unused_thing.status & loading.Status.LOADED != 0:
                         unused_thing.unload()
                         logger.debug(notifying.Lines.Unloaded(unused_thing))
                         
@@ -419,7 +419,7 @@ class ImageViewer(Gtk.Application):
             
         while self.memory.requested_stuff:
             requested_thing = self.memory.requested_stuff.pop()
-            if not (requested_thing.is_loading or requested_thing.on_memory):
+            if requested_thing.status & loading.Status.UNLOADED != 0:
                 requested_thing.load()
                 logger.debug(notifying.Lines.Loading(requested_thing))
                 
@@ -432,7 +432,7 @@ class ImageViewer(Gtk.Application):
         if error:
             logger.log_error(notifying.Lines.Error(error))
             
-        elif thing.on_memory:
+        elif thing.is_loaded:
             logger.log(notifying.Lines.Loaded(thing))
     
     
@@ -1241,7 +1241,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 status_tooltip_text = _("Something went wrong")
                 size_text = ""
                 
-            elif focused_image.on_memory:
+            elif focused_image.is_loaded:
                 metadata = focused_image.metadata
                 # The width and height are from the source
                 size_text = "{width}×{height}".format(
@@ -1249,7 +1249,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
                 )
                 
                 status_text, status_tooltip_text = "", ""
-                                                
+                
             else:
                 # If it's not on memory and then it must be loading
                 status_text = _("Loading")
@@ -1758,7 +1758,7 @@ class ViewerWindow(Gtk.ApplicationWindow):
         self.statusbar.pop(loading_ctx)
         
         if focused_image:
-            if focused_image.on_memory or focused_image.is_bad:
+            if focused_image.is_loaded or focused_image.is_bad:
                 self.loading_spinner.hide()
                 self.loading_spinner.stop()
                 

@@ -19,6 +19,7 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
 from gi.repository import Gio, GObject
+from . import utility
 import weakref
 
 class DataError(Exception):
@@ -26,56 +27,115 @@ class DataError(Exception):
     pass
 
 
-class Status:
-    ''' Statuses for loadable objects '''
-    Bad = -1 # Something went wrong
-    Good = 0 # Everything is amazing and nobody is happy
-    Caching = 1 # Something is going into the disk
-    Loading = 2 # Something is going into the memory
-
-
-class Location:
-    ''' Locations for loadable data to be. '''
-    Nowhere = 0 # The data source is gone, 5ever
-    Distant = 1 # The data is in a far away place, should be cached
-    Disk = 2 # The data is on disk, easy to load
-    Memory = 4 # The data is on memory, already loaded
+Status = utility.Enum(
+    UNLOADED  = 0b001,
+    LOADED    = 0b010,
+    LOADING   = 0b110,
+    UNLOADING = 0b101
+)
 
 
 class Loadable(GObject.Object):
     __gsignals__ = {
-        "finished-loading": (GObject.SIGNAL_RUN_FIRST, None, [object])
+        "finished-loading": (GObject.SIGNAL_RUN_LAST, None, [object]),
+        "uses-changed": (GObject.SIGNAL_RUN_FIRST, None, [int]),
+        "lists-changed":(GObject.SIGNAL_RUN_FIRST, None, [int])
     }
     
     def __init__(self):
         GObject.Object.__init__(self)
-        self.location = Location.Nowhere
-        self.status = Status.Bad
+        self.status = Status.UNLOADED
+        self.reloadable = True
+        self.error = None
         
+        self.__uses = 0
+        self.__lists = 0
+        self.__requests = 0
+        
+        self.__request_signal_handler_ids = []
+        self.__data_requested = False
+    
+    
     def load(self):
+        """Loads this resource somehow."""
         raise NotImplementedError
-        
+    
+    
     def unload(self):
+        """Unloads this resource somehow."""
         raise NotImplementedError
+    
+    
+    def request_data(self):
+        """
+        Convenience method for memory managed Loadables.
         
-    uses = GObject.property(type=int, default=0)
-    lists = GObject.property(type=int, default=0)
+        Calling this will increment its use count by one, supposedly
+        making the memory manager attempt to load this resource.
+        
+        Once loaded, it automatically subtracts from its use count the number
+        of data requests it received.
+        
+        Use .cancel_request to undo a request.
+        
+        """
+        
+        if not self.is_loaded:
+            self.__requests += 1
+            self.uses += 1
+    
+    
+    def cancel_request(self):
+        """Reverts the effects of .request_data."""
+        if not self.is_loaded and self.__requests > 0:
+            self.__requests -= 1
+            self.uses -= 1
+    
+    
+    def do_finished_loading(self, *whatever):
+        if self.__requests:
+            requests = self.__requests
+            self.__requests = 0
+            self.uses -= requests
+    
+    
+    def get_uses(self):
+        return self.__uses
+    
+    
+    def set_uses(self, value):
+        diff = value - self.__uses
+        self.__uses = value
+        self.emit("uses-changed", diff)
+    
+    
+    def get_lists(self):
+        return self.__lists
+    
+    
+    def set_lists(self, value):
+        diff = value - self.__lists
+        self.__lists = value
+        self.emit("lists-changed", diff)
+    
+    
+    uses = GObject.property(get_uses, set_uses, type=int, default=0)
+    lists = GObject.property(get_lists, set_lists, type=int, default=0)
+    
     
     @property
-    def on_memory(self):
-        return self.location & Location.Memory == Location.Memory
+    def is_loaded(self):
+        return self.status == Status.LOADED
     
-    @property
-    def on_disk(self):
-        return self.location & Location.Disk == Location.Disk
-            
+    
     @property
     def is_loading(self):
-        return self.status == Status.Loading
-        
+        return self.status == Status.LOADING
+    
+    
     @property
     def is_bad(self):
-        return self.status == Status.Bad
+        return bool(self.error)
 
 
 class Memory(GObject.GObject):
@@ -109,19 +169,19 @@ class Memory(GObject.GObject):
             assert a_thing not in self.observed_stuff
             self.observed_stuff.add(a_thing)
             
-            a_thing.connect("notify::uses", self._uses_changed)
-            a_thing.connect("notify::lists", self._lists_changed)
+            a_thing.connect("uses-changed", self._uses_changed_cb)
+            a_thing.connect("lists-changed", self._lists_changed_cb)
     
     
-    def _uses_changed(self, thing, *data):
-        if thing.uses == 1:
+    def _uses_changed_cb(self, thing, difference):
+        if thing.uses == 1 and difference > 0:
             if thing in self.unused_stuff:
                 self.unused_stuff.remove(thing)
             else:
                 self.requested_stuff.add(thing)
                 self.emit("thing-requested", thing)
                 
-        elif thing.uses == 0:
+        elif thing.uses == 0 and difference < 0:
             if thing in self.requested_stuff:
                 self.requested_stuff.remove(thing)
             else:
@@ -129,15 +189,15 @@ class Memory(GObject.GObject):
                 self.emit("thing-unused", thing)
     
     
-    def _lists_changed(self, thing, *data):
-        if thing.lists == 1:
+    def _lists_changed_cb(self, thing, difference):
+        if thing.lists == 1 and difference > 0:
             if thing in self.unlisted_stuff:
                 self.unlisted_stuff.remove(thing)
             else:
                 self.enlisted_stuff.add(thing)
                 self.emit("thing-enlisted", thing)
         
-        elif thing.lists == 0:
+        elif thing.lists == 0 and difference < 0:
             if thing in self.enlisted_stuff:
                 self.enlisted_stuff.remove(thing)
             else:
@@ -188,6 +248,14 @@ class ImageSource(Loadable):
         return self.fullname
     
     
+    def do_new_frame(self, frame):
+        self.uses += 1
+    
+    
+    def do_lost_frame(self, frame):
+        self.uses -= 1
+    
+    
     def get_metadata(self):
         if not self.metadata:
             self.load_metadata()
@@ -219,8 +287,6 @@ class GFileImageSource(ImageSource):
     def __init__(self, file_source):
         ImageSource.__init__(self, file_source)
         self.gfile = gfile = file_source.gfile
-        
-        self.location = Location.Disk if gfile.is_native() else Location.Distant
     
     
     def matches_uri(self, uri):

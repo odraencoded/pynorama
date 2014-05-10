@@ -1010,11 +1010,8 @@ class ImageFrame(BaseFrame):
         then a missing error image will be used instead.
         
         """
-        try:
-            source_ok = self.source.on_memory
-        except Exception:
-            source_ok = False
-            
+        source_ok = self.source.is_loaded
+        
         if source_ok:
             self.draw = self.draw_image_source
             metadata = self.source.metadata
