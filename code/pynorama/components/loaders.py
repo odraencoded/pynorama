@@ -189,8 +189,8 @@ class PixbufFileImageSource(loading.GFileImageSource):
     
     
 class PixbufAnimationFileImageSource(loading.GFileImageSource):
-    def __init__(self, gfile, **kwargs):
-        loading.GFileImageSource.__init__(self, gfile, **kwargs)
+    def __init__(self, file_source, **kwargs):
+        loading.GFileImageSource.__init__(self, file_source, **kwargs)
         
         self.pixbuf_animation = None
         self.status = Status.Good
