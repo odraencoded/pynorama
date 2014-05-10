@@ -33,27 +33,9 @@ from urllib.parse import urlparse
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk
 
 from pynorama import extending, opening
-from pynorama.extending import Opener, OpenerGuesser
-from pynorama.opening import GFileSource, URISource
+from pynorama.extending import Opener, OpenerGuesser, SelectionOpener
+from pynorama.opening import GFileSource, URISource, SelectionSource
 from . import loaders
-
-class SelectionOpener:
-    """ An interface to open images from Gtk.SelectionData """
-    
-    def __init__(self, targets=None):
-        # A set of targets from a selection that 
-        # this opener should be able to open
-        
-        if targets:
-            self.set_targets_from_strings(targets)
-        else:
-            self.atom_targets = set()
-    
-    
-    def set_targets_from_strings(self, targets):
-        """ Sets this SelectionOpener targets from a list of strings """
-        self.atom_targets = set(Gdk.Atom.intern(t, False) for t in targets)
-
 
 class GFileOpener:
     """ An interface to open files for the image viewer.
@@ -235,7 +217,7 @@ class PixbufOpener(Opener, SelectionOpener, GFileOpener):
             GFileSource.KIND
         )
         GFileOpener.__init__(self, extensions, mime_types)
-        SelectionOpener.__init__(self, mime_types)
+        SelectionOpener.__init__(self, PixbufOpener.CODENAME, mime_types)
     
     
     @GObject.Property
@@ -245,25 +227,24 @@ class PixbufOpener(Opener, SelectionOpener, GFileOpener):
     
     def open_file_source(self, context, results, source):
         if source.KIND == GFileSource.KIND:
-            try:
-                new_image = loaders.PixbufFileImageSource(source)
-            except Exception as e:
-                results.errors.append(e)
-            else:
-                results.images.append(new_image)
+            new_image = loaders.PixbufFileImageSource(source)
+            results.images.append(new_image)
         
         results.complete()
     
     
-    def open_selection(self, results, selection):
+    def open_selection(self, context, results, selection, source):
         """
         Gets a pixbuf from a Gtk.SelectionData and creates an image source
         from it.
         
         """
         pixbuf = selection.get_pixbuf()
-        image_source = loaders.PixbufDataImageSource(pixbuf)
+        source.setImageContentName()
+        
+        image_source = loaders.PixbufDataImageSource(pixbuf, source)
         results.images.append(image_source)
+        
         results.complete()
 
 
@@ -422,10 +403,25 @@ class URIListSelectionOpener(SelectionOpener):
         return _("URI list")
     
     
-    def open_selection(self, results, selection):
+    def open_selection(self, context, results, selection, source):
         uris = selection.get_uris()
+        results.sources.extend(
+            URISource(an_uri, parent=source) for an_uri in uris)
+        # This code is just used to specify a fitting name for the source
         if uris:
-            results.sources.extend(map(opening.URISource, uris))
+            files_only = True
+            for an_uri in uris:
+                parse_result = urlparse(an_uri)
+                if parse_result.scheme not in ("", "file"):
+                    files_only = False
+                    break
+            
+            count = len(uris)
+            if files_only:
+                source.setFileContentName(count)
+            else:
+                source.setURIContentName(count)
+            
         results.complete()
 
 
@@ -456,22 +452,38 @@ class TextSelectionOpener(SelectionOpener):
         return _("URI Text")
     
     
-    def open_selection(self, results, selection):
+    def open_selection(self, context, results, selection, source):
         text = selection.get_text()
+        got_results = False
         
+        # Checks whether the text looks like a proper URI
+        # .netloc would be "python.org" for http://python.org/, "cakes" for
+        # file://cakes/cake.bmp but "" for file://cake.bmp, so it needs to
+        # have either that or a "file" scheme.
         parse_result = urlparse(text)
         if (parse_result.scheme and parse_result.path
                 and (parse_result.netloc or parse_result.scheme == "file")):
-            results.sources.append(opening.URISource(text))
+            results.sources.append(URISource(text, parent=source))
+            got_results = True
+            file_uri = parse_result.scheme == "file"
         else:
+            # If not we assume it's an absolute filepath
             # Expanding "~"
             text = os_path.expanduser(text)
             if os_path.isabs(text):
                 # Wildly assuming this is a valid filename
                 # just because it starts with a slash
                 text = "file://" + os_path.normcase(os_path.normcase(text))
-                results.sources.append(opening.URISource(text))
-            
+                results.sources.append(URISource(text, parent=source))
+                got_results = file_uri = True
+        
+        # Setting source name
+        if got_results:
+            if file_uri:
+                source.setFileContentName()
+            else:
+                source.setURIContentName()
+        
         results.complete()
 
 
@@ -498,14 +510,14 @@ class BuiltInOpeners(extending.ComponentPackage):
         )
         for an_opener in source_openers:
             components.add(Opener.CATEGORY, an_opener)
-        '''
+        
         selection_openers = (
             pixbuf_opener, # Opens images
             URIListSelectionOpener(), # Opens uri lists
             TextSelectionOpener() # Tries to parse text into uris
         )
         for an_opener in selection_openers:
-            components.add(SelectionOpener.CATEGORY, an_opener)'''
+            components.add(SelectionOpener.CATEGORY, an_opener)
         components.add(opening.PARENT_OPENER_CATEGORY, directory_opener)
 
 extending.LoadedComponentPackages["openers"] = BuiltInOpeners

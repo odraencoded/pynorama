@@ -1508,9 +1508,9 @@ class ViewerWindow(Gtk.ApplicationWindow):
     
     def open_gfiles(self, gfiles, **kwargs):
         """ Opens images from Gio.Files into this window """
-        self.open_sources(map(opening.GFileFileSource, gfiles), **kwargs)
+        self.open_sources(map(opening.GFileSource, gfiles), **kwargs)
     
-    
+
     def open_uris(self, uris, **kwargs):
         """ Opens images from URIs into this window """
         self.open_sources(map(opening.URISource, uris), **kwargs)
@@ -1563,11 +1563,18 @@ class ViewerWindow(Gtk.ApplicationWindow):
     def paste(self, clipboard=None):
         """ Pastes something from a clipboard """
         uilogger.log("Pasting...")
+        
         if clipboard is None:
             # Get default clipboard
             clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
-            
-        results = self.app.opener.open_clipboard(clipboard)
+        
+        context = self.get_opening_context()
+        context.hold_open()
+        
+        source = opening.SelectionSource(
+            opening.SelectionSource.PASTED_ACTION)
+        
+        results = self.app.opener.open_clipboard(context, clipboard, source)
         if results.completed:
             self._completed_paste_results_cb(results)
         else:
@@ -1814,43 +1821,53 @@ class ViewerWindow(Gtk.ApplicationWindow):
     def _dnd_received_cb(self, widget, ctx, x, y, selection, info, time):
         """ Callback for drag'n'drop "received" event """
         uilogger.log("Drag'n'dropping...")
-        results = self.app.opener.open_selection(selection)
+        context = self.get_opening_context()
+        context.hold_open()
+
+        source = opening.SelectionSource(
+            opening.SelectionSource.DRAGGED_ACTION)
+        results = self.app.opener.open_selection(context, selection, source)
         if results.completed:
             self._completed_drop_results_cb(results)
         else:
             results.connect("completed", self._completed_drop_results_cb)
     
     
-    def _completed_drop_results_cb(self, results, *etc):
+    def _completed_drop_results_cb(self, results):
         """ Callback for the opening results of
             a drag'n'drop "complete" signal """
         
-        # TODO: Find a way to make this logic modular
-        if results.sources:
-            uilogger.log("Found files in drop")
-            is_single_source = len(results.sources) == 1
-            is_trigger = not self.get_opening_context().__added_already
-            self.open_sources(
-                results.sources,
-                replace=is_trigger,
-                search_siblings=is_single_source
-            )
-        
-        if results.images:
-            uilogger.log("Found images in drop")
-            # TODO: Implement something so that ImageSources
-            # don't have to be "manually" added to the memory thingy...
-            # actually reimplement the entire memory management thingy.
-            self.app.memory.observe_stuff(results.images)
-            self.album.extend(results.images)
-        
-        if results.errors:
-            uilogger.log_error("There were errors opening the drop")
-            for e in results.errors:
-                uilogger.log_exception(e)
-        
-        if results.empty:
-            uilogger.log_error("Found nothing in drop")
+        try:
+            # TODO: Find a way to make this logic modular
+            if results.sources:
+                uilogger.log("Found files in drop")
+                is_single_source = len(results.sources) == 1
+                is_trigger = not self.get_opening_context().__added_already
+                self.open_sources(
+                    results.sources,
+                    replace=is_trigger,
+                    search_siblings=is_single_source
+                )
+            
+            if results.images:
+                uilogger.log("Found images in drop")
+                # TODO: Implement something so that ImageSources
+                # don't have to be "manually" added to the memory thingy...
+                # actually reimplement the entire memory management thingy.
+                self.app.memory.observe_stuff(results.images)
+                self.album.extend(results.images)
+            
+            if results.errors:
+                uilogger.log_error("There were errors opening the drop")
+                for e in results.errors:
+                    uilogger.log_exception(e)
+            
+            if results.empty:
+                uilogger.log_error("Found nothing in drop")
+        finally:
+            # Revert holding the context open in the event callback
+            context = self.get_opening_context()
+            context.let_close()
     
     
     def _completed_paste_results_cb(self, results, *etc):
@@ -1858,25 +1875,30 @@ class ViewerWindow(Gtk.ApplicationWindow):
         Callback for the opening results of a paste "complete" signal
         
         """
-        if results.sources:
-            uilogger.log("Found files in paste")
-            self.open_sources(results.sources)
-        
-        if results.images:
-            uilogger.log("Found images in paste")
-            # TODO: Implement something so that ImageSources
-            # don't have to be "manually" added to the memory thingy...
-            # actually reimplement the entire memory management thingy.
-            self.app.memory.observe_stuff(results.images)
-            self.album.extend(results.images)
-        
-        if results.errors:
-            uilogger.log_error("There were errors opening the paste")
-            for e in results.errors:
-                uilogger.log_exception(e)
-        
-        if results.empty:
-            uilogger.log_error("Found nothing in paste")
+        try:
+            if results.sources:
+                uilogger.log("Found files in paste")
+                self.open_sources(results.sources)
+            
+            if results.images:
+                uilogger.log("Found images in paste")
+                # TODO: Implement something so that ImageSources
+                # don't have to be "manually" added to the memory thingy...
+                # actually reimplement the entire memory management thingy.
+                self.app.memory.observe_stuff(results.images)
+                self.album.extend(results.images)
+            
+            if results.errors:
+                uilogger.log_error("There were errors opening the paste")
+                for e in results.errors:
+                    uilogger.log_exception(e)
+            
+            if results.empty:
+                uilogger.log_error("Found nothing in paste")
+        finally:
+            # Revert holding the context open in .paste()
+            context = self.get_opening_context()
+            context.let_close()
     
     
     def _opening_context_finished_cb(self, context):

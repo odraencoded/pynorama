@@ -244,7 +244,10 @@ class OpenerGuesser(Component):
 
 
 class Opener(GObject.Object, Component):
-    """ Opens a FileSource """
+    """Used to dynamically open FileSources in the opening system
+    
+    Attributes:
+    """
     CATEGORY = "opener"
     
     def __init__(self, codename, *kinds):
@@ -263,6 +266,69 @@ class Opener(GObject.Object, Component):
     def label(self):
         """ A label to be displayed in the GUI """
         raise NotImplementedError
+
+
+class SelectionOpener(Component):
+    """ Opens data from Gtk.SelectionData
+
+    This class is used rather than the usual Opener when dealing with
+    selections because they are only found in the user interface, that is,
+    no Opener would ever open a FileSource and return a selection as result
+    to be opened.
+
+    For that reason, selections are open separately, with SelecitonOpeners,
+    and the results may be added to a context later so that its results
+    can be opened by normal Openers.
+
+    Attributes:
+        atom_targets (set): A set of Gdk.Atoms with strings for what MIME types
+            this opener is supposed to open.
+
+    """
+    CATEGORY = "selection-opener"
+    
+    def __init__(self, codename, targets=None):
+        # A set of targets from a selection that 
+        # this opener should be able to open
+        
+        Component.__init__(self, codename)
+        
+        if targets:
+            self.set_targets_from_strings(targets)
+        else:
+            self.atom_targets = set()
+    
+    
+    def open_selection(self, context, results, selection, source):
+        """Opens a given Gtk.Selection
+
+        Implementations of this method may change the name of the source in
+        order to match the kind of data being opened.
+
+        Args:
+            context (OpeningContext): the context of this operation
+            results (OpeningResults): where to add the results
+            selection (Gtk.SelectionData): selection to be opened
+            source (FileSource): the source that will represent the selection
+                in the results being yield
+
+        Returns:
+            Nothing. The results are set in the OpeningResults object which
+            may or maybe not be complete by the time this operation returns
+
+        """
+        raise NotImplementedError
+
+    
+    def set_targets_from_strings(self, targets):
+        """Sets its .atom_targets from a collection of strings
+
+        Args:
+            targets: A collection of MIME types as strings that this opener
+                is capable of opening.
+
+        """
+        self.atom_targets = set(Gdk.Atom.intern(t, False) for t in targets)
 
 
 class PreferencesTab(GObject.Object, Component):

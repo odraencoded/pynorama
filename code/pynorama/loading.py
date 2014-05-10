@@ -42,14 +42,13 @@ class Location:
     Memory = 4 # The data is on memory, already loaded
 
 
-class Loadable(GObject.GObject):
+class Loadable(GObject.Object):
     __gsignals__ = {
         "finished-loading": (GObject.SIGNAL_RUN_FIRST, None, [object])
     }
     
     def __init__(self):
-        GObject.GObject.__init__(self)
-        
+        GObject.Object.__init__(self)
         self.location = Location.Nowhere
         self.status = Status.Bad
         
@@ -170,15 +169,19 @@ class ImageSource(Loadable):
         "lost-frame": (GObject.SIGNAL_RUN_LAST, None, [object]),
     }
     
-    def __init__(self):
+    def __init__(self, file_source=None):
         Loadable.__init__(self)
-        self.name = self.fullename = ""
         
         self.error = None
         self.pixbuf = None
         self.animation = None
         self.metadata = None
-        self.file_source = None
+        self.file_source = file_source
+        if(file_source):
+            self.name = self.file_source.get_name()
+            self.fullname = self.file_source.get_fullname()
+        else:
+            self.name = self.fullname = ""
     
     
     def __str__(self):
@@ -214,10 +217,7 @@ class ImageSource(Loadable):
 
 class GFileImageSource(ImageSource):
     def __init__(self, file_source):
-        super().__init__()
-        self.file_source = file_source
-        self.name = self.file_source.get_name()
-        self.fullname = self.file_source.get_fullname()
+        ImageSource.__init__(self, file_source)
         self.gfile = gfile = file_source.gfile
         
         self.location = Location.Disk if gfile.is_native() else Location.Distant

@@ -36,11 +36,9 @@ class PixbufDataImageSource(loading.ImageSource):
         This ImageSource can not be loaded or unloaded
         Because it can not find the data source by itself '''
         
-    def __init__(self, pixbuf, name="Image Data"):
-        loading.ImageSource.__init__(self)
+    def __init__(self, pixbuf, source=None):
+        loading.ImageSource.__init__(self, source)
         self.surface = utility.SurfaceFromPixbuf(pixbuf)
-        
-        self.fullname = self.name = name
         
         self.load_metadata()
         

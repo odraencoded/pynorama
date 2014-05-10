@@ -26,10 +26,11 @@
 """
 
 import os
+from gettext import ngettext as N_
 from collections import deque, defaultdict
 from gi.repository import Gdk, Gio, GLib, GObject, Gtk
 from . import utility, notifying
-from .extending import Opener
+from .extending import Opener, SelectionOpener
 
 logger = notifying.Logger("opening")
 
@@ -71,12 +72,17 @@ class OpeningHandler(GObject.Object):
         session.set_source_results(source, results)
     
     
-    def open_selection(self, selection_data):
-        """
-        Tries to open a Gtk.Selection with an appropriate SelectionOpener
+    def open_selection(self, context, selection_data, source):
+        """Opens a Gtk.Selection and returns its OpeningResults.
+        
+        Refer to the SelectionOpener documentation for why this method exists.
+        
+        Args:
+            context: an OpeningContext in which the selection in being opened.
+            selection_data: the Gtk.Selection to be opened.
+            source (SelectionSource): used to represent the selection data.
         
         """
-        
         results = OpeningResults()
         selection_openers = self.app.components[SelectionOpener.CATEGORY]
         
@@ -87,7 +93,7 @@ class OpeningHandler(GObject.Object):
         if opener:
             results.opener = opener
             try:
-                opener.open_selection(results, selection_data)
+                opener.open_selection(context, results, selection_data, source)
             except Exception as e:
                 results.errors.append(e)
                 results.complete()
@@ -98,23 +104,47 @@ class OpeningHandler(GObject.Object):
         return results
     
     
-    def open_clipboard(self, clipboard):
-        """ Opens a Gtk.Clipboard """
+    def open_clipboard(self, context, clipboard, source):
+        """Opens a Gtk.Clipboard and returns its OpeningResults.
+        
+        Refer to the SelectionOpener documentation for why this method exists.
+        
+        Args:
+            context: an OpeningContext in which the selection in being opened.
+            clipboard: the Gtk.Clipboard to be opened.
+            source (SelectionSource): used to represent the clipboard data.
+        
+        """
+        """Opens a Gtk.Clipboard and returns its OpeningResults."""
         results = OpeningResults()
         clipboard.request_contents(
             Gdk.Atom.intern("TARGETS", False),
             self._clipboard_targets_request_cb,
-            results
+            (context, results, source)
         )
         
         return results
     
     
     def guess_source_opener(self, context, session, source):
-        """ Returns an Opener within the context that appears
-            to be compatible with the source
-            
-            Returns None if it can't be guessed """
+        """Guesses an Opener supposedly capable of opening a given FileSource.
+
+        New FileSource kinds can be guessed if a compatible OpenerGuessed is
+        included in the context .guessers attribute.
+
+        Args:
+            context (OpeningContext): the context in which the available
+                OpenerGuessers are set.
+            session (OpeningSession): the session in which the available
+                Openers to guess from are set.
+            source (FileSource): the source whose opener is being guessed.
+
+        Returns:
+            An Opener among session.openers deemed capable of opening the given
+            source according to the OpenerGuesser of matching kind found in
+            context.guessers or None if none is fond.
+
+        """
         
         guesser = context.guessers.get(source.kind, None)
         if guesser:
@@ -128,14 +158,23 @@ class OpeningHandler(GObject.Object):
     
     
     def guess_selection_opener(self, openers, selection=None, targets=None):
-        """
-        Tries to guess a SelectionOpener for a selection
+        """guess_source_opener equivalent for selections.
+
+        Args:
+            openers (enumerable of SelectionOpeners): which openers are
+                avaiable to make the guess from.
+            selection (Gtk.SelectionData): the selection whose targets are
+                should be matched. If this is None the targets argument
+                must be supplied.
+             targets (enumerable of Gdk.Atoms): targets that should be matched
+                against those of the supplied openers.
+
+        Returns:
+            A tuple indicating which SelectionOpener matches the
+            Gtk.SelectionData and which Gdk.Atom was used to determine that.
         
-        Returns a tuple indicating which SelectionOpener matches the
-        Gtk.SelectionData and which Gdk.Atom was used to determine that.
-        
-        If no SelectionOpener can be found it returns a tuple containing two
-        None elements.
+            If no SelectionOpener can be found a tuple containing two None
+            elements is returned.
         
         """
         # Get targets for opener guessing
@@ -386,8 +425,11 @@ class OpeningHandler(GObject.Object):
         self.open_file_source(context, session, source)
     
     
-    def _clipboard_targets_request_cb(self, clipboard, selection, results):
+    def _clipboard_targets_request_cb(self, clipboard, selection, data):
         """ Callback for requesting the targets of a Gtk.Clipboard """
+        
+        context, results, source = data
+        
         selection_openers = self.app.components[SelectionOpener.CATEGORY]
         opener, target = self.guess_selection_opener(
             selection_openers,
@@ -398,7 +440,7 @@ class OpeningHandler(GObject.Object):
             clipboard.request_contents(
                 target,
                 self._clipboard_content_request_cb,
-                results
+                data
             )
             
         else:
@@ -406,10 +448,12 @@ class OpeningHandler(GObject.Object):
             results.complete()
     
     
-    def _clipboard_content_request_cb(self, clipboard, selection, results):
+    def _clipboard_content_request_cb(self, clipboard, selection, data):
         """ Callback for requesting the content of a Gtk.Clipboard """
+        context, results, source = data
+        
         try:
-            results.opener.open_selection(results, selection)
+            results.opener.open_selection(context, results, selection, source)
         except Exception as e:
             results.errors.append(e)
             results.complete()
@@ -917,6 +961,57 @@ class URISource(FileSource):
                 return True
         
         return False
+
+
+class SelectionSource(FileSource):
+    """This kind of FileSource only serves as reference.
+    
+    Because you can't reasonably restore data from selection objects, but
+    it would be cool to to have them as parents of FileSources that come
+    from selections, this class is used.
+
+    Attributes:
+        action (str): how the selection was created, values are likely to be
+        either "pasted" or "dropped".
+
+    """
+    KIND = "selection"
+
+    UNSPECIFIED_ACTION = "unspecified"
+    PASTED_ACTION = "pasted"
+    DRAGGED_ACTION = "dragged"
+
+    def __init__(self, action=UNSPECIFIED_ACTION,  name=None, parent=None):
+        FileSource.__init__(self, SelectionSource.KIND, name, parent)
+        self.action = action
+    
+    
+    def setFileContentName(self, count=1):
+        """Sets its name to denote that it contains files."""
+        if self.action == SelectionSource.PASTED_ACTION:
+            self._setName("Pasted File", "{count:d} Pasted Files", count)
+        elif self.action == SelectionSource.DRAGGED_ACTION:
+            self._setName("Dragged File", "{count:d} Dragged Files", count)
+    
+    
+    def setURIContentName(self, count=1):
+        """Sets its name to denote that it contains URIs."""
+        if self.action == SelectionSource.PASTED_ACTION:
+            self._setName("Pasted URI", "{count:d} Pasted URIs", count)
+        elif self.action == SelectionSource.DRAGGED_ACTION:
+            self._setName("Dragged URI", "{count:d} Dragged URIs", count)
+    
+    
+    def setImageContentName(self, count=1):
+        """Sets its name to denote that it contains images."""
+        if self.action == SelectionSource.PASTED_ACTION:
+            self._setName("Pasted Image", "{count:d} Pasted Images", count)
+        elif self.action == SelectionSource.DRAGGED_ACTION:
+            self._setName("Dragged Image", "{count:d} Dragged Images", count)
+    
+    
+    def _setName(self, singular, plural, count):
+        self.name = N_(singular, plural, count).format(count=count)
 
 
 class FileOpenerGroup:
