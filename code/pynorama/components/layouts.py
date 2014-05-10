@@ -29,9 +29,13 @@ class SingleImageLayout(AlbumLayout):
     
     
     def start(self, avl):
+        avl.load_handle = None
+        
         avl.current_image = None
         avl.current_frame = None
-        avl.load_handle = None
+        avl.previous_frame = None
+        avl.previous_image = None
+        
         avl.old_album = None
         avl.removed_signal_id = None
         avl.album_notify_id = avl.connect(
@@ -52,6 +56,14 @@ class SingleImageLayout(AlbumLayout):
         if avl.current_frame:
             avl.view.remove_frame(avl.current_frame)
         del avl.current_frame
+        
+        if avl.previous_image:
+            avl.previous_image.uses -= 1
+        del avl.previous_image
+        
+        if avl.previous_frame:
+            avl.view.remove_frame(avl.previous_frame)
+        del avl.previous_frame
         
         avl.disconnect(avl.album_notify_id)
         del avl.album_notify_id
@@ -74,19 +86,30 @@ class SingleImageLayout(AlbumLayout):
     def go_image(self, avl, target_image):
         if avl.current_image == target_image:
             return
-            
-        previous_image = avl.current_image
+        
+        if avl.load_handle: # remove "finished-loading" handle
+            avl.current_image.disconnect(avl.load_handle)
+            avl.current_image.uses -= 1
+            avl.load_handle = None
+        
+        if avl.previous_image is None and avl.current_frame is not None:
+            avl.previous_image = avl.current_image
+            avl.previous_frame = avl.current_frame
+            avl.previous_image.uses += 1
+                
         avl.current_image = target_image
         
-        if previous_image:
-            previous_image.uses -= 1 # decrement use count
-            if avl.load_handle: # remove "finished-loading" handle
-                previous_image.disconnect(avl.load_handle)
-                avl.load_handle = None
-                
         if target_image is None:
             # Current image being none means nothing is displayed #
             self._refresh_frame(avl)
+            
+            if avl.previous_image is not None:
+                avl.previous_image.uses -= 1
+                avl.previous_image = None
+            
+            if avl.previous_frame is not None:
+                avl.view.remove_frame(avl.previous_frame)
+                avl.previous_frame = None
             
         else:
             target_image.uses += 1
@@ -103,9 +126,14 @@ class SingleImageLayout(AlbumLayout):
     
     
     def _refresh_frame(self, avl):
-        if avl.current_frame:
-            avl.view.remove_frame(avl.current_frame)
-            
+        if avl.previous_frame:
+            avl.view.remove_frame(avl.previous_frame)
+            avl.previous_frame = None
+        
+        if avl.previous_image:
+            avl.previous_image.uses -= 1
+            avl.previous_image = None
+        
         if avl.current_image:
             new_frame = avl.current_image.create_frame()
             avl.current_frame = new_frame
