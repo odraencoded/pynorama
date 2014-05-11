@@ -52,25 +52,29 @@ class ZipOpener(Opener, openers.GFileOpener):
         
         gfile = source.gfile
         path = gfile.get_path()
+        a_zipfile = None
         try:
-            with zipfile.ZipFile(path) as a_zipfile:
-                directory = tempfile.mkdtemp(
-                    suffix=os.sep,
-                    dir=context.cache_directory
-                )
-                a_zipfile.extractall(directory)
-                directory_gfile = Gio.File.new_for_path(directory)
-                zip_result = opening.GFileSource(
-                    directory_gfile, "", parent=source
-                )
-                results.sources.append(zip_result)
-                '''
-                # Momoizing append_file and join_path
-                append_file = results.sources.append
-                for a_name in a_zipfile.namelist():
-                    a_filename = join_path(directory, a_name)
-                    append_file(Gio.File.new_for_path(a_filename))'''
+            a_zipfile = zipfile.ZipFile(path)
+            
+            # Caching files
+            directory = tempfile.mkdtemp(
+                suffix=os.sep, dir=context.cache_directory)
+            zipfile_cache = opening.FileCache(directories=[directory])
+            a_zipfile.extractall(directory)
+            
+            # Returning file source
+            directory_gfile = Gio.File.new_for_path(directory)
+            zip_result = opening.GFileSource(
+                directory_gfile, "", parent=source)
+            zip_result.cache = zipfile_cache
+            results.sources.append(zip_result)
+        
+        except Exception as e:
+            results.errors.append(e)
+            
         finally:
+            if a_zipfile:
+                a_zipfile.close()
             results.complete()
 
 
