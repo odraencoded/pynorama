@@ -242,15 +242,49 @@ class OpeningHandler(GObject.Object):
     
     
     def _standard_session_finished_cb(self, context, session, album):
-        """
-        Standard handling for finished opening sessions
+        """Standard handling for finished opening sessions"""
         
-        It adds images to an album and 
+        # Total sources, images and errors of this session
+        ( sources, images, errors
+        ) = self._gather_session_results(context, session)
         
-        """
-        sources = []
-        images = []
-        errors = []
+        logger.debug(
+            "Depth %d session results: %d images, %d sources, %d errors"
+            % (session.depth, len(images), len(sources), len(errors)))
+        
+        # TODO: Do more than just this with errors
+        for an_error in errors:
+            logger.log_exception(an_error)
+        
+        for parent_source, some_sources in sources:
+            for a_source in some_sources:
+                a_source.link_parent()
+        
+        for an_image in images:
+            an_image.link_source()
+        
+        self.app.memory.observe_stuff(images)
+        album.extend(images)
+        
+        # TODO: New URIs handling, error handling, no opener found handling
+        if sources:
+            # TODO: Implement warning dialogs
+            if len(sources) >= self.warning_file_count_threshold:
+                logger.log("File count exceeded warning threshold")
+            
+            if session.depth >= self.warning_depth_threshold:
+                if len(images) > self.warning_image_count_threshold:
+                    logger.log(
+                        "Depth and image count exceeded warning threshold")
+                else:
+                    logger.debug("Going deeper; Too few images in results")
+                    self._continue_opening(context, session, sources)
+            else:
+                self._continue_opening(context, session, sources)
+    
+    
+    def _gather_session_results(self, context, session):
+        sources, images, errors = [], [], []
         
         if session.search_siblings:
             logger.debug("Depth %s sibling search..." % session.depth)
@@ -308,36 +342,31 @@ class OpeningHandler(GObject.Object):
                     if some_results.sources:
                         sources.append((key, some_results.sources))
         
+        return sources, images, errors
+    
+    
+    def _reverse_link_images(self, images):
+        """Adds links from parents to children starting from images."""
+        parents = set()
+        for an_image in images:
+            a_file_source = an_image.file_source
+            if a_file_source:
+                if a_file_source.add_image(image):
+                    parents.add(a_file_source)
         
-        logger.debug(
-            "Depth %d session results: %d images, %d sources, %d errors" % (
-                session.depth, len(images), len(sources), len(errors)
-            )
-        )
-        for an_error in errors:
-            logger.log_exception(an_error)
-            
-        self.app.memory.observe(*images)
-        album.extend(images)
-        
-        # TODO: New URIs handling, error handling, no opener found handling
-        if sources:
-            # TODO: Implement warning dialogs
-            continue_opening = True
-            if len(sources) >= self.warning_file_count_threshold:
-                logger.log("File count exceeded warning threshold")
-            
-            if session.depth >= self.warning_depth_threshold:
-                if len(images) > self.warning_image_count_threshold:
-                    logger.log(
-                        "Depth and image count exceeded warning threshold"
-                    )
-                    continue_opening = False
-                else:
-                    logger.debug("Going deeper; Too few images in results")
-                
-            if continue_opening:
-                self._continue_opening(context, session, sources)
+        self._reverse_link_sources(parents)
+    
+    
+    def _reverse_link_sources(self, sources):
+        """Adds links from parents to children file sources"""
+        while sources:
+            parents = set()
+            for a_source in sources:
+                a_parent = a_source.parent
+                if a_parent:
+                    if a_parent.add_source(a_source):
+                        parents.add(a_parent)
+            sources = parents
     
     
     def _continue_opening(self, context, session, sources):
@@ -388,22 +417,33 @@ class OpeningHandler(GObject.Object):
     
     
     def _added_uri_cb(self, session, sources, context):
-        """ Removes local URIs(file://)
-            and adds them back as GFiles instead. """
+        """
+        Removes local URIs(file://) and adds them back as GFiles instead.
         
-        local_uris = []
+        """
+        new_sources = []
         for i in range(len(sources)):
-            j = i - len(local_uris)
-            an_uri = sources[j].uri
-            if an_uri.lower().startswith("file:"):
+            j = i - len(new_sources)
+            an_uri_source = sources[j]
+            if an_uri_source.uri.lower().startswith("file:"):
                 # Probably, all local URIs start with file: and then
                 # some slashes... probably...
-                local_uris.append(an_uri)
+                # FIXME: This won't copy .name and .pathname because there is
+                # no way to figure out whether it was custom set or not
+                gfile = Gio.File.new_for_uri(an_uri_source.uri)
+                parent = an_uri_source.parent
+                
+                a_new_source = GFileSource(gfile, parent=parent)
+                
+                # Switch links
+                if an_uri_source.is_linked:
+                    a_new_source.link_parent()
+                an_uri_source.unlink_parent()
+                
+                new_sources.append(a_new_source)
                 del sources[j]
         
-        # Generators, yo!
-        files = map(GFileSource, map(Gio.File.new_for_uri, local_uris))
-        session.add_sources(files)
+        session.add_sources(new_sources)
         
         # Enqueue remaining non-local URIs to be opened
         context.enqueue_sources(session, sources)
@@ -787,12 +827,142 @@ class OpeningResults(GObject.Object):
             self.emit("completed")
 
 
+class Cache:
+    def __init__(self):
+        self.cached = False
+        
+    def uncache():
+        raise NotImplementedError
+
+
+class FileCache(Cache):
+    """A simple cache object that deletes filepaths on cleanup"""
+    def __init__(self, filepaths, cached=True):
+        Cache.__init__(self)
+        self.filepaths = filepaths
+        self.cached = cached
+    
+    
+    def uncache(self):
+        if self.cached:
+            os.remove(*self.filepaths)
+            self.cached = False
+
+
 class FileSource:
     def __init__(self, kind, name, parent=None, pathname=None):
         self.kind = kind
+        
         self.name = name
         self.pathname = pathname
+        
         self.parent = parent
+        self.is_linked = False
+        
+        self.cache = None
+        self._held = 0
+        
+        self.images = set()
+        self.sources = set()
+    
+    
+    def hold(self):
+        """Keeps this source from being cleaned up."""
+        self._held += 1
+    
+    
+    def release(self):
+        """Reverts .hold"""
+        self._held -= 1
+        
+        self.check_cleanup()
+    
+    
+    def add_image(self, image):
+        """
+        Associates a given image to this file source.
+        
+        Returns:
+            Whether the image was not associated already.
+        
+        """
+        if image in self.images:
+            return False
+        else:
+            self.images.add(image)
+            return True
+    
+    
+    def remove_image(self, image):
+        """Reverts .add_image"""
+        if image in self.images:
+            self.images.remove(image)
+            self.check_cleanup()
+            return True
+        else:
+            return False
+    
+    
+    def add_source(self, source):
+        """
+         Associates a given source to this file source.
+        
+        Returns:
+            Whether the source was not associated already.
+        
+        """
+        if source in self.sources:
+            return False
+        
+        self.sources.add(source)
+        return True
+    
+    
+    def remove_source(self, source):
+        """Reverts .add_source"""
+        if source in self.sources:
+            self.sources.remove(source)
+            self.check_cleanup()
+            return True
+        else:
+            return False
+    
+    
+    def link_parent(self):
+        """Associates this source's parent with itself"""
+        if self.parent and not self.is_linked:
+            self.is_linked = True
+            self.parent.add_source(self)
+    
+    
+    def unlink_parent(self):
+        """Reverts .link_parent"""
+        if self.parent and self.is_linked:
+            self.is_linked = False
+            self.parent.remove_source(self)
+    
+    
+    def check_cleanup(self):
+        """
+        Checks whether .cleanup should be called.
+        
+        Returns:
+            Whether cleanup was called.
+        
+        """
+        if self.images or self.sources or self._held > 0:
+            return False
+        else:
+            self.cleanup()
+            return True
+    
+    
+    def cleanup(self):
+        """Called when this source has no use anymore."""
+        if self.cache:
+            self.cache.uncache()
+        # I wonder if there could be stack size errors by doing this?
+        self.unlink_parent()
     
     
     def resembles(self, other):

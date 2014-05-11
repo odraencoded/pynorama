@@ -25,9 +25,10 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
 
+import os 
+from os import path as os_path
 import tempfile
 from gettext import gettext as _
-from os import path as os_path
 from urllib.parse import urlparse
 
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk
@@ -306,9 +307,10 @@ class URICacheFallbackOpener(Opener, URIOpener):
             if "/" not in after_dot_split:
                 suffix = "." + after_dot_split
         
-        state.cache_path = tempfile.mkstemp(
-                           dir=context.cache_directory,
-                           suffix=suffix)[1]
+        file_descriptor, state.cache_path = tempfile.mkstemp(
+           dir=context.cache_directory, suffix=suffix)
+        
+        os.close(file_descriptor) # won't need this open... probably
         
         state.files = [
             Gio.File.new_for_uri(source.uri),
@@ -382,6 +384,7 @@ class URICacheFallbackOpener(Opener, URIOpener):
                 state.results.errors.append(e)
         else:
             result = GFileSource(state.files[1], "", parent=state.source)
+            result.cache = opening.FileCache([state.cache_path])
             state.results.sources.append(result)
         finally:
             state.results.complete()

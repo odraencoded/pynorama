@@ -28,16 +28,19 @@ class DataError(Exception):
 
 
 Status = utility.Enum(
-    UNLOADED  = 0b001,
-    LOADED    = 0b010,
-    LOADING   = 0b110,
-    UNLOADING = 0b101
+    UNLOADED   = 0b0001,
+    LOADED     = 0b0010,
+    DESTROYED  = 0b0100,
+    LOADING    = 0b1010,
+    UNLOADING  = 0b1001,
+    DESTROYING = 0b1100
 )
 
 
 class Loadable(GObject.Object):
     __gsignals__ = {
         "finished-loading": (GObject.SIGNAL_RUN_LAST, None, [object]),
+        "destroyed": (GObject.SIGNAL_RUN_LAST, None, []),
         "uses-changed": (GObject.SIGNAL_RUN_FIRST, None, [int]),
         "lists-changed":(GObject.SIGNAL_RUN_FIRST, None, [int])
     }
@@ -64,6 +67,12 @@ class Loadable(GObject.Object):
     def unload(self):
         """Unloads this resource somehow."""
         raise NotImplementedError
+    
+    
+    def destroy(self):
+        """Destroys this resource somehow."""
+        self.status = Status.DESTROYED
+        self.emit("destroyed")
     
     
     def request_data(self):
@@ -232,6 +241,7 @@ class ImageSource(Loadable):
     def __init__(self, file_source=None):
         Loadable.__init__(self)
         
+        self.is_linked = False
         self.error = None
         self.pixbuf = None
         self.animation = None
@@ -248,11 +258,32 @@ class ImageSource(Loadable):
         return self.fullname
     
     
+    def link_source(self):
+        """Associates this image's file source to itself"""
+        if self.file_source and not self.is_linked:
+            self.is_linked = True
+            self.file_source.add_image(self)
+    
+    
+    def unlink_source(self):
+        """Reverts .link_source"""
+        if self.file_source and self.is_linked:
+            self.is_linked = False
+            self.file_source.remove_image(self)
+    
+    
+    def destroy(self):
+        self.unlink_source()
+        Loadable.destroy(self)
+    
+    
     def do_new_frame(self, frame):
+        """Increases use count by one when a frame starts using this image"""
         self.uses += 1
     
     
     def do_lost_frame(self, frame):
+        """Decreases use count by one when a frame stops using this image"""
         self.uses -= 1
     
     

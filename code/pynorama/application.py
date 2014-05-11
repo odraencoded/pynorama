@@ -399,14 +399,14 @@ class ImageViewer(Gtk.Application):
         while self.memory.enlisted_stuff:
             enlisted_thing = self.memory.enlisted_stuff.pop()
             enlisted_thing.connect("finished-loading", self.log_loading_finish)
-                
+        
         if self.memory.unlisted_stuff or self.memory.unused_stuff:
             while self.memory.unlisted_stuff:
                 unlisted_thing = self.memory.unlisted_stuff.pop()
                 if unlisted_thing.status & loading.Status.LOADED != 0:
-                    unlisted_thing.unload()
+                    unlisted_thing.destroy()
                     logger.debug(notifying.Lines.Unloaded(unlisted_thing))
-                    
+            
             while self.memory.unused_stuff:
                 unused_thing = self.memory.unused_stuff.pop()
                 # Do not unload things that are not on disk (like pastes)
@@ -414,7 +414,7 @@ class ImageViewer(Gtk.Application):
                     if unused_thing.status & loading.Status.LOADED != 0:
                         unused_thing.unload()
                         logger.debug(notifying.Lines.Unloaded(unused_thing))
-                        
+            
             gc.collect()
             
         while self.memory.requested_stuff:
