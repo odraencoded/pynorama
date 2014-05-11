@@ -1023,8 +1023,9 @@ class FileSource:
         )
     
     
-    def _resembles(self):
-        return False
+    def _resembles(self, other):
+        """Returns whether self and other appear to be same source."""
+        return self is other
 
 
 class GFileSource(GObject.Object, FileSource):
