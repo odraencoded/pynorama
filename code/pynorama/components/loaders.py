@@ -28,7 +28,7 @@ import time
 from gi.repository import GdkPixbuf, Gio, GObject, GLib
 from gettext import gettext as _
 from pynorama import utility, loading, viewing
-from pynorama.loading import Status, Location
+from pynorama.loading import Status
 
 
 class PixbufDataImageSource(loading.ImageSource):
@@ -36,16 +36,13 @@ class PixbufDataImageSource(loading.ImageSource):
         This ImageSource can not be loaded or unloaded
         Because it can not find the data source by itself '''
         
-    def __init__(self, pixbuf, name="Image Data"):
-        loading.ImageSource.__init__(self)
+    def __init__(self, pixbuf, source=None):
+        loading.ImageSource.__init__(self, source)
         self.surface = utility.SurfaceFromPixbuf(pixbuf)
         
-        self.fullname = self.name = name
-        
         self.load_metadata()
-        
-        self.location = Location.Memory
-        self.status = Status.Good
+        self.recacheable = False
+        self.status = Status.LOADED
         
         
     def load_metadata(self):
@@ -60,8 +57,7 @@ class PixbufDataImageSource(loading.ImageSource):
     
     def unload(self):
         self.surface = None
-        self.location &= ~Location.Memory
-        self.status = Status.Bad
+        self.status = Status.UNLOADED
         
         
     def create_frame(self):
@@ -74,10 +70,8 @@ class PixbufDataImageSource(loading.ImageSource):
 
 
 class PixbufFileImageSource(loading.GFileImageSource):
-    def __init__(self, gfile, **kwargs):
-        loading.GFileImageSource.__init__(self, gfile, **kwargs)
-        
-        self.status = Status.Good
+    def __init__(self, file_source, **kwargs):
+        loading.GFileImageSource.__init__(self, file_source, **kwargs)
         self.cancellable = None
     
     
@@ -90,11 +84,11 @@ class PixbufFileImageSource(loading.GFileImageSource):
         try:
             stream = self.gfile.read(None)
         except GLib.GError as gerror:
-            self.status = Status.Bad
+            self.status = Status.UNLOADED
             self.error = gerror
             self.emit("finished-loading", self.error)
         else:
-            self.status = Status.Loading
+            self.status = Status.LOADING
             GdkPixbuf.Pixbuf.new_from_stream_async(
                 stream, self.cancellable, self._loaded, None
             )
@@ -111,13 +105,11 @@ class PixbufFileImageSource(loading.GFileImageSource):
             # .unload() sets cancellable to None, so if it's None we assume
             # the loading has been cancelled and the error is because of that
             if self.cancellable:
-                self.location &= ~Location.Memory
-                self.status = Status.Bad
+                self.status = Status.UNLOADED
                 self.error = gerror
             
         else:
-            self.location |= Location.Memory
-            self.status = Status.Good
+            self.status = Status.LOADED
             self.load_metadata()
             
         finally:
@@ -126,13 +118,14 @@ class PixbufFileImageSource(loading.GFileImageSource):
     
     
     def unload(self):
+        self.status = Status.UNLOADING
+        
         if self.cancellable:
             self.cancellable.cancel()
             self.cancellable = None
         
         self.surface = None
-        self.location &= ~Location.Memory
-        self.status = Status.Good
+        self.status = Status.UNLOADED
     
     
     def load_metadata(self):
@@ -191,11 +184,10 @@ class PixbufFileImageSource(loading.GFileImageSource):
     
     
 class PixbufAnimationFileImageSource(loading.GFileImageSource):
-    def __init__(self, gfile, **kwargs):
-        loading.GFileImageSource.__init__(self, gfile, **kwargs)
+    def __init__(self, file_source, **kwargs):
+        loading.GFileImageSource.__init__(self, file_source, **kwargs)
         
         self.pixbuf_animation = None
-        self.status = Status.Good
         self.cancellable = None
     
     
@@ -208,11 +200,10 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
         try:
             stream = self.gfile.read(None)
         except GLib.GError as gerror:
-            self.status = Status.Bad
-            self.error = gerror
+            self.status = Status.UNLOADED
             self.emit("finished-loading", self.error)
         else:
-            self.status = Status.Loading
+            self.status = Status.LOADING
             GdkPixbuf.PixbufAnimation.new_from_stream_async(
                 stream, self.cancellable, self._loaded, None
             )
@@ -227,12 +218,10 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
             # .unload() sets cancellable to None, so if it's None we assume
             # the loading has been cancelled and the error is because of that
             if self.cancellable:
-                self.location &= ~Location.Memory
-                self.status = Status.Bad
+                self.status = Status.UNLOADED
                 self.error = gerror
         else:
-            self.location |= Location.Memory
-            self.status = Status.Good
+            self.status = Status.LOADED
             self.load_metadata()
             
         finally:
@@ -241,13 +230,14 @@ class PixbufAnimationFileImageSource(loading.GFileImageSource):
     
     
     def unload(self):
+        self.status = Status.UNLOADING
+        
         if self.cancellable:
             self.cancellable.cancel()
             self.cancellable = None
         
         self.pixbuf_animation = None
-        self.location &= ~Location.Memory
-        self.status = Status.Good
+        self.status = Status.UNLOADED
     
     
     def load_metadata(self):

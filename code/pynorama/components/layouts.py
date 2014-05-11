@@ -29,9 +29,13 @@ class SingleImageLayout(AlbumLayout):
     
     
     def start(self, avl):
+        avl.load_handle = None
+        
         avl.current_image = None
         avl.current_frame = None
-        avl.load_handle = None
+        avl.previous_frame = None
+        avl.previous_image = None
+        
         avl.old_album = None
         avl.removed_signal_id = None
         avl.album_notify_id = avl.connect(
@@ -45,13 +49,15 @@ class SingleImageLayout(AlbumLayout):
             avl.current_image.disconnect(avl.load_handle)
         del avl.load_handle
         
-        if avl.current_image:
-            avl.current_image.uses -= 1
-        del avl.current_image
-        
         if avl.current_frame:
             avl.view.remove_frame(avl.current_frame)
         del avl.current_frame
+        del avl.current_image
+        
+        if avl.previous_frame:
+            avl.view.remove_frame(avl.previous_frame)
+        del avl.previous_frame
+        del avl.previous_image
         
         avl.disconnect(avl.album_notify_id)
         del avl.album_notify_id
@@ -74,23 +80,32 @@ class SingleImageLayout(AlbumLayout):
     def go_image(self, avl, target_image):
         if avl.current_image == target_image:
             return
+        
+        if avl.load_handle: # remove "finished-loading" handle
+            avl.current_image.disconnect(avl.load_handle)
+            avl.load_handle = None
+            if avl.current_image.is_loading:
+                avl.current_image.cancel_request()
+        
+        if avl.previous_image is None and avl.current_frame is not None:
+            avl.previous_image = avl.current_image
+            avl.previous_frame = avl.current_frame
             
-        previous_image = avl.current_image
         avl.current_image = target_image
         
-        if previous_image:
-            previous_image.uses -= 1 # decrement use count
-            if avl.load_handle: # remove "finished-loading" handle
-                previous_image.disconnect(avl.load_handle)
-                avl.load_handle = None
-                
         if target_image is None:
             # Current image being none means nothing is displayed #
             self._refresh_frame(avl)
             
+            if avl.previous_frame is not None:
+                avl.view.remove_frame(avl.previous_frame)
+            
+            avl.previous_image = None
+            avl.previous_frame = None
+            
         else:
-            target_image.uses += 1
-            if target_image.on_memory or target_image.is_bad:
+            target_image.request_data()
+            if target_image.is_loaded or target_image.is_bad:
                 self._refresh_frame(avl)
                 
             else:
@@ -103,9 +118,12 @@ class SingleImageLayout(AlbumLayout):
     
     
     def _refresh_frame(self, avl):
-        if avl.current_frame:
-            avl.view.remove_frame(avl.current_frame)
+        if avl.previous_frame:
+            avl.view.remove_frame(avl.previous_frame)
             
+        avl.previous_frame = None
+        avl.previous_image = None
+        
         if avl.current_image:
             new_frame = avl.current_image.create_frame()
             avl.current_frame = new_frame
@@ -137,6 +155,11 @@ class SingleImageLayout(AlbumLayout):
                     new_image = None
                     
                 self.go_image(avl, new_image)
+                
+        elif image == avl.previous_image:
+            avl.view.remove_frame(avl.previous_frame)
+            avl.previous_image = None
+            avl.previous_frame = None
     
     
     def _image_loaded(self, image, error, avl):
@@ -209,15 +232,13 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
     
     
     def clean(self, avl):
-        for an_image in avl.shown_images:
-            an_image.uses -= 1
-            
         for a_frame in avl.shown_frames:
             if a_frame:
                 avl.view.remove_frame(a_frame)
                 
         for an_image, a_handle_id in avl.load_handles.items():
-            an_image.disconnect(a_handle_id)                
+            an_image.disconnect(a_handle_id)
+            an_image.cancel_request()
         
         del avl.center_image, avl.center_frame
         del avl.shown_images, avl.shown_frames
@@ -544,7 +565,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
         avl.shown_images.insert(index, image)
         avl.shown_frames.insert(index, None)
         
-        image.uses += 1
+        image.request_data()
         
         if not avl.center_image:
             # If there is no center image, set it to the newly inserted one
@@ -559,13 +580,12 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
                 avl.center_index += 1
                 
             self._load_frame(avl, image)
-            
+    
+    
     def _remove_image(self, avl, index):
         ''' Handles a image removed from an album '''
         image = avl.shown_images.pop(index)
         frame = avl.shown_frames.pop(index)
-        
-        image.uses -= 1
         
         if frame: # Remove frame from view
             avl.view.remove_frame(frame)
@@ -575,33 +595,39 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
             load_handle_id = avl.load_handles.pop(image, None)
             if load_handle_id:
                 image.disconnect(load_handle_id)
+                image.cancel_request()
         
         if avl.center_image and index < avl.center_index:
             # Decrement the center index because a frame was removed before it
             avl.center_index -= 1
     
+    
     def _append_image(self, avl, image):
         self._insert_image(avl, len(avl.shown_images), image)
-        
+    
+    
     def _prepend_image(self, avl, image):
         self._insert_image(avl, 0, image)
+    
     
     def _clear_images(self, avl):
         while avl.shown_images:
             self._remove_image(avl, 0)
-            
+    
+    
     def _load_frame(self, avl, image):
-        if image.on_memory or image.is_bad:
+        if image.is_loaded or image.is_bad:
             self._refresh_frames(avl, image)
             avl.update_sides.queue()
             
         else:
             load_handle_id = avl.load_handles.get(image, None)
             if not load_handle_id:
-                load_handle_id = image.connect("finished-loading", 
-                                               self._image_loaded, avl)
+                load_handle_id = image.connect(
+                    "finished-loading", self._image_loaded, avl)
                 avl.load_handles[image] = load_handle_id
-                
+    
+    
     def _image_loaded(self, image, error, avl):
         load_handle_id = avl.load_handles.pop(image, None)
         if load_handle_id:
@@ -610,6 +636,7 @@ class ImageStripLayout(GObject.Object, AlbumLayout):
         if image in avl.shown_images:
             self._refresh_frames(avl, image)
             avl.update_sides.queue()
+    
     
     def _update_sides(self, avl):
         # Adds or removes images at either side
