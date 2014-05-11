@@ -1,11 +1,4 @@
-""" archive.py adds experimental support to zipfile supported archives.
-    
-    To do before merge:
-        Asynchronous support
-        Temp directory cleaning up
-        Somehow fix the filenames when they appear in the window title 
-    
-    Should be used with caution, can blow up anytime. """
+""" extrators.py adds support to open archive extractors."""
 
 """ ...and this file is part of Pynorama.
     
@@ -49,6 +42,8 @@ class ZipOpener(Opener, openers.GFileOpener):
     
     def open_file_source(self, context, results, source):
         """ Opens a directory file and yields its contents """
+        
+        # TODO: Add asynchronous loading
         
         gfile = source.gfile
         path = gfile.get_path()

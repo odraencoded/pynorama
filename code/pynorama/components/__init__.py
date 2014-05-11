@@ -10,6 +10,7 @@ __all__ = [
     "mice",
     "layouts",
     "openers",
+    "extractors",
     "loaders",
 ]
 
