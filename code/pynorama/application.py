@@ -127,7 +127,9 @@ class ImageViewer(Gtk.Application):
     def do_open(self, files, file_count, hint):
         some_window = self.get_window()
         single_file = file_count == 1
-        some_window.open_gfiles(files, search_siblings=single_file)
+        
+        uris = (a_file.get_uri() for a_file in files)
+        some_window.open_uris(uris, search_siblings=single_file)
         some_window.present()
     
     
