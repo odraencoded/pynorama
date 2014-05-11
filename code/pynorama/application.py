@@ -403,9 +403,8 @@ class ImageViewer(Gtk.Application):
         if self.memory.unlisted_stuff or self.memory.unused_stuff:
             while self.memory.unlisted_stuff:
                 unlisted_thing = self.memory.unlisted_stuff.pop()
-                if unlisted_thing.status & loading.Status.LOADED != 0:
-                    unlisted_thing.destroy()
-                    logger.debug(notifying.Lines.Unloaded(unlisted_thing))
+                unlisted_thing.destroy()
+                logger.debug(notifying.Lines.Unloaded(unlisted_thing))
             
             while self.memory.unused_stuff:
                 unused_thing = self.memory.unused_stuff.pop()
