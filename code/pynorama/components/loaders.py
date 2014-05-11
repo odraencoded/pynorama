@@ -42,6 +42,7 @@ class PixbufDataImageSource(loading.ImageSource):
         
         self.load_metadata()
         self.recacheable = False
+        self.status = Status.LOADED
         
         
     def load_metadata(self):
