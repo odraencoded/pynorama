@@ -26,6 +26,7 @@
 """
 
 import os
+import shutil
 from gettext import ngettext as N_
 from collections import deque, defaultdict
 from gi.repository import Gdk, Gio, GLib, GObject, Gtk
@@ -836,16 +837,30 @@ class Cache:
 
 
 class FileCache(Cache):
-    """A simple cache object that deletes filepaths on cleanup"""
-    def __init__(self, filepaths, cached=True):
+    """
+    A simple cache object that deletes files and directories on cleanup.
+    
+    Arguments:
+        files: a collection of filepaths to delete
+        directories: a collection of directories to recursively delete
+        cache: whether the cache is already cached on creation
+    
+    """
+    def __init__(self, files=None, directories=None, cached=True):
         Cache.__init__(self)
-        self.filepaths = filepaths
+        self.files = files
+        self.directories = directories
         self.cached = cached
     
     
     def uncache(self):
         if self.cached:
-            os.remove(*self.filepaths)
+            if self.files:
+                os.remove(*self.files)
+            if self.directories:
+                for a_directory in self.directories:
+                    shutil.rmtree(a_directory, True)
+            
             self.cached = False
 
 
