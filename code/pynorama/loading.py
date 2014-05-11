@@ -299,16 +299,6 @@ class ImageSource(Loadable):
         raise NotImplementedError
     
     
-    def matches_uri(self, uri):
-        """
-        Returns whether this image somehow matches an uri.
-        A check isn't necessary and the uri isn't necessarily valid.
-        By default this returns false.
-        
-        """
-        return False
-    
-    
     def copy_to_clipboard(self, clipboard):
         """ Copies itself into the clipboard """
         raise NotImplementedError
@@ -318,10 +308,6 @@ class GFileImageSource(ImageSource):
     def __init__(self, file_source):
         ImageSource.__init__(self, file_source)
         self.gfile = gfile = file_source.gfile
-    
-    
-    def matches_uri(self, uri):
-        return self.gfile.get_uri() == uri
     
     
     def copy_to_clipboard(self, clipboard):
