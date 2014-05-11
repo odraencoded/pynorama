@@ -19,6 +19,7 @@
     along with Pynorama. If not, see <http://www.gnu.org/licenses/>. """
 
 from gi.repository import Gio, GObject
+from . import utility
 import weakref
 
 class DataError(Exception):
@@ -26,57 +27,124 @@ class DataError(Exception):
     pass
 
 
-class Status:
-    ''' Statuses for loadable objects '''
-    Bad = -1 # Something went wrong
-    Good = 0 # Everything is amazing and nobody is happy
-    Caching = 1 # Something is going into the disk
-    Loading = 2 # Something is going into the memory
+Status = utility.Enum(
+    UNLOADED   = 0b0001,
+    LOADED     = 0b0010,
+    DESTROYED  = 0b0100,
+    LOADING    = 0b1010,
+    UNLOADING  = 0b1001,
+    DESTROYING = 0b1100
+)
 
 
-class Location:
-    ''' Locations for loadable data to be. '''
-    Nowhere = 0 # The data source is gone, 5ever
-    Distant = 1 # The data is in a far away place, should be cached
-    Disk = 2 # The data is on disk, easy to load
-    Memory = 4 # The data is on memory, already loaded
-
-
-class Loadable(GObject.GObject):
+class Loadable(GObject.Object):
     __gsignals__ = {
-        "finished-loading": (GObject.SIGNAL_RUN_FIRST, None, [object])
+        "finished-loading": (GObject.SIGNAL_RUN_LAST, None, [object]),
+        "destroyed": (GObject.SIGNAL_RUN_LAST, None, []),
+        "uses-changed": (GObject.SIGNAL_RUN_FIRST, None, [int]),
+        "lists-changed":(GObject.SIGNAL_RUN_FIRST, None, [int])
     }
     
     def __init__(self):
-        GObject.GObject.__init__(self)
+        GObject.Object.__init__(self)
+        self.status = Status.UNLOADED
+        self.reloadable = True
+        self.error = None
         
-        self.location = Location.Nowhere
-        self.status = Status.Bad
+        self.__uses = 0
+        self.__lists = 0
+        self.__requests = 0
         
+        self.__request_signal_handler_ids = []
+        self.__data_requested = False
+    
+    
     def load(self):
+        """Loads this resource somehow."""
         raise NotImplementedError
-        
+    
+    
     def unload(self):
+        """Unloads this resource somehow."""
         raise NotImplementedError
+    
+    
+    def destroy(self):
+        """Destroys this resource somehow."""
+        self.status = Status.DESTROYED
+        self.emit("destroyed")
+    
+    
+    def request_data(self):
+        """
+        Convenience method for memory managed Loadables.
         
-    uses = GObject.property(type=int, default=0)
-    lists = GObject.property(type=int, default=0)
+        Calling this will increment its use count by one, supposedly
+        making the memory manager attempt to load this resource.
+        
+        Once loaded, it automatically subtracts from its use count the number
+        of data requests it received.
+        
+        Use .cancel_request to undo a request.
+        
+        """
+        
+        if not self.is_loaded:
+            self.__requests += 1
+            self.uses += 1
+    
+    
+    def cancel_request(self):
+        """Reverts the effects of .request_data."""
+        if not self.is_loaded and self.__requests > 0:
+            self.__requests -= 1
+            self.uses -= 1
+    
+    
+    def do_finished_loading(self, *whatever):
+        if self.__requests:
+            requests = self.__requests
+            self.__requests = 0
+            self.uses -= requests
+    
+    
+    def get_uses(self):
+        return self.__uses
+    
+    
+    def set_uses(self, value):
+        diff = value - self.__uses
+        self.__uses = value
+        self.emit("uses-changed", diff)
+    
+    
+    def get_lists(self):
+        return self.__lists
+    
+    
+    def set_lists(self, value):
+        diff = value - self.__lists
+        self.__lists = value
+        self.emit("lists-changed", diff)
+    
+    
+    uses = GObject.property(get_uses, set_uses, type=int, default=0)
+    lists = GObject.property(get_lists, set_lists, type=int, default=0)
+    
     
     @property
-    def on_memory(self):
-        return self.location & Location.Memory == Location.Memory
+    def is_loaded(self):
+        return self.status == Status.LOADED
     
-    @property
-    def on_disk(self):
-        return self.location & Location.Disk == Location.Disk
-            
+    
     @property
     def is_loading(self):
-        return self.status == Status.Loading
-        
+        return self.status == Status.LOADING
+    
+    
     @property
     def is_bad(self):
-        return self.status == Status.Bad
+        return bool(self.error)
 
 
 class Memory(GObject.GObject):
@@ -110,19 +178,19 @@ class Memory(GObject.GObject):
             assert a_thing not in self.observed_stuff
             self.observed_stuff.add(a_thing)
             
-            a_thing.connect("notify::uses", self._uses_changed)
-            a_thing.connect("notify::lists", self._lists_changed)
+            a_thing.connect("uses-changed", self._uses_changed_cb)
+            a_thing.connect("lists-changed", self._lists_changed_cb)
     
     
-    def _uses_changed(self, thing, *data):
-        if thing.uses == 1:
+    def _uses_changed_cb(self, thing, difference):
+        if thing.uses == 1 and difference > 0:
             if thing in self.unused_stuff:
                 self.unused_stuff.remove(thing)
             else:
                 self.requested_stuff.add(thing)
                 self.emit("thing-requested", thing)
                 
-        elif thing.uses == 0:
+        elif thing.uses == 0 and difference < 0:
             if thing in self.requested_stuff:
                 self.requested_stuff.remove(thing)
             else:
@@ -130,15 +198,15 @@ class Memory(GObject.GObject):
                 self.emit("thing-unused", thing)
     
     
-    def _lists_changed(self, thing, *data):
-        if thing.lists == 1:
+    def _lists_changed_cb(self, thing, difference):
+        if thing.lists == 1 and difference > 0:
             if thing in self.unlisted_stuff:
                 self.unlisted_stuff.remove(thing)
             else:
                 self.enlisted_stuff.add(thing)
                 self.emit("thing-enlisted", thing)
         
-        elif thing.lists == 0:
+        elif thing.lists == 0 and difference < 0:
             if thing in self.enlisted_stuff:
                 self.enlisted_stuff.remove(thing)
             else:
@@ -170,19 +238,53 @@ class ImageSource(Loadable):
         "lost-frame": (GObject.SIGNAL_RUN_LAST, None, [object]),
     }
     
-    def __init__(self):
+    def __init__(self, file_source=None):
         Loadable.__init__(self)
         
+        self.is_linked = False
         self.error = None
         self.pixbuf = None
         self.animation = None
         self.metadata = None
-        
-        self.fullname, self.name = "", ""
+        self.file_source = file_source
+        if(file_source):
+            self.name = self.file_source.get_name()
+            self.fullname = self.file_source.get_fullname()
+        else:
+            self.name = self.fullname = ""
     
     
     def __str__(self):
         return self.fullname
+    
+    
+    def link_source(self):
+        """Associates this image's file source to itself"""
+        if self.file_source and not self.is_linked:
+            self.is_linked = True
+            self.file_source.add_image(self)
+    
+    
+    def unlink_source(self):
+        """Reverts .link_source"""
+        if self.file_source and self.is_linked:
+            self.is_linked = False
+            self.file_source.remove_image(self)
+    
+    
+    def destroy(self):
+        self.unlink_source()
+        Loadable.destroy(self)
+    
+    
+    def do_new_frame(self, frame):
+        """Increases use count by one when a frame starts using this image"""
+        self.uses += 1
+    
+    
+    def do_lost_frame(self, frame):
+        """Decreases use count by one when a frame stops using this image"""
+        self.uses -= 1
     
     
     def get_metadata(self):
@@ -197,45 +299,15 @@ class ImageSource(Loadable):
         raise NotImplementedError
     
     
-    def matches_uri(self, uri):
-        """
-        Returns whether this image somehow matches an uri.
-        A check isn't necessary and the uri isn't necessarily valid.
-        By default this returns false.
-        
-        """
-        return False
-    
-    
     def copy_to_clipboard(self, clipboard):
         """ Copies itself into the clipboard """
         raise NotImplementedError
 
 
 class GFileImageSource(ImageSource):
-    def __init__(self, gfile, opening_context=None):
-        super().__init__()
-        self.gfile = gfile
-        
-        if opening_context is not None:
-            info = opening_context.query_file_info(
-                gfile, "standard::display-name",
-            )
-        else:
-            info = gfile.query_info(
-                "standard::display-name",
-                Gio.FileQueryInfoFlags.NONE,
-                None
-            )
-            
-        self.name = info.get_display_name()
-        self.fullname = self.gfile.get_parse_name()
-        
-        self.location = Location.Disk if gfile.is_native() else Location.Distant
-    
-    
-    def matches_uri(self, uri):
-        return self.gfile.get_uri() == uri
+    def __init__(self, file_source):
+        ImageSource.__init__(self, file_source)
+        self.gfile = gfile = file_source.gfile
     
     
     def copy_to_clipboard(self, clipboard):

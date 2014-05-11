@@ -21,6 +21,26 @@ from collections import namedtuple
 import cairo
 import math
 
+class Enum:
+    """Convenience class to make enums.
+    
+    Example Usage:
+        >>>Cakes = Enum("CHOCOLATE", "STRAWBERRY", DELISCIOUS=5)
+        >>>Cakes.CHOCOLATE
+        0
+        >>>Cakes.DELISCIOUS
+        5
+    
+    """
+    def __init__(self, *args, **kwargs):
+        for i, arg in enumerate(args):
+            setattr(self, arg, i)
+        
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+
 class IdlyMethod:
     """ Manages a simple idle callback signal in GLib """
     def __init__(self, callback, *args, **kwargs):
