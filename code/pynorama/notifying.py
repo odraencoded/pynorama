@@ -37,6 +37,9 @@ SEPARATOR_LENGTH = 40 # Length of ~~~~~~~....~~~~ separators.
 class Logger:
     """ Fancy class for fancy logging """
     
+    # XXX: Whether an error explaining that unicode character can't be printed
+    # has been printed already. This is a hack fix for Windows encoding issues.
+    EncodingErrorPrinted = False
     Last = ""
     
     def __init__(self, codename):
@@ -50,7 +53,13 @@ class Logger:
     
     def log(self, message):
         self._replace_last(stdout)
-        print(self._prefix + message + self._suffix)
+        try:
+            print(self._prefix + message + self._suffix)
+        except UnicodeEncodeError:
+            if not Logger.EncodingErrorPrinted:
+                print("Your system doesn't support priting unicode characters.")
+                print("Suppressing next errors related to character encoding.")
+                Logger.EncodingErrorPrinted = True
     
     
     def log_list(self, iterable):
