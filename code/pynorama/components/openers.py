@@ -71,6 +71,11 @@ class GFileOpener:
             
             for an_extension in self.extensions:
                 file_filter.add_pattern("*." + an_extension)
+                
+                # In Windows, getting the mime type of a file returns its
+                # extension. This is a workaround that.
+                file_filter.add_mime_type(an_extension)
+            
             for a_mime_type in self.mime_types:
                 file_filter.add_mime_type(a_mime_type)
                 
